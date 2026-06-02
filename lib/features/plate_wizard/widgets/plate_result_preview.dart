@@ -1,0 +1,198 @@
+import 'package:flutter/material.dart';
+import '../../../models/protocol_table.dart';
+import '../../../models/plate_wizard.dart';
+
+class PlateResultPreview extends StatefulWidget {
+  final PlateLayoutWizard wizard;
+
+  const PlateResultPreview({
+    super.key,
+    required this.wizard,
+  });
+
+  @override
+  State<PlateResultPreview> createState() => _PlateResultPreviewState();
+}
+
+class _PlateResultPreviewState extends State<PlateResultPreview> {
+  final Map<int, ScrollController> _scrollControllers = {};
+
+  @override
+  void dispose() {
+    for (var controller in _scrollControllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.wizard.items.isEmpty) return const SizedBox.shrink();
+
+    final tables = widget.wizard.generateTables();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ...tables
+            .asMap()
+            .entries
+            .map((entry) => _buildPlateGrid(entry.key, entry.value)),
+      ],
+    );
+  }
+
+  Widget _buildPlateGrid(int index, ProtocolTable table) {
+    final int rows = int.tryParse(table.metadata['rows'] ?? '8') ?? 8;
+    final int cols = int.tryParse(table.metadata['columns'] ?? '12') ?? 12;
+    final controller =
+        _scrollControllers.putIfAbsent(index, () => ScrollController());
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 32.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(table.title,
+              style:
+                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.grey.shade300),
+                boxShadow: [
+                  BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 10)
+                ],
+              ),
+              child: Scrollbar(
+                controller: controller,
+                thumbVisibility: true,
+                trackVisibility: true,
+                child: SingleChildScrollView(
+                  controller: controller,
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+                  child: Column(
+                    children: [
+                      // Column Headers
+                      Row(
+                        children: [
+                          const SizedBox(width: 35),
+                          ...List.generate(
+                              cols,
+                              (i) => SizedBox(
+                                    width: 58,
+                                    child: Center(
+                                        child: Text('${i + 1}',
+                                            style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.grey.shade600))),
+                                  )),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      // Plate Grid
+                      ...List.generate(rows, (rIdx) {
+                        return Row(
+                          children: [
+                            // Row Header
+                            SizedBox(
+                              width: 35,
+                              child: Text(String.fromCharCode(65 + rIdx),
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                      color: Colors.grey.shade600)),
+                            ),
+                            // Wells
+                            ...List.generate(cols, (cIdx) {
+                              final content = table.data[rIdx][cIdx].toString();
+                              final colorHex = table.cellColors[rIdx][cIdx];
+                              Color bgColor = Colors.grey.shade50;
+                              if (colorHex.isNotEmpty) {
+                                bgColor = Color(int.parse(
+                                        colorHex.replaceFirst('#', '0xFF')))
+                                    .withValues(alpha: 0.8);
+                              }
+
+                              final parts = content.split('\n');
+                              final String name =
+                                  parts.isNotEmpty ? parts[0] : '';
+                              final String cond =
+                                  parts.length > 1 ? parts[1] : '';
+                              final String dil =
+                                  parts.length > 2 ? parts[2] : '';
+
+                              return Container(
+                                width: 55,
+                                height: 55,
+                                margin: const EdgeInsets.all(2),
+                                decoration: BoxDecoration(
+                                  color: bgColor,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                      color: content.isNotEmpty
+                                          ? Colors.grey.shade400
+                                          : Colors.grey.shade200,
+                                      width: 1.5),
+                                ),
+                                child: content.isEmpty
+                                    ? null
+                                    : Column(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          if (cond.isNotEmpty)
+                                            Text(
+                                              cond,
+                                              style: TextStyle(
+                                                  fontSize: 8,
+                                                  color: Colors.blue.shade900,
+                                                  fontWeight: FontWeight.bold),
+                                            ),
+                                          Padding(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 4.0),
+                                            child: Text(
+                                              name,
+                                              style: const TextStyle(
+                                                  fontSize: 9,
+                                                  fontWeight: FontWeight.bold),
+                                              textAlign: TextAlign.center,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                          if (dil.isNotEmpty)
+                                            Text(
+                                              dil,
+                                              style: TextStyle(
+                                                  fontSize: 8,
+                                                  color: Colors.green.shade900,
+                                                  fontWeight: FontWeight.bold),
+                                            ),
+                                        ],
+                                      ),
+                              );
+                            }),
+                          ],
+                        );
+                      }),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
