@@ -223,6 +223,7 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
         Text(label, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.blueGrey)),
         const SizedBox(height: 8),
         ToggleButtons(
+          direction: Axis.vertical,
           isSelected: [current == Direction.horizontal, current == Direction.vertical],
           onPressed: (idx) => onChanged(idx == 0 ? Direction.horizontal : Direction.vertical),
           constraints: const BoxConstraints(minHeight: 32, minWidth: 38),

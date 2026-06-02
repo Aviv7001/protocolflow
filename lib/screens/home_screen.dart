@@ -169,8 +169,18 @@ class _HomeScreenState extends State<HomeScreen> {
             floating: false,
             pinned: true,
             flexibleSpace: FlexibleSpaceBar(
-              title: const Text('ProtocolFlow', style: TextStyle(color: Colors.white)),
-              background: Container(color: Theme.of(context).primaryColor),
+              centerTitle: true,
+              expandedTitleScale: 1.0,
+              background: Container(
+                color: Theme.of(context).primaryColor,
+                padding: const EdgeInsets.only(top: 12.0, bottom: 0.0, left: 48.0, right: 48.0),
+                child: Image.asset(
+                  'assets/App_icons/PF_logo_flat_2.png',
+                  fit: BoxFit.contain,
+                  filterQuality: FilterQuality.high,
+                  isAntiAlias: true,
+                ),
+              ),
             ),
             actions: [
               IconButton(

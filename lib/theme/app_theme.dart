@@ -5,8 +5,8 @@ class ProtocolFlowTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: ColorScheme.fromSeed(
-        seedColor: const Color(0xFF0072B5), // Bio-Blue
-        primary: const Color(0xFF0072B5),
+        seedColor: const Color(0xFF003E68), // Bio-Blue
+        primary: const Color(0xFF003E68),
         secondary: const Color(0xFF2ECC71), // Flow-Green
         surface: const Color(0xFFF8FAFC), // Light Cool Grey
       ),
