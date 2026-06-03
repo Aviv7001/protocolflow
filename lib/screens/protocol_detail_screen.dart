@@ -65,11 +65,16 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
     );
   }
 
-  void _editProtocol(BuildContext context) async {
+    void _editProtocol(BuildContext context, {String? targetPhase, bool isAddingPhase = false}) async {
     final updatedProtocol = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => CreateProtocolScreen(initialProtocol: protocol),
+        builder: (context) => CreateProtocolScreen(
+          initialProtocol: protocol,
+          lockedStepIds: activeState?.completedStepIds.toList(),
+          targetPhase: targetPhase,
+          isAddingPhase: isAddingPhase,
+        ),
       ),
     );
 
@@ -200,11 +205,12 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
       appBar: AppBar(
         title: const Text('Protocol Detail'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.edit_outlined),
-            onPressed: () => _editProtocol(context),
-            tooltip: 'Edit',
-          ),
+          if (activeState == null)
+            IconButton(
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: () => _editProtocol(context),
+              tooltip: 'Edit',
+            ),
           IconButton(
             icon: const Icon(Icons.share),
             onPressed: () => _exportProtocol(context),
@@ -301,12 +307,6 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text('Steps', style: Theme.of(context).textTheme.titleLarge),
-                if (activeState != null)
-                  ElevatedButton.icon(
-                    onPressed: () => _editProtocol(context),
-                    icon: const Icon(Icons.add_circle_outline, size: 18),
-                    label: const Text('Add Phase', style: TextStyle(fontSize: 12)),
-                  ),
               ],
             ),
             const SizedBox(height: 8),
@@ -390,25 +390,35 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
                   ],
                 ),
                 if (!isPhaseDone && !protocol.isTemplate)
-                  TextButton.icon(
-                  onPressed: () {
-                    if (activeState != null) {
-                      activeProtocol = activeState;
-                    }
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => RunProtocolScreen(
-                          protocol: protocol,
-                          initialStepIndex: startIdx,
-                          finalStepIndex: endIdx,
+                  Row(
+                    children: [
+                      if (activeState != null)
+                        IconButton(
+                          icon: const Icon(Icons.edit, size: 20, color: Colors.blue),
+                          onPressed: () => _editProtocol(context, targetPhase: phase),
+                          tooltip: 'Edit Phase',
                         ),
+                      TextButton.icon(
+                        onPressed: () {
+                          if (activeState != null) {
+                            activeProtocol = activeState;
+                          }
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => RunProtocolScreen(
+                                protocol: protocol,
+                                initialStepIndex: startIdx,
+                                finalStepIndex: endIdx,
+                              ),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.play_circle_outline, size: 20),
+                        label: Text(isPhaseDone ? 'Run Again' : 'Run $phase', style: const TextStyle(fontSize: 12)),
                       ),
-                    );
-                  },
-                  icon: const Icon(Icons.play_circle_outline, size: 20),
-                  label: Text(isPhaseDone ? 'Run Again' : 'Run $phase', style: const TextStyle(fontSize: 12)),
-                ),
+                    ],
+                  ),
               ],
             ),
           ),
@@ -418,6 +428,24 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
           widgets.add(_buildStepCard(context, step, currentGlobalIdx));
           currentGlobalIdx++;
         }
+      }
+      if (activeState != null) {
+        widgets.add(
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16.0),
+            child: Center(
+              child: ElevatedButton.icon(
+                onPressed: () => _editProtocol(context, isAddingPhase: true),
+                icon: const Icon(Icons.add_circle_outline),
+                label: const Text('Add New Phase'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue.shade50,
+                  foregroundColor: Colors.blue,
+                ),
+              ),
+            ),
+          ),
+        );
       }
       return widgets;
     } else {
@@ -436,32 +464,53 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
         final startIdx = currentGlobalIdx;
         final endIdx = currentGlobalIdx + daySteps.length - 1;
 
+        final bool isDayDone = activeState != null && 
+            daySteps.every((s) => activeState!.completedStepIds.contains(s.id));
+
         widgets.add(Padding(
           padding: const EdgeInsets.symmetric(vertical: 8.0),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Day $day', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.blue)),
+                Row(
+                  children: [
+                    Text('Day $day', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.blue)),
+                    if (isDayDone) ...[
+                      const SizedBox(width: 8),
+                      const Icon(Icons.check_circle, color: Colors.green, size: 18),
+                    ],
+                  ],
+                ),
                 if (!protocol.isTemplate)
-                  TextButton.icon(
-                    onPressed: () {
-                  if (activeState != null) {
-                    activeProtocol = activeState;
-                  }
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => RunProtocolScreen(
-                        protocol: protocol,
-                        initialStepIndex: startIdx,
-                        finalStepIndex: endIdx,
+                  Row(
+                    children: [
+                      if (activeState != null && !isDayDone)
+                        IconButton(
+                          icon: const Icon(Icons.edit, size: 20, color: Colors.blue),
+                          onPressed: () => _editProtocol(context),
+                          tooltip: 'Edit Protocol',
+                        ),
+                      TextButton.icon(
+                        onPressed: () {
+                          if (activeState != null) {
+                            activeProtocol = activeState;
+                          }
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => RunProtocolScreen(
+                                protocol: protocol,
+                                initialStepIndex: startIdx,
+                                finalStepIndex: endIdx,
+                              ),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.play_circle_outline, size: 20),
+                        label: Text('Run Day $day', style: const TextStyle(fontSize: 12)),
                       ),
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.play_circle_outline, size: 20),
-                label: Text('Run Day $day', style: const TextStyle(fontSize: 12)),
-              ),
+                    ],
+                  ),
             ],
           ),
         ));
@@ -470,6 +519,24 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
           widgets.add(_buildStepCard(context, step, currentGlobalIdx));
           currentGlobalIdx++;
         }
+      }
+      if (activeState != null) {
+        widgets.add(
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16.0),
+            child: Center(
+              child: ElevatedButton.icon(
+                onPressed: () => _editProtocol(context, isAddingPhase: true),
+                icon: const Icon(Icons.add_circle_outline),
+                label: const Text('Add New Phase'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue.shade50,
+                  foregroundColor: Colors.blue,
+                ),
+              ),
+            ),
+          ),
+        );
       }
       return widgets;
     }

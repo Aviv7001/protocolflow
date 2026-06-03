@@ -14,7 +14,17 @@ import 'table_selection_screen.dart';
 
 class CreateProtocolScreen extends StatefulWidget {
   final Protocol? initialProtocol;
-  const CreateProtocolScreen({super.key, this.initialProtocol});
+  final List<String>? lockedStepIds;
+  final String? targetPhase;
+  final bool isAddingPhase;
+
+  const CreateProtocolScreen({
+    super.key, 
+    this.initialProtocol, 
+    this.lockedStepIds,
+    this.targetPhase,
+    this.isAddingPhase = false,
+  });
 
   @override
   State<CreateProtocolScreen> createState() => _CreateProtocolScreenState();
@@ -32,10 +42,13 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
   final List<ProtocolStep> _steps = [];
   final List<ProtocolTable> _tables = [];
   bool _usePhases = false;
+  late final bool _isInProgress;
 
   @override
   void initState() {
     super.initState();
+    _isInProgress = widget.lockedStepIds != null && widget.lockedStepIds!.isNotEmpty;
+    
     if (widget.initialProtocol != null) {
       final p = widget.initialProtocol!;
       _titleController.text = p.title;
@@ -46,6 +59,12 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
       _steps.addAll(p.steps);
       _tables.addAll(p.tables);
       _usePhases = p.steps.any((s) => s.phaseName != null && s.phaseName!.isNotEmpty);
+    }
+
+    if (widget.isAddingPhase) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _addNewPhase();
+      });
     }
   }
 
@@ -453,7 +472,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
                       const Text('Set Phases', style: TextStyle(fontSize: 12, color: Colors.grey)),
                       Switch(
                         value: _usePhases,
-                        onChanged: (val) {
+                        onChanged: _isInProgress ? null : (val) {
                           setState(() {
                             _usePhases = val;
                             if (_usePhases && _steps.isNotEmpty) {
@@ -550,7 +569,13 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
           controller: controller,
           maxLines: maxLines,
           validator: validator,
-          decoration: const InputDecoration(border: InputBorder.none, hintText: 'Enter text...'),
+          readOnly: _isInProgress,
+          decoration: InputDecoration(
+            border: InputBorder.none, 
+            hintText: 'Enter text...',
+            fillColor: _isInProgress ? Colors.grey.shade100 : null,
+            filled: _isInProgress,
+          ),
         ),
         const SizedBox(height: 16),
       ],
@@ -617,16 +642,22 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
       // If next step is different phase or this is last step
       bool isLastInPhase = i == _steps.length - 1 || _steps[i+1].phaseName != currentPhase;
       if (isLastInPhase) {
-        items.add(
-          Padding(
-            padding: const EdgeInsets.only(left: 16.0, bottom: 16.0),
-            child: TextButton.icon(
-              onPressed: () => _addNewStep(phaseName: currentPhase),
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text('Add Step to Phase'),
+        final phaseSteps = _steps.where((s) => s.phaseName == currentPhase);
+        final bool isPhaseLocked = phaseSteps.isNotEmpty && 
+                                   phaseSteps.every((s) => widget.lockedStepIds?.contains(s.id) ?? false);
+        
+        if (!isPhaseLocked) {
+          items.add(
+            Padding(
+              padding: const EdgeInsets.only(left: 16.0, bottom: 16.0),
+              child: TextButton.icon(
+                onPressed: () => _addNewStep(phaseName: currentPhase),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Add Step to Phase'),
+              ),
             ),
-          ),
-        );
+          );
+        }
       }
     }
 
@@ -646,21 +677,27 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
 
   Widget _buildPhaseHeader(String? phaseName, int firstStepIdx) {
     String displayName = phaseName ?? 'Unnamed Phase';
+    // Determine if this phase is locked (all its steps are locked)
+    final phaseSteps = _steps.where((s) => s.phaseName == phaseName);
+    final bool isPhaseLocked = phaseSteps.isNotEmpty && 
+                               phaseSteps.every((s) => widget.lockedStepIds?.contains(s.id) ?? false);
+
     return Container(
       margin: const EdgeInsets.only(top: 16, bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.blue.withValues(alpha: 0.1),
+        color: isPhaseLocked ? Colors.grey.withValues(alpha: 0.1) : Colors.blue.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+        border: Border.all(color: isPhaseLocked ? Colors.grey.withValues(alpha: 0.3) : Colors.blue.withValues(alpha: 0.3)),
       ),
       child: Row(
         children: [
-          const Icon(Icons.layers, size: 18, color: Colors.blue),
+          Icon(Icons.layers, size: 18, color: isPhaseLocked ? Colors.grey : Colors.blue),
           const SizedBox(width: 8),
           Expanded(
             child: _PhaseNameField(
               initialValue: displayName,
+              readOnly: isPhaseLocked,
               onChanged: (v) {
                 // Update all steps in this phase
                 setState(() {
@@ -747,8 +784,11 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
   static const double _uniformFontSize = 14.0;
 
   Widget _buildStepEditor(int index, ProtocolStep step) {
+    final bool isLocked = widget.lockedStepIds?.contains(step.id) ?? false;
+
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8),
+      color: isLocked ? Colors.grey.shade50 : null,
       child: Padding(
         padding: const EdgeInsets.all(12.0),
         child: Column(
@@ -756,43 +796,62 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
           children: [
             Row(
               children: [
-                CircleAvatar(radius: 12, child: Text('${index + 1}', style: const TextStyle(fontSize: 12))),
+                CircleAvatar(
+                  radius: 12, 
+                  backgroundColor: isLocked ? Colors.grey : null,
+                  child: Text('${index + 1}', style: const TextStyle(fontSize: 12)),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: TextFormField(
                     initialValue: step.title,
+                    readOnly: isLocked,
                     decoration: const InputDecoration(hintText: 'Step Title', border: InputBorder.none),
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: _uniformFontSize),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold, 
+                      fontSize: _uniformFontSize,
+                      color: isLocked ? Colors.grey : null,
+                    ),
                     onChanged: (v) => _steps[index] = _steps[index].copyWith(title: v),
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.delete, color: Colors.red, size: 20),
-                  onPressed: () => setState(() => _steps.removeAt(index)),
-                ),
+                if (!isLocked)
+                  IconButton(
+                    icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+                    onPressed: () => setState(() => _steps.removeAt(index)),
+                  ),
               ],
             ),
             TextFormField(
               initialValue: step.instructions,
+              readOnly: isLocked,
               decoration: const InputDecoration(hintText: 'Instructions...', border: InputBorder.none),
               maxLines: null,
-              style: const TextStyle(fontSize: _uniformFontSize),
+              style: TextStyle(
+                fontSize: _uniformFontSize,
+                color: isLocked ? Colors.grey : null,
+              ),
               onChanged: (v) => _steps[index] = _steps[index].copyWith(instructions: v),
             ),
             const Divider(),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('Actions', style: TextStyle(fontWeight: FontWeight.bold, fontSize: _uniformFontSize)),
-                IconButton(
-                  icon: const Icon(Icons.add, size: 18, color: Colors.green),
-                  onPressed: () {
-                    setState(() {
-                      final newActions = List<String>.from(step.actionItems)..add('');
-                      _steps[index] = step.copyWith(actionItems: newActions);
-                    });
-                  },
-                ),
+                Text('Actions', style: TextStyle(
+                  fontWeight: FontWeight.bold, 
+                  fontSize: _uniformFontSize,
+                  color: isLocked ? Colors.grey : null,
+                )),
+                if (!isLocked)
+                  IconButton(
+                    icon: const Icon(Icons.add, size: 18, color: Colors.green),
+                    onPressed: () {
+                      setState(() {
+                        final newActions = List<String>.from(step.actionItems)..add('');
+                        _steps[index] = step.copyWith(actionItems: newActions);
+                      });
+                    },
+                  ),
               ],
             ),
             ...step.actionItems.asMap().entries.map((aEntry) {
@@ -808,8 +867,12 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
                       flex: 4,
                       child: TextFormField(
                         initialValue: step.actionItems[aIdx],
+                        readOnly: isLocked,
                         decoration: const InputDecoration(hintText: 'Action', isDense: true, border: InputBorder.none),
-                        style: const TextStyle(fontSize: _uniformFontSize),
+                        style: TextStyle(
+                          fontSize: _uniformFontSize,
+                          color: isLocked ? Colors.grey : null,
+                        ),
                         onChanged: (v) {
                           final newActions = List<String>.from(_steps[index].actionItems);
                           newActions[aIdx] = v;
@@ -817,37 +880,45 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
                         },
                       ),
                     ),
-                    _ActionTimerInput(
-                      totalSeconds: timer,
-                      onChanged: (newTotal) => _updateActionTimer(index, aIdx, newTotal),
+                    IgnorePointer(
+                      ignoring: isLocked,
+                      child: _ActionTimerInput(
+                        totalSeconds: timer,
+                        onChanged: (newTotal) => _updateActionTimer(index, aIdx, newTotal),
+                      ),
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.remove_circle_outline, size: 18, color: Colors.red),
-                      onPressed: () {
-                    setState(() {
-                      final newActions = List<String>.from(_steps[index].actionItems)..removeAt(aIdx);
-                      final newTimers = Map<int, int>.from(_steps[index].actionTimers)..remove(aIdx);
-                      // Re-index timers
-                      final Map<int, int> fixedTimers = {};
-                      newTimers.forEach((k, v) {
-                        if (k < aIdx) {
-                          fixedTimers[k] = v;
-                        }
-                        if (k > aIdx) {
-                          fixedTimers[k - 1] = v;
-                        }
+                    if (!isLocked)
+                      IconButton(
+                        icon: const Icon(Icons.remove_circle_outline, size: 18, color: Colors.red),
+                        onPressed: () {
+                      setState(() {
+                        final newActions = List<String>.from(_steps[index].actionItems)..removeAt(aIdx);
+                        final newTimers = Map<int, int>.from(_steps[index].actionTimers)..remove(aIdx);
+                        // Re-index timers
+                        final Map<int, int> fixedTimers = {};
+                        newTimers.forEach((k, v) {
+                          if (k < aIdx) {
+                            fixedTimers[k] = v;
+                          }
+                          if (k > aIdx) {
+                            fixedTimers[k - 1] = v;
+                          }
+                        });
+                        _steps[index] = _steps[index].copyWith(actionItems: newActions, actionTimers: fixedTimers);
                       });
-                      _steps[index] = _steps[index].copyWith(actionItems: newActions, actionTimers: fixedTimers);
-                    });
-                  },
-                    ),
+                    },
+                      ),
                   ],
                 ),
               );
             }),
             if (_tables.isNotEmpty) ...[
               const SizedBox(height: 8),
-              const Text('Linked Tables', style: TextStyle(fontWeight: FontWeight.bold, fontSize: _uniformFontSize)),
+              Text('Linked Tables', style: TextStyle(
+                fontWeight: FontWeight.bold, 
+                fontSize: _uniformFontSize,
+                color: isLocked ? Colors.grey : null,
+              )),
               Wrap(
                 spacing: 4,
                 children: _tables.map((t) {
@@ -855,7 +926,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
                   return FilterChip(
                     label: Text(t.title.isEmpty ? 'Untitled Table' : t.title, style: const TextStyle(fontSize: _uniformFontSize - 2)),
                     selected: isSelected,
-                    onSelected: (val) {
+                    onSelected: isLocked ? null : (val) {
                       setState(() {
                         final newTableIds = List<String>.from(step.tableIds);
                         if (val) {
@@ -985,9 +1056,10 @@ class _ActionTimerInputState extends State<_ActionTimerInput> {
 
 class _PhaseNameField extends StatefulWidget {
   final String initialValue;
+  final bool readOnly;
   final Function(String) onChanged;
 
-  const _PhaseNameField({required this.initialValue, required this.onChanged});
+  const _PhaseNameField({required this.initialValue, this.readOnly = false, required this.onChanged});
 
   @override
   State<_PhaseNameField> createState() => _PhaseNameFieldState();
@@ -1034,8 +1106,9 @@ class _PhaseNameFieldState extends State<_PhaseNameField> {
     return TextField(
       controller: _controller,
       focusNode: _focusNode,
+      readOnly: widget.readOnly,
       decoration: const InputDecoration(hintText: 'Phase Name (e.g. Day 1)', border: InputBorder.none, isDense: true),
-      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue),
+      style: TextStyle(fontWeight: FontWeight.bold, color: widget.readOnly ? Colors.grey : Colors.blue),
       onSubmitted: (v) {
         if (v != widget.initialValue) {
           widget.onChanged(v);
