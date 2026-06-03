@@ -1,4 +1,13 @@
-enum TableType { generic, plateLayout, reagentMatrix, masterMix, checklist, reagentMix, staining }
+enum TableType {
+  generic,
+  plateLayout,
+  reagentMatrix,
+  masterMix,
+  checklist,
+  reagentMix,
+  staining,
+  serialDilution,
+}
 
 class ProtocolTable {
   final String id;

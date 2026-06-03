@@ -246,8 +246,20 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
+    return PopScope(
+      canPop: _canActuallyPop,
+      onPopInvokedWithResult: (bool didPop, dynamic result) async {
+        if (didPop) return;
+        final shouldPop = await _showExitConfirmationDialog();
+        if (shouldPop ?? false) {
+          if (context.mounted) {
+            setState(() => _canActuallyPop = true);
+            Navigator.pop(context);
+          }
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
         title: Text(_type == TableType.generic ? 'Generic Table Editor' : 'Edit Table'),
         actions: [
           TextButton(
@@ -290,6 +302,7 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
               label: const Text('Manage Samples'),
             )
           : null,
+    ),
     );
   }
 
@@ -438,6 +451,32 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
     );
   }
 
+  bool _canActuallyPop = false;
+
+  Future<bool?> _showExitConfirmationDialog() {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Discard Changes?'),
+        content: const Text('You have unsaved changes in this table. Are you sure you want to exit?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Keep Editing'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Discard'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _handleDone(BuildContext context) async {
     final String suggestedName = _type == TableType.generic ? 'Generic Table' : _title;
     final String? name = await _showSaveDialog(context, suggestedName);
@@ -448,6 +487,7 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
       _saveCurrentTable();
       widget.onSave(_allTables);
       if (context.mounted) {
+        setState(() => _canActuallyPop = true);
         Navigator.pop(context, _allTables);
       }
     }

@@ -239,6 +239,32 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
   }
 
 
+  bool _canActuallyPop = false;
+
+  Future<bool?> _showExitConfirmationDialog() {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Discard Changes?'),
+        content: const Text('You have unsaved changes. Are you sure you want to exit?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Keep Editing'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Discard'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _saveProtocol({bool isTemplate = false}) async {
     if (_formKey.currentState!.validate()) {
       bool isUpdating = widget.initialProtocol != null && 
@@ -274,6 +300,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
       await _storageService.saveProtocols(existingProtocols);
 
       if (mounted) {
+        setState(() => _canActuallyPop = true);
         Navigator.pop(context, newProtocol);
       }
     }
@@ -281,8 +308,20 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
+    return PopScope(
+      canPop: _canActuallyPop,
+      onPopInvokedWithResult: (bool didPop, dynamic result) async {
+        if (didPop) return;
+        final shouldPop = await _showExitConfirmationDialog();
+        if (shouldPop ?? false) {
+          if (context.mounted) {
+            setState(() => _canActuallyPop = true);
+            Navigator.pop(context);
+          }
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
         title: Text(widget.initialProtocol != null ? 'Edit Protocol' : 'Create Protocol'),
         actions: [
           PopupMenuButton<bool>(
@@ -497,6 +536,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
           ),
         ),
       ),
+    ),
     );
   }
 

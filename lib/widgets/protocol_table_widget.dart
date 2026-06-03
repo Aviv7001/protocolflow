@@ -6,6 +6,8 @@ import '../features/staining_table/models/staining_wizard.dart';
 import '../models/reagent_mix_wizard.dart';
 import '../models/plate_wizard.dart';
 import '../features/master_mix/screens/master_mix_viewer_screen.dart';
+import '../features/serial_dilution/models/serial_dilution_input.dart';
+import '../features/serial_dilution/screens/serial_dilution_viewer_screen.dart';
 import '../features/staining_table/screens/staining_table_viewer_screen.dart';
 import '../features/reagent_mix/screens/reagent_viewer_screen.dart';
 import '../features/plate_wizard/screens/plate_viewer_screen.dart';
@@ -86,7 +88,6 @@ class ProtocolTableWidget extends StatelessWidget {
           ),
         ),
       );
-
     } else if (table.type == TableType.staining) {
       final wizard = wizardState != null
           ? StainingWizard.fromJson(jsonDecode(wizardState))
@@ -114,6 +115,24 @@ class ProtocolTableWidget extends StatelessWidget {
         MaterialPageRoute(
           builder: (context) => ReagentViewerScreen(
             wizard: wizard,
+            isReadOnly: isReadOnly,
+            onUpdate: (updated) {
+              if (onSave != null) {
+                onSave!(updated.copyWith(id: table.id));
+              }
+            },
+          ),
+        ),
+      );
+    } else if (table.type == TableType.serialDilution) {
+      final input = wizardState != null
+          ? SerialDilutionInput.fromJson(jsonDecode(wizardState))
+          : SerialDilutionInput();
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => SerialDilutionViewerScreen(
+            input: input,
             isReadOnly: isReadOnly,
             onUpdate: (updated) {
               if (onSave != null) {
@@ -176,6 +195,8 @@ class ProtocolTableWidget extends StatelessWidget {
         return Icons.color_lens;
       case TableType.reagentMix:
         return Icons.science;
+      case TableType.serialDilution:
+        return Icons.water_drop;
       default:
         return Icons.table_chart;
     }

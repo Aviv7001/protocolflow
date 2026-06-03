@@ -5,6 +5,8 @@ import '../features/staining_table/models/staining_wizard.dart';
 import '../models/reagent_mix_wizard.dart';
 import '../models/plate_wizard.dart';
 import '../features/master_mix/screens/master_mix_manager_screen.dart';
+import '../features/serial_dilution/models/serial_dilution_input.dart';
+import '../features/serial_dilution/screens/serial_dilution_manager_screen.dart';
 import '../features/staining_table/screens/staining_table_manager_screen.dart';
 import 'reagent_manager_screen.dart';
 import 'plate_wizard_samples_screen.dart';
@@ -16,10 +18,7 @@ class TableSelectionScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Add New Table'),
-        centerTitle: true,
-      ),
+      appBar: AppBar(title: const Text('Add New Table'), centerTitle: true),
       body: Padding(
         padding: const EdgeInsets.all(20.0),
         child: Column(
@@ -27,7 +26,9 @@ class TableSelectionScreen extends StatelessWidget {
           children: [
             Text(
               'Select Table Type',
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+              style: Theme.of(
+                context,
+              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             Text(
@@ -65,6 +66,14 @@ class TableSelectionScreen extends StatelessWidget {
                     Icons.science,
                     Colors.teal,
                     onTap: () => _openReagentMix(context),
+                  ),
+                  _buildTypeCard(
+                    context,
+                    'Serial Dilution',
+                    'Standard Curve',
+                    Icons.water_drop,
+                    Colors.cyan,
+                    onTap: () => _openSerialDilution(context),
                   ),
                   _buildTypeCard(
                     context,
@@ -114,7 +123,9 @@ class TableSelectionScreen extends StatelessWidget {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(
-          color: isAvailable ? color.withValues(alpha: 0.2) : Colors.grey.shade300,
+          color: isAvailable
+              ? color.withValues(alpha: 0.2)
+              : Colors.grey.shade300,
           width: 1,
         ),
       ),
@@ -129,7 +140,9 @@ class TableSelectionScreen extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: isAvailable ? color.withValues(alpha: 0.1) : Colors.grey.shade200,
+                  color: isAvailable
+                      ? color.withValues(alpha: 0.1)
+                      : Colors.grey.shade200,
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
@@ -154,20 +167,29 @@ class TableSelectionScreen extends StatelessWidget {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 11,
-                  color: isAvailable ? Colors.grey.shade600 : Colors.grey.shade400,
+                  color: isAvailable
+                      ? Colors.grey.shade600
+                      : Colors.grey.shade400,
                 ),
               ),
               if (!isAvailable) ...[
                 const SizedBox(height: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.grey.shade200,
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Text(
                     'COMING SOON',
-                    style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Colors.grey),
+                    style: TextStyle(
+                      fontSize: 8,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey,
+                    ),
                   ),
                 ),
               ],
@@ -223,6 +245,21 @@ class TableSelectionScreen extends StatelessWidget {
     }
   }
 
+  void _openSerialDilution(BuildContext context) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SerialDilutionManagerScreen(
+          input: SerialDilutionInput(),
+          onUpdate: (updated) {},
+        ),
+      ),
+    );
+    if (result != null && result is SerialDilutionInput) {
+      if (context.mounted) Navigator.pop(context, result.generateTable());
+    }
+  }
+
   void _openGenericTable(BuildContext context) async {
     final newTable = ProtocolTable(
       id: 'table_${DateTime.now().millisecondsSinceEpoch}',
@@ -237,10 +274,8 @@ class TableSelectionScreen extends StatelessWidget {
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => TableDataEditorScreen(
-          tables: [newTable],
-          onSave: (updated) {},
-        ),
+        builder: (context) =>
+            TableDataEditorScreen(tables: [newTable], onSave: (updated) {}),
       ),
     );
 
