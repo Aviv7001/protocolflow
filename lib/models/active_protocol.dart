@@ -26,7 +26,9 @@ class ActiveProtocol {
       'currentStepIndex': currentStepIndex,
       'notes': notes.map((n) => n.toJson()).toList(),
       'startedAt': startedAt.toIso8601String(),
-      'timerStartTimes': timerStartTimes.map((k, v) => MapEntry(k, v.toIso8601String())),
+      'timerStartTimes': timerStartTimes.map(
+        (k, v) => MapEntry(k, v.toIso8601String()),
+      ),
       'pausedSeconds': pausedSeconds,
       'completedStepIds': completedStepIds.toList(),
     };
@@ -35,11 +37,13 @@ class ActiveProtocol {
   factory ActiveProtocol.fromJson(Map<String, dynamic> json) {
     return ActiveProtocol(
       protocol: Protocol.fromJson(json['protocol']),
-      currentStepIndex: json['currentStepIndex'],
-      notes: (json['notes'] as List)
+      currentStepIndex: json['currentStepIndex'] ?? -1,
+      notes: (json['notes'] as List? ?? [])
           .map((n) => StepNote.fromJson(n))
           .toList(),
-      startedAt: DateTime.parse(json['startedAt']),
+      startedAt: DateTime.parse(
+        json['startedAt'] ?? DateTime.now().toIso8601String(),
+      ),
       timerStartTimes: (json['timerStartTimes'] as Map? ?? {}).map(
         (k, v) => MapEntry(k as String, DateTime.parse(v as String)),
       ),
@@ -60,13 +64,17 @@ class ActiveProtocol {
     Set<String>? completedStepIds,
   }) {
     return ActiveProtocol(
-      protocol: protocol ?? this.protocol,
+      protocol: (protocol ?? this.protocol).deepCopy(),
       currentStepIndex: currentStepIndex ?? this.currentStepIndex,
-      notes: notes ?? this.notes,
+      notes: (notes ?? this.notes).map((n) => n.deepCopy()).toList(),
       startedAt: startedAt ?? this.startedAt,
-      timerStartTimes: timerStartTimes ?? this.timerStartTimes,
-      pausedSeconds: pausedSeconds ?? this.pausedSeconds,
-      completedStepIds: completedStepIds ?? this.completedStepIds,
+      timerStartTimes: Map<String, DateTime>.from(
+        timerStartTimes ?? this.timerStartTimes,
+      ),
+      pausedSeconds: Map<String, int>.from(pausedSeconds ?? this.pausedSeconds),
+      completedStepIds: Set<String>.from(
+        completedStepIds ?? this.completedStepIds,
+      ),
     );
   }
 }

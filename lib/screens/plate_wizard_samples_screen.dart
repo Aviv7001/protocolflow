@@ -2,21 +2,28 @@ import 'package:flutter/material.dart';
 import '../models/plate_wizard.dart';
 import '../features/plate_wizard/models/plate_wizard_models.dart';
 import '../features/plate_wizard/widgets/plate_result_preview.dart';
+import '../widgets/unsaved_changes_pop_scope.dart';
 
 class PlateWizardSamplesScreen extends StatefulWidget {
   final PlateLayoutWizard wizard;
   final Function(PlateLayoutWizard) onUpdate;
 
-  const PlateWizardSamplesScreen({super.key, required this.wizard, required this.onUpdate});
+  const PlateWizardSamplesScreen({
+    super.key,
+    required this.wizard,
+    required this.onUpdate,
+  });
 
   @override
-  State<PlateWizardSamplesScreen> createState() => _PlateWizardSamplesScreenState();
+  State<PlateWizardSamplesScreen> createState() =>
+      _PlateWizardSamplesScreenState();
 }
 
 class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
   late PlateLayoutWizard _wizard;
   final Map<int, ScrollController> _scrollControllers = {};
   static const double _uniformFontSize = 14.0;
+  bool _canActuallyPop = false;
 
   @override
   void initState() {
@@ -38,10 +45,12 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
         items: [
           ..._wizard.items,
           TestItem(
-            sampleName: isStandardCurve ? 'Standard Curve ${_wizard.items.where((i) => i.isStandardCurve).length + 1}' : 'Sample ${_wizard.items.where((i) => !i.isStandardCurve).length + 1}',
+            sampleName: isStandardCurve
+                ? 'Standard Curve ${_wizard.items.where((i) => i.isStandardCurve).length + 1}'
+                : 'Sample ${_wizard.items.where((i) => !i.isStandardCurve).length + 1}',
             isStandardCurve: isStandardCurve,
             applyToAllPlates: isStandardCurve,
-          )
+          ),
         ],
       );
     });
@@ -53,7 +62,8 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
       final newItem = itemToClone.copyWith(
         sampleName: '${itemToClone.sampleName} (Copy)',
       );
-      final newItems = List<TestItem>.from(_wizard.items)..insert(index + 1, newItem);
+      final newItems = List<TestItem>.from(_wizard.items)
+        ..insert(index + 1, newItem);
       _wizard = _wizard.copyWith(items: newItems);
     });
   }
@@ -75,49 +85,32 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Sample Manager'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.save),
-            onPressed: () => _handleDone(context),
-          ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildPlateSettings(),
-            const SizedBox(height: 24),
-            Text('Test Items', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 12),
-            Center(
-              child: Wrap(
-                spacing: 8,
-                children: [
-                  ElevatedButton.icon(
-                    onPressed: () => _addTestItem(isStandardCurve: true),
-                    icon: const Icon(Icons.show_chart, color: Colors.amber),
-                    label: const Text('Add Std Curve', style: TextStyle(fontSize: _uniformFontSize)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.amber.shade50,
-                      foregroundColor: Colors.amber.shade900,
-                    ),
-                  ),
-                  ElevatedButton.icon(
-                    onPressed: () => _addTestItem(isStandardCurve: false),
-                    icon: const Icon(Icons.add),
-                    label: const Text('Add Sample', style: TextStyle(fontSize: _uniformFontSize)),
-                  ),
-                ],
-              ),
+    return UnsavedChangesPopScope(
+      canPop: _canActuallyPop,
+      message:
+          'You have unsaved changes in this table. Are you sure you want to exit?',
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Sample Manager'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.save),
+              onPressed: () => _handleDone(context),
             ),
-            const SizedBox(height: 16),
-            ..._wizard.items.asMap().entries.map((entry) => _buildTestItemEditor(entry.key, entry.value)),
-            if (_wizard.items.isNotEmpty)
+          ],
+        ),
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildPlateSettings(),
+              const SizedBox(height: 24),
+              Text('Test Items', style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 16),
+              ..._wizard.items.asMap().entries.map(
+                (entry) => _buildTestItemEditor(entry.key, entry.value),
+              ),
               Padding(
                 padding: const EdgeInsets.only(top: 8.0),
                 child: Center(
@@ -127,7 +120,10 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
                       ElevatedButton.icon(
                         onPressed: () => _addTestItem(isStandardCurve: true),
                         icon: const Icon(Icons.show_chart, color: Colors.amber),
-                        label: const Text('Add Std Curve', style: TextStyle(fontSize: _uniformFontSize)),
+                        label: const Text(
+                          'Add Std Curve',
+                          style: TextStyle(fontSize: _uniformFontSize),
+                        ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.amber.shade50,
                           foregroundColor: Colors.amber.shade900,
@@ -136,18 +132,22 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
                       ElevatedButton.icon(
                         onPressed: () => _addTestItem(isStandardCurve: false),
                         icon: const Icon(Icons.add),
-                        label: const Text('Add Sample', style: TextStyle(fontSize: _uniformFontSize)),
+                        label: const Text(
+                          'Add Sample',
+                          style: TextStyle(fontSize: _uniformFontSize),
+                        ),
                       ),
                     ],
                   ),
                 ),
               ),
-            const SizedBox(height: 32),
-            _buildLayoutControls(),
-            const SizedBox(height: 16),
-            PlateResultPreview(wizard: _wizard),
-            const SizedBox(height: 80),
-          ],
+              const SizedBox(height: 32),
+              _buildLayoutControls(),
+              const SizedBox(height: 16),
+              PlateResultPreview(wizard: _wizard),
+              const SizedBox(height: 80),
+            ],
+          ),
         ),
       ),
     );
@@ -161,12 +161,16 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
       });
       widget.onUpdate(_wizard);
       if (context.mounted) {
+        setState(() => _canActuallyPop = true);
         Navigator.pop(context, _wizard);
       }
     }
   }
 
-  Future<String?> _showSaveDialog(BuildContext context, String suggestedName) async {
+  Future<String?> _showSaveDialog(
+    BuildContext context,
+    String suggestedName,
+  ) async {
     String currentName = suggestedName;
     return showDialog<String>(
       context: context,
@@ -174,15 +178,24 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
         title: const Text('Save Table'),
         content: TextField(
           autofocus: true,
-          decoration: const InputDecoration(labelText: 'Table Name', hintText: 'Enter table name...'),
+          decoration: const InputDecoration(
+            labelText: 'Table Name',
+            hintText: 'Enter table name...',
+          ),
           controller: TextEditingController(text: suggestedName),
           onChanged: (v) => currentName = v,
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('CANCEL'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(context, currentName),
-            child: const Text('SAVE', style: TextStyle(fontWeight: FontWeight.bold)),
+            child: const Text(
+              'SAVE',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
@@ -194,20 +207,61 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
       color: Colors.blue.shade50,
       elevation: 0,
       margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.blue.shade100)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.blue.shade100),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Layout Directions', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.blue.shade900, fontWeight: FontWeight.bold)),
+            Text(
+              'Layout Directions',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: Colors.blue.shade900,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
             const SizedBox(height: 16),
             Row(
               children: [
-                Expanded(child: _buildDirectionToggle('Samples', _wizard.sampleDirection, (v) => setState(() => _wizard = _wizard.copyWith(sampleDirection: v)))),
-                Expanded(child: _buildDirectionToggle('Conditions', _wizard.conditionDirection, (v) => setState(() => _wizard = _wizard.copyWith(conditionDirection: v)))),
-                Expanded(child: _buildDirectionToggle('Dilutions', _wizard.dilutionDirection, (v) => setState(() => _wizard = _wizard.copyWith(dilutionDirection: v)))),
-                Expanded(child: _buildDirectionToggle('Duplicates', _wizard.duplicateDirection, (v) => setState(() => _wizard = _wizard.copyWith(duplicateDirection: v)))),
+                Expanded(
+                  child: _buildDirectionToggle(
+                    'Samples',
+                    _wizard.sampleDirection,
+                    (v) => setState(
+                      () => _wizard = _wizard.copyWith(sampleDirection: v),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: _buildDirectionToggle(
+                    'Conditions',
+                    _wizard.conditionDirection,
+                    (v) => setState(
+                      () => _wizard = _wizard.copyWith(conditionDirection: v),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: _buildDirectionToggle(
+                    'Dilutions',
+                    _wizard.dilutionDirection,
+                    (v) => setState(
+                      () => _wizard = _wizard.copyWith(dilutionDirection: v),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: _buildDirectionToggle(
+                    'Replicates',
+                    _wizard.duplicateDirection,
+                    (v) => setState(
+                      () => _wizard = _wizard.copyWith(duplicateDirection: v),
+                    ),
+                  ),
+                ),
               ],
             ),
           ],
@@ -216,16 +270,31 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
     );
   }
 
-  Widget _buildDirectionToggle(String label, Direction current, Function(Direction) onChanged) {
+  Widget _buildDirectionToggle(
+    String label,
+    Direction current,
+    Function(Direction) onChanged,
+  ) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(label, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.blueGrey)),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
+            color: Colors.blueGrey,
+          ),
+        ),
         const SizedBox(height: 8),
         ToggleButtons(
           direction: Axis.vertical,
-          isSelected: [current == Direction.horizontal, current == Direction.vertical],
-          onPressed: (idx) => onChanged(idx == 0 ? Direction.horizontal : Direction.vertical),
+          isSelected: [
+            current == Direction.horizontal,
+            current == Direction.vertical,
+          ],
+          onPressed: (idx) =>
+              onChanged(idx == 0 ? Direction.horizontal : Direction.vertical),
           constraints: const BoxConstraints(minHeight: 32, minWidth: 38),
           borderRadius: BorderRadius.circular(8),
           selectedColor: Colors.white,
@@ -247,7 +316,10 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Plate Configuration', style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              'Plate Configuration',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
             const SizedBox(height: 16),
             Row(
               children: [
@@ -255,9 +327,16 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
                   child: _DelayedTextField(
                     initialValue: _wizard.rows.toString(),
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Rows', border: OutlineInputBorder()),
+                    decoration: const InputDecoration(
+                      labelText: 'Rows',
+                      border: OutlineInputBorder(),
+                    ),
                     style: const TextStyle(fontSize: _uniformFontSize),
-                    onCommit: (v) => setState(() => _wizard = _wizard.copyWith(rows: int.tryParse(v) ?? 8)),
+                    onCommit: (v) => setState(
+                      () => _wizard = _wizard.copyWith(
+                        rows: int.tryParse(v) ?? 8,
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -265,9 +344,16 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
                   child: _DelayedTextField(
                     initialValue: _wizard.columns.toString(),
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Columns', border: OutlineInputBorder()),
+                    decoration: const InputDecoration(
+                      labelText: 'Columns',
+                      border: OutlineInputBorder(),
+                    ),
                     style: const TextStyle(fontSize: _uniformFontSize),
-                    onCommit: (v) => setState(() => _wizard = _wizard.copyWith(columns: int.tryParse(v) ?? 12)),
+                    onCommit: (v) => setState(
+                      () => _wizard = _wizard.copyWith(
+                        columns: int.tryParse(v) ?? 12,
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -275,9 +361,16 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
                   child: _DelayedTextField(
                     initialValue: _wizard.plateCount.toString(),
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Plate Count', border: OutlineInputBorder()),
+                    decoration: const InputDecoration(
+                      labelText: 'Plate Count',
+                      border: OutlineInputBorder(),
+                    ),
                     style: const TextStyle(fontSize: _uniformFontSize),
-                    onCommit: (v) => setState(() => _wizard = _wizard.copyWith(plateCount: int.tryParse(v) ?? 1)),
+                    onCommit: (v) => setState(
+                      () => _wizard = _wizard.copyWith(
+                        plateCount: int.tryParse(v) ?? 1,
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -292,7 +385,12 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       elevation: item.isStandardCurve ? 4 : 1,
-      shape: item.isStandardCurve ? RoundedRectangleBorder(side: const BorderSide(color: Colors.amber, width: 2), borderRadius: BorderRadius.circular(12)) : null,
+      shape: item.isStandardCurve
+          ? RoundedRectangleBorder(
+              side: const BorderSide(color: Colors.amber, width: 2),
+              borderRadius: BorderRadius.circular(12),
+            )
+          : null,
       child: Padding(
         padding: const EdgeInsets.all(12.0),
         child: Column(
@@ -302,14 +400,27 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('STANDARD CURVE', style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: _uniformFontSize - 4)),
+                  const Text(
+                    'STANDARD CURVE',
+                    style: TextStyle(
+                      color: Colors.amber,
+                      fontWeight: FontWeight.bold,
+                      fontSize: _uniformFontSize - 4,
+                    ),
+                  ),
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Text('Apply to all plates', style: TextStyle(fontSize: _uniformFontSize - 4)),
+                      const Text(
+                        'Apply to all plates',
+                        style: TextStyle(fontSize: _uniformFontSize - 4),
+                      ),
                       Switch(
                         value: item.applyToAllPlates,
-                        onChanged: (v) => _updateTestItem(index, item.copyWith(applyToAllPlates: v)),
+                        onChanged: (v) => _updateTestItem(
+                          index,
+                          item.copyWith(applyToAllPlates: v),
+                        ),
                         activeThumbColor: Colors.amber,
                         activeTrackColor: Colors.amber.withValues(alpha: 0.5),
                       ),
@@ -322,12 +433,20 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
                 Expanded(
                   child: _DelayedTextField(
                     decoration: InputDecoration(
-                      labelText: item.isStandardCurve ? 'Curve Name' : 'Sample Name',
-                      hintText: item.isStandardCurve ? 'e.g., Protein Std' : 'e.g., Control, Sample A',
+                      labelText: item.isStandardCurve
+                          ? 'Curve Name'
+                          : 'Sample Name',
+                      hintText: item.isStandardCurve
+                          ? 'e.g., Protein Std'
+                          : 'e.g., Control, Sample A',
                     ),
                     initialValue: item.sampleName,
-                    style: const TextStyle(fontSize: _uniformFontSize, fontWeight: FontWeight.bold),
-                    onCommit: (v) => _updateTestItem(index, item.copyWith(sampleName: v)),
+                    style: const TextStyle(
+                      fontSize: _uniformFontSize,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    onCommit: (v) =>
+                        _updateTestItem(index, item.copyWith(sampleName: v)),
                   ),
                 ),
                 IconButton(
@@ -345,23 +464,39 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
             _buildListField(
               'Conditions',
               item.conditions,
-              (newList) => _updateTestItem(index, item.copyWith(conditions: newList)),
+              (newList) =>
+                  _updateTestItem(index, item.copyWith(conditions: newList)),
             ),
             const SizedBox(height: 12),
             _buildListField(
               'Dilutions',
               item.dilutions,
-              (newList) => _updateTestItem(index, item.copyWith(dilutions: newList)),
+              (newList) =>
+                  _updateTestItem(index, item.copyWith(dilutions: newList)),
             ),
             const SizedBox(height: 12),
             Row(
               children: [
-                const Text('Duplicates: ', style: TextStyle(fontSize: _uniformFontSize)),
+                const Text(
+                  'Replicates: ',
+                  style: TextStyle(fontSize: _uniformFontSize),
+                ),
                 const SizedBox(width: 8),
                 DropdownButton<int>(
                   value: item.duplicates,
-                  items: [1, 2, 3, 4, 5, 6, 8, 12].map((d) => DropdownMenuItem(value: d, child: Text(d.toString(), style: const TextStyle(fontSize: _uniformFontSize)))).toList(),
-                  onChanged: (v) => _updateTestItem(index, item.copyWith(duplicates: v!)),
+                  items: [1, 2, 3, 4, 5, 6, 8, 12]
+                      .map(
+                        (d) => DropdownMenuItem(
+                          value: d,
+                          child: Text(
+                            d.toString(),
+                            style: const TextStyle(fontSize: _uniformFontSize),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) =>
+                      _updateTestItem(index, item.copyWith(duplicates: v!)),
                 ),
               ],
             ),
@@ -371,11 +506,21 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
     );
   }
 
-  Widget _buildListField(String label, List<String> values, Function(List<String>) onChanged) {
+  Widget _buildListField(
+    String label,
+    List<String> values,
+    Function(List<String>) onChanged,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: _uniformFontSize - 2)),
+        Text(
+          label,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: _uniformFontSize - 2,
+          ),
+        ),
         const SizedBox(height: 4),
         Wrap(
           spacing: 8,
@@ -388,13 +533,16 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
                   decoration: InputDecoration(
                     hintText: 'Enter...',
                     isDense: true,
-                    suffixIcon: values.length > 1 ? IconButton(
-                      icon: const Icon(Icons.close, size: 14),
-                      onPressed: () {
-                        final newList = List<String>.from(values)..removeAt(entry.key);
-                        onChanged(newList);
-                      },
-                    ) : null,
+                    suffixIcon: values.length > 1
+                        ? IconButton(
+                            icon: const Icon(Icons.close, size: 14),
+                            onPressed: () {
+                              final newList = List<String>.from(values)
+                                ..removeAt(entry.key);
+                              onChanged(newList);
+                            },
+                          )
+                        : null,
                   ),
                   initialValue: entry.value,
                   style: const TextStyle(fontSize: _uniformFontSize - 2),
@@ -407,7 +555,11 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
               );
             }),
             IconButton(
-              icon: const Icon(Icons.add_circle_outline, size: 20, color: Colors.green),
+              icon: const Icon(
+                Icons.add_circle_outline,
+                size: 20,
+                color: Colors.green,
+              ),
               onPressed: () {
                 final newList = List<String>.from(values)..add('');
                 onChanged(newList);

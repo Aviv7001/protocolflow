@@ -19,8 +19,8 @@ class CreateProtocolScreen extends StatefulWidget {
   final bool isAddingPhase;
 
   const CreateProtocolScreen({
-    super.key, 
-    this.initialProtocol, 
+    super.key,
+    this.initialProtocol,
     this.lockedStepIds,
     this.targetPhase,
     this.isAddingPhase = false,
@@ -39,26 +39,33 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
 
   final List<MaterialItem> _materials = [];
   final List<String> _samples = [];
+  final List<String> _files = [];
   final List<ProtocolStep> _steps = [];
   final List<ProtocolTable> _tables = [];
   bool _usePhases = false;
   late final bool _isInProgress;
+  ProtocolStep? _stepClipboard;
+  bool _stepClipboardWasCut = false;
 
   @override
   void initState() {
     super.initState();
-    _isInProgress = widget.lockedStepIds != null && widget.lockedStepIds!.isNotEmpty;
-    
+    _isInProgress =
+        widget.lockedStepIds != null && widget.lockedStepIds!.isNotEmpty;
+
     if (widget.initialProtocol != null) {
       final p = widget.initialProtocol!;
       _titleController.text = p.title;
       _objectiveController.text = p.objective;
       _descriptionController.text = p.description;
-      _materials.addAll(p.materials);
+      _materials.addAll(p.materials.map((m) => m.copyWith()));
       _samples.addAll(p.samples);
-      _steps.addAll(p.steps);
-      _tables.addAll(p.tables);
-      _usePhases = p.steps.any((s) => s.phaseName != null && s.phaseName!.isNotEmpty);
+      _files.addAll(p.files);
+      _steps.addAll(p.steps.map((s) => s.deepCopy()));
+      _tables.addAll(p.tables.map((t) => t.deepCopy()));
+      _usePhases = p.steps.any(
+        (s) => s.phaseName != null && s.phaseName!.isNotEmpty,
+      );
     }
 
     if (widget.isAddingPhase) {
@@ -78,15 +85,17 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
 
   void _addNewMaterial() {
     setState(() {
-      _materials.add(MaterialItem(
-        id: 'mat_${DateTime.now().millisecondsSinceEpoch}',
-        name: '',
-        quantity: '',
-        catalogNumber: '',
-        manufacturer: '',
-        location: '',
-        stockConcentration: '',
-      ));
+      _materials.add(
+        MaterialItem(
+          id: 'mat_${DateTime.now().millisecondsSinceEpoch}',
+          name: '',
+          quantity: '',
+          catalogNumber: '',
+          manufacturer: '',
+          location: '',
+          stockConcentration: '',
+        ),
+      );
     });
   }
 
@@ -96,33 +105,90 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
     });
   }
 
-  void _addNewStep({String? phaseName}) {
+  void _addNewStep({String? phaseName, int? insertIndex}) {
     setState(() {
-      int nextDay = 1;
-      String? currentPhase = phaseName;
-      if (_steps.isNotEmpty) {
-        nextDay = _steps.last.day;
-        currentPhase ??= _steps.last.phaseName;
+      final newStep = _createBlankStep(
+        phaseName: phaseName,
+        insertIndex: insertIndex,
+      );
+      if (insertIndex == null || insertIndex >= _steps.length) {
+        _steps.add(newStep);
+      } else {
+        _steps.insert(insertIndex, newStep);
       }
-      _steps.add(ProtocolStep(
-        id: 'step_${DateTime.now().millisecondsSinceEpoch}',
-        title: '',
-        instructions: '',
-        actionItems: [],
-        materials: [],
-        actionTimers: {},
-        day: nextDay,
-        phaseName: currentPhase,
-      ));
+    });
+  }
+
+  ProtocolStep _createBlankStep({String? phaseName, int? insertIndex}) {
+    int nextDay = 1;
+    String? currentPhase = phaseName;
+    if (_steps.isNotEmpty) {
+      final sourceIndex = insertIndex == null
+          ? _steps.length - 1
+          : (insertIndex - 1).clamp(0, _steps.length - 1);
+      final sourceStep = _steps[sourceIndex];
+      nextDay = sourceStep.day;
+      currentPhase ??= sourceStep.phaseName;
+    }
+    return ProtocolStep(
+      id: 'step_${DateTime.now().microsecondsSinceEpoch}',
+      title: '',
+      instructions: '',
+      actionItems: [],
+      materials: [],
+      actionTimers: {},
+      day: nextDay,
+      phaseName: currentPhase,
+    );
+  }
+
+  ProtocolStep _cloneStepForInsert(ProtocolStep step, {required bool fromCut}) {
+    if (fromCut) return step.deepCopy();
+    return step.deepCopy().copyWith(
+      id: 'step_${DateTime.now().microsecondsSinceEpoch}',
+      title: step.title.isEmpty ? '' : '${step.title} (Copy)',
+    );
+  }
+
+  void _copyStep(int index) {
+    setState(() {
+      _stepClipboard = _steps[index].deepCopy();
+      _stepClipboardWasCut = false;
+    });
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Step copied')));
+  }
+
+  void _cutStep(int index) {
+    setState(() {
+      _stepClipboard = _steps.removeAt(index).deepCopy();
+      _stepClipboardWasCut = true;
+    });
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Step cut')));
+  }
+
+  void _pasteStepAfter(int index) {
+    final step = _stepClipboard;
+    if (step == null) return;
+    setState(() {
+      _steps.insert(
+        index + 1,
+        _cloneStepForInsert(step, fromCut: _stepClipboardWasCut),
+      );
+      if (_stepClipboardWasCut) {
+        _stepClipboard = null;
+        _stepClipboardWasCut = false;
+      }
     });
   }
 
   void _addNewPhase() {
-    setState(() {
-      final phaseCount = _steps.map((s) => s.phaseName).toSet().length + 1;
-      final newPhaseName = 'Phase $phaseCount';
-      _addNewStep(phaseName: newPhaseName);
-    });
+    final phaseCount = _steps.map((s) => s.phaseName).toSet().length + 1;
+    final newPhaseName = 'Phase $phaseCount';
+    _addNewStep(phaseName: newPhaseName);
   }
 
   void _addNewTable() async {
@@ -137,15 +203,56 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
     if (result != null) {
       setState(() {
         if (result is ProtocolTable) {
-          _tables.add(result);
-          _syncMaterialsFromTable(result);
+          final coloredTable = _withTableColor(result);
+          _tables.add(coloredTable);
+          _syncMaterialsFromTable(coloredTable);
         } else if (result is List<ProtocolTable>) {
           for (final table in result) {
-            _tables.add(table);
-            _syncMaterialsFromTable(table);
+            final coloredTable = _withTableColor(table);
+            _tables.add(coloredTable);
+            _syncMaterialsFromTable(coloredTable);
           }
         }
       });
+    }
+  }
+
+  ProtocolTable _withTableColor(ProtocolTable table) {
+    if (table.metadata.containsKey('typeColor')) return table;
+    return table.copyWith(
+      metadata: {
+        ...table.metadata,
+        'typeColor': _tableTypeColor(table.type).toARGB32().toRadixString(16),
+      },
+    );
+  }
+
+  Color _tableColor(ProtocolTable table) {
+    final savedColor = table.metadata['typeColor'];
+    if (savedColor != null) {
+      final parsed = int.tryParse(savedColor, radix: 16);
+      if (parsed != null) return Color(parsed);
+    }
+    return _tableTypeColor(table.type);
+  }
+
+  Color _tableTypeColor(TableType type) {
+    switch (type) {
+      case TableType.masterMix:
+        return Colors.blue;
+      case TableType.staining:
+        return Colors.indigo;
+      case TableType.reagentMix:
+      case TableType.reagentMatrix:
+        return Colors.teal;
+      case TableType.serialDilution:
+        return Colors.cyan;
+      case TableType.plateLayout:
+        return Colors.orange;
+      case TableType.checklist:
+        return Colors.green;
+      case TableType.generic:
+        return Colors.grey;
     }
   }
 
@@ -161,23 +268,29 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
       if (t.type == TableType.masterMix) {
         try {
           final wizard = MasterMixWizard.fromJson(jsonDecode(wizardState));
-          final result = MasterMixCalculatorService().calculateMasterMix(MasterMixInput(
-            mixName: wizard.mixName,
-            finalVolume: wizard.finalVolume,
-            finalVolumeUnit: wizard.finalVolumeUnit,
-            baseSolventName: wizard.baseSolventName,
-            reagents: wizard.reagents.map((r) => r.toInput()).toList(),
-          ));
+          final result = MasterMixCalculatorService().calculateMasterMix(
+            MasterMixInput(
+              mixName: wizard.mixName,
+              finalVolume: wizard.finalVolume,
+              finalVolumeUnit: wizard.finalVolumeUnit,
+              baseSolventName: wizard.baseSolventName,
+              reagents: wizard.reagents.map((r) => r.toInput()).toList(),
+            ),
+          );
 
           if (result.success) {
             for (var r in result.reagentResults) {
               if (r.reagentName.isNotEmpty) {
-                totalVolumesUl[r.reagentName] = (totalVolumesUl[r.reagentName] ?? 0) + r.reagentVolumeUl;
-                stockConcentrations[r.reagentName] = r.formattedStockConcentration;
+                totalVolumesUl[r.reagentName] =
+                    (totalVolumesUl[r.reagentName] ?? 0) + r.reagentVolumeUl;
+                stockConcentrations[r.reagentName] =
+                    r.formattedStockConcentration;
               }
             }
             if (wizard.baseSolventName.isNotEmpty) {
-              totalVolumesUl[wizard.baseSolventName] = (totalVolumesUl[wizard.baseSolventName] ?? 0) + result.baseSolventVolumeUl;
+              totalVolumesUl[wizard.baseSolventName] =
+                  (totalVolumesUl[wizard.baseSolventName] ?? 0) +
+                  result.baseSolventVolumeUl;
             }
           }
         } catch (e) {
@@ -202,11 +315,14 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
             final result = service.calculateMix(input);
             if (result.success) {
               if (r.name.isNotEmpty) {
-                totalVolumesUl[r.name] = (totalVolumesUl[r.name] ?? 0) + result.reagentVolumeUl;
-                stockConcentrations[r.name] = '${r.stockConc} ${r.stockUnit.name}';
+                totalVolumesUl[r.name] =
+                    (totalVolumesUl[r.name] ?? 0) + result.reagentVolumeUl;
+                stockConcentrations[r.name] =
+                    '${r.stockConc} ${r.stockUnit.name}';
               }
               if (r.solvent.isNotEmpty) {
-                totalVolumesUl[r.solvent] = (totalVolumesUl[r.solvent] ?? 0) + result.solventVolumeUl;
+                totalVolumesUl[r.solvent] =
+                    (totalVolumesUl[r.solvent] ?? 0) + result.solventVolumeUl;
               }
             }
           }
@@ -225,7 +341,9 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
         final stock = stockConcentrations[name] ?? '';
         final qtyStr = _formatVolumeUl(volUl);
 
-        final index = _materials.indexWhere((m) => m.name.trim().toLowerCase() == name.trim().toLowerCase());
+        final index = _materials.indexWhere(
+          (m) => m.name.trim().toLowerCase() == name.trim().toLowerCase(),
+        );
         if (index != -1) {
           // Update existing material quantity and stock conc
           _materials[index] = _materials[index].copyWith(
@@ -234,12 +352,14 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
           );
         } else {
           // Add new material
-          _materials.add(MaterialItem(
-            id: 'mat_${DateTime.now().millisecondsSinceEpoch}_${_materials.length}',
-            name: name,
-            quantity: qtyStr,
-            stockConcentration: stock,
-          ));
+          _materials.add(
+            MaterialItem(
+              id: 'mat_${DateTime.now().millisecondsSinceEpoch}_${_materials.length}',
+              name: name,
+              quantity: qtyStr,
+              stockConcentration: stock,
+            ),
+          );
         }
       }
     });
@@ -257,7 +377,6 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
     }
   }
 
-
   bool _canActuallyPop = false;
 
   Future<bool?> _showExitConfirmationDialog() {
@@ -265,7 +384,9 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Discard Changes?'),
-        content: const Text('You have unsaved changes. Are you sure you want to exit?'),
+        content: const Text(
+          'You have unsaved changes. Are you sure you want to exit?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -285,12 +406,15 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
   }
 
   Future<void> _saveProtocol({bool isTemplate = false}) async {
+    FocusManager.instance.primaryFocus?.unfocus();
+
     if (_formKey.currentState!.validate()) {
-      bool isUpdating = widget.initialProtocol != null && 
-                       isTemplate == widget.initialProtocol!.isTemplate;
-      
-      String newId = isUpdating 
-          ? widget.initialProtocol!.id 
+      bool isUpdating =
+          widget.initialProtocol != null &&
+          isTemplate == widget.initialProtocol!.isTemplate;
+
+      String newId = isUpdating
+          ? widget.initialProtocol!.id
           : 'proto_${DateTime.now().millisecondsSinceEpoch}';
 
       final newProtocol = Protocol(
@@ -298,10 +422,11 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
         title: _titleController.text,
         objective: _objectiveController.text,
         description: _descriptionController.text,
-        materials: List.from(_materials),
+        materials: _materials.map((m) => m.copyWith()).toList(),
         samples: List.from(_samples),
-        steps: List.from(_steps),
-        tables: List.from(_tables),
+        files: List.from(_files),
+        steps: _steps.map((s) => s.deepCopy()).toList(),
+        tables: _tables.map((t) => t.deepCopy()).toList(),
         isTemplate: isTemplate,
       );
 
@@ -341,86 +466,96 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
-        title: Text(widget.initialProtocol != null ? 'Edit Protocol' : 'Create Protocol'),
-        actions: [
-          PopupMenuButton<bool>(
-            icon: const Icon(Icons.save),
-            onSelected: (isTemplate) => _saveProtocol(isTemplate: isTemplate),
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: false,
-                child: ListTile(
-                  leading: Icon(Icons.save_outlined),
-                  title: Text('Save Protocol'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-              const PopupMenuItem(
-                value: true,
-                child: ListTile(
-                  leading: Icon(Icons.copy_all),
-                  title: Text('Save as Template'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-            ],
+          title: Text(
+            widget.initialProtocol != null
+                ? 'Edit Protocol'
+                : 'Create Protocol',
           ),
-        ],
-      ),
-      body: Form(
-        key: _formKey,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildFieldSection(
-                'Protocol Title',
-                _titleController,
-                validator: (value) => value == null || value.isEmpty ? 'Please enter a title' : null,
-              ),
-              const Divider(height: 32),
-              
-              _buildFieldSection('Objective', _objectiveController),
-              _buildFieldSection('Description', _descriptionController, maxLines: 3),
-              
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 24),
-                child: Divider(indent: 24, endIndent: 24, thickness: 1),
-              ),
-
-              _buildSectionHeader('Samples'),
-              const SizedBox(height: 8),
-              Center(
-                child: ElevatedButton.icon(
-                  onPressed: _addNewSample,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Add Sample'),
-                ),
-              ),
-              const SizedBox(height: 8),
-              ..._samples.asMap().entries.map((entry) {
-                final idx = entry.key;
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8.0),
-                  child: Row(
-                    children: [
-                      const Text('• ', style: TextStyle(color: Colors.grey)),
-                      Expanded(
-                        child: TextField(
-                          decoration: const InputDecoration(hintText: 'Sample name (e.g. THP1 cell line)', border: InputBorder.none),
-                          onChanged: (v) => _samples[idx] = v,
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.remove_circle_outline, size: 20, color: Colors.red),
-                        onPressed: () => setState(() => _samples.removeAt(idx)),
-                      ),
-                    ],
+          actions: [
+            PopupMenuButton<bool>(
+              icon: const Icon(Icons.save),
+              onSelected: (isTemplate) => _saveProtocol(isTemplate: isTemplate),
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: false,
+                  child: ListTile(
+                    leading: Icon(Icons.save_outlined),
+                    title: Text('Save Protocol'),
+                    contentPadding: EdgeInsets.zero,
                   ),
-                );
-              }),
-              if (_samples.isNotEmpty) ...[
+                ),
+                const PopupMenuItem(
+                  value: true,
+                  child: ListTile(
+                    leading: Icon(Icons.copy_all),
+                    title: Text('Save as Template'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        body: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildFieldSection(
+                  'Protocol Title',
+                  _titleController,
+                  validator: (value) => value == null || value.isEmpty
+                      ? 'Please enter a title'
+                      : null,
+                ),
+                const Divider(height: 32),
+
+                _buildFieldSection('Objective', _objectiveController),
+                _buildFieldSection(
+                  'Description',
+                  _descriptionController,
+                  maxLines: 3,
+                ),
+
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Divider(indent: 24, endIndent: 24, thickness: 1),
+                ),
+
+                _buildSectionHeader('Samples'),
+                const SizedBox(height: 8),
+                ..._samples.asMap().entries.map((entry) {
+                  final idx = entry.key;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8.0),
+                    child: Row(
+                      children: [
+                        const Text('• ', style: TextStyle(color: Colors.grey)),
+                        Expanded(
+                          child: TextFormField(
+                            initialValue: entry.value,
+                            decoration: const InputDecoration(
+                              hintText: 'Sample name (e.g. THP1 cell line)',
+                              border: InputBorder.none,
+                            ),
+                            onChanged: (v) => _samples[idx] = v,
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(
+                            Icons.remove_circle_outline,
+                            size: 20,
+                            color: Colors.red,
+                          ),
+                          onPressed: () =>
+                              setState(() => _samples.removeAt(idx)),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
                 const SizedBox(height: 8),
                 Center(
                   child: ElevatedButton.icon(
@@ -429,25 +564,15 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
                     label: const Text('Add Sample'),
                   ),
                 ),
-              ],
 
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 24),
-                child: Divider(indent: 24, endIndent: 24, thickness: 1),
-              ),
-
-              _buildSectionHeader('Material List'),
-              const SizedBox(height: 8),
-              Center(
-                child: ElevatedButton.icon(
-                  onPressed: _addNewMaterial,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Add Material'),
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Divider(indent: 24, endIndent: 24, thickness: 1),
                 ),
-              ),
-              const SizedBox(height: 8),
-              _buildMaterialsTable(),
-              if (_materials.isNotEmpty) ...[
+
+                _buildSectionHeader('Material List'),
+                const SizedBox(height: 8),
+                _buildMaterialsTable(),
                 const SizedBox(height: 12),
                 Center(
                   child: ElevatedButton.icon(
@@ -456,90 +581,101 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
                     label: const Text('Add Material'),
                   ),
                 ),
-              ],
-              
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 24),
-                child: Divider(indent: 24, endIndent: 24, thickness: 1),
-              ),
 
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Steps', style: Theme.of(context).textTheme.titleLarge),
-                  Row(
-                    children: [
-                      const Text('Set Phases', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                      Switch(
-                        value: _usePhases,
-                        onChanged: _isInProgress ? null : (val) {
-                          setState(() {
-                            _usePhases = val;
-                            if (_usePhases && _steps.isNotEmpty) {
-                              // If enabling phases and we have steps, assign them to "Phase 1" if they don't have one
-                              for (int i = 0; i < _steps.length; i++) {
-                                if (_steps[i].phaseName == null || _steps[i].phaseName!.isEmpty) {
-                                  _steps[i] = _steps[i].copyWith(phaseName: 'Phase 1');
-                                }
-                              }
-                            }
-                          });
-                        },
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              ..._buildStepsSection(),
-
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 24),
-                child: Divider(indent: 24, endIndent: 24, thickness: 1),
-              ),
-
-              _buildSectionHeader('Tables'),
-              const SizedBox(height: 8),
-              Center(
-                child: ElevatedButton.icon(
-                  onPressed: _addNewTable,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Add Table'),
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Divider(indent: 24, endIndent: 24, thickness: 1),
                 ),
-              ),
-              const SizedBox(height: 16),
-              if (_tables.isEmpty)
-                const Center(child: Text('No tables added.', style: TextStyle(color: Colors.grey)))
-              else
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _tables.asMap().entries.map((entry) {
-                    final idx = entry.key;
-                    final table = entry.value;
-                    return Stack(
+
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Steps',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    Row(
                       children: [
-                        ProtocolTableWidget(
-                          table: table,
-                          isReadOnly: false,
-                          onSave: (updated) {
-                            setState(() => _tables[idx] = updated);
-                            _syncMaterialsFromTable(updated);
-                          },
+                        const Text(
+                          'Set Phases',
+                          style: TextStyle(fontSize: 12, color: Colors.grey),
                         ),
-                        Positioned(
-                          right: 0,
-                          top: 0,
-                          child: IconButton(
-                            icon: const Icon(Icons.remove_circle, color: Colors.red, size: 20),
-                            onPressed: () => setState(() => _tables.removeAt(idx)),
-                          ),
+                        Switch(
+                          value: _usePhases,
+                          onChanged: _isInProgress
+                              ? null
+                              : (val) {
+                                  setState(() {
+                                    _usePhases = val;
+                                    if (_usePhases && _steps.isNotEmpty) {
+                                      // If enabling phases and we have steps, assign them to "Phase 1" if they don't have one
+                                      for (int i = 0; i < _steps.length; i++) {
+                                        if (_steps[i].phaseName == null ||
+                                            _steps[i].phaseName!.isEmpty) {
+                                          _steps[i] = _steps[i].copyWith(
+                                            phaseName: 'Phase 1',
+                                          );
+                                        }
+                                      }
+                                    }
+                                  });
+                                },
                         ),
                       ],
-                    );
-                  }).toList(),
+                    ),
+                  ],
                 ),
-              if (_tables.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                ..._buildStepsSection(),
+
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Divider(indent: 24, endIndent: 24, thickness: 1),
+                ),
+
+                _buildSectionHeader('Tables'),
+                const SizedBox(height: 8),
+                if (_tables.isEmpty)
+                  const Center(
+                    child: Text(
+                      'No tables added.',
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  )
+                else
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: _tables.asMap().entries.map((entry) {
+                      final idx = entry.key;
+                      final table = entry.value;
+                      return Stack(
+                        children: [
+                          ProtocolTableWidget(
+                            table: table,
+                            isReadOnly: false,
+                            onSave: (updated) {
+                              setState(() => _tables[idx] = updated);
+                              _syncMaterialsFromTable(updated);
+                            },
+                          ),
+                          Positioned(
+                            right: 0,
+                            top: 0,
+                            child: IconButton(
+                              icon: const Icon(
+                                Icons.remove_circle,
+                                color: Colors.red,
+                                size: 20,
+                              ),
+                              onPressed: () =>
+                                  setState(() => _tables.removeAt(idx)),
+                            ),
+                          ),
+                        ],
+                      );
+                    }).toList(),
+                  ),
                 const SizedBox(height: 16),
                 Center(
                   child: ElevatedButton.icon(
@@ -548,18 +684,22 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
                     label: const Text('Add Table'),
                   ),
                 ),
-              ],
 
-              const SizedBox(height: 80),
-            ],
+                const SizedBox(height: 80),
+              ],
+            ),
           ),
         ),
       ),
-    ),
     );
   }
 
-  Widget _buildFieldSection(String label, TextEditingController controller, {int maxLines = 1, String? Function(String?)? validator}) {
+  Widget _buildFieldSection(
+    String label,
+    TextEditingController controller, {
+    int maxLines = 1,
+    String? Function(String?)? validator,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -571,7 +711,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
           validator: validator,
           readOnly: _isInProgress,
           decoration: InputDecoration(
-            border: InputBorder.none, 
+            border: InputBorder.none,
             hintText: 'Enter text...',
             fillColor: _isInProgress ? Colors.grey.shade100 : null,
             filled: _isInProgress,
@@ -585,15 +725,17 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
   Widget _buildSectionHeader(String title) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(title, style: Theme.of(context).textTheme.titleLarge),
-      ],
+      children: [Text(title, style: Theme.of(context).textTheme.titleLarge)],
     );
   }
 
   List<Widget> _buildStepsSection() {
     if (!_usePhases) {
       return [
+        ..._steps.asMap().entries.map(
+          (entry) => _buildStepEditor(entry.key, entry.value),
+        ),
+        const SizedBox(height: 8),
         Center(
           child: ElevatedButton.icon(
             onPressed: () => _addNewStep(),
@@ -601,34 +743,11 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
             label: const Text('Add Step'),
           ),
         ),
-        const SizedBox(height: 8),
-        ..._steps.asMap().entries.map((entry) => _buildStepEditor(entry.key, entry.value)),
-        if (_steps.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Center(
-            child: ElevatedButton.icon(
-              onPressed: () => _addNewStep(),
-              icon: const Icon(Icons.add),
-              label: const Text('Add Step'),
-            ),
-          ),
-        ],
       ];
     }
 
     // Grouping by phases
     final List<Widget> items = [];
-    
-    items.add(
-      Center(
-        child: ElevatedButton.icon(
-          onPressed: _addNewPhase,
-          icon: const Icon(Icons.library_add),
-          label: const Text('Add New Phase'),
-        ),
-      ),
-    );
-    items.add(const SizedBox(height: 16));
 
     String? currentPhase;
     for (int i = 0; i < _steps.length; i++) {
@@ -638,20 +757,25 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
         items.add(_buildPhaseHeader(currentPhase, i));
       }
       items.add(_buildStepEditor(i, step));
-      
+
       // If next step is different phase or this is last step
-      bool isLastInPhase = i == _steps.length - 1 || _steps[i+1].phaseName != currentPhase;
+      bool isLastInPhase =
+          i == _steps.length - 1 || _steps[i + 1].phaseName != currentPhase;
       if (isLastInPhase) {
         final phaseSteps = _steps.where((s) => s.phaseName == currentPhase);
-        final bool isPhaseLocked = phaseSteps.isNotEmpty && 
-                                   phaseSteps.every((s) => widget.lockedStepIds?.contains(s.id) ?? false);
-        
+        final bool isPhaseLocked =
+            phaseSteps.isNotEmpty &&
+            phaseSteps.every(
+              (s) => widget.lockedStepIds?.contains(s.id) ?? false,
+            );
+
         if (!isPhaseLocked) {
           items.add(
             Padding(
               padding: const EdgeInsets.only(left: 16.0, bottom: 16.0),
               child: TextButton.icon(
-                onPressed: () => _addNewStep(phaseName: currentPhase),
+                onPressed: () =>
+                    _addNewStep(phaseName: currentPhase, insertIndex: i + 1),
                 icon: const Icon(Icons.add, size: 18),
                 label: const Text('Add Step to Phase'),
               ),
@@ -679,20 +803,31 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
     String displayName = phaseName ?? 'Unnamed Phase';
     // Determine if this phase is locked (all its steps are locked)
     final phaseSteps = _steps.where((s) => s.phaseName == phaseName);
-    final bool isPhaseLocked = phaseSteps.isNotEmpty && 
-                               phaseSteps.every((s) => widget.lockedStepIds?.contains(s.id) ?? false);
+    final bool isPhaseLocked =
+        phaseSteps.isNotEmpty &&
+        phaseSteps.every((s) => widget.lockedStepIds?.contains(s.id) ?? false);
 
     return Container(
       margin: const EdgeInsets.only(top: 16, bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: isPhaseLocked ? Colors.grey.withValues(alpha: 0.1) : Colors.blue.withValues(alpha: 0.1),
+        color: isPhaseLocked
+            ? Colors.grey.withValues(alpha: 0.1)
+            : Colors.blue.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: isPhaseLocked ? Colors.grey.withValues(alpha: 0.3) : Colors.blue.withValues(alpha: 0.3)),
+        border: Border.all(
+          color: isPhaseLocked
+              ? Colors.grey.withValues(alpha: 0.3)
+              : Colors.blue.withValues(alpha: 0.3),
+        ),
       ),
       child: Row(
         children: [
-          Icon(Icons.layers, size: 18, color: isPhaseLocked ? Colors.grey : Colors.blue),
+          Icon(
+            Icons.layers,
+            size: 18,
+            color: isPhaseLocked ? Colors.grey : Colors.blue,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: _PhaseNameField(
@@ -717,7 +852,10 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
 
   Widget _buildMaterialsTable() {
     if (_materials.isEmpty) {
-      return const Text('No materials added. Press + to add rows.', style: TextStyle(color: Colors.grey));
+      return const Text(
+        'No materials added. Press + to add rows.',
+        style: TextStyle(color: Colors.grey),
+      );
     }
 
     return SingleChildScrollView(
@@ -743,37 +881,47 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
               DataCell(
                 _MaterialCell(
                   initialValue: item.name,
-                  onChanged: (v) => _materials[idx] = _materials[idx].copyWith(name: v),
+                  onChanged: (v) =>
+                      _materials[idx] = _materials[idx].copyWith(name: v),
                 ),
               ),
               DataCell(
                 _MaterialCell(
                   initialValue: item.quantity,
-                  onChanged: (v) => _materials[idx] = _materials[idx].copyWith(quantity: v),
+                  onChanged: (v) =>
+                      _materials[idx] = _materials[idx].copyWith(quantity: v),
                 ),
               ),
               DataCell(
                 _MaterialCell(
                   initialValue: item.stockConcentration,
-                  onChanged: (v) => _materials[idx] = _materials[idx].copyWith(stockConcentration: v),
+                  onChanged: (v) => _materials[idx] = _materials[idx].copyWith(
+                    stockConcentration: v,
+                  ),
                 ),
               ),
               DataCell(
                 _MaterialCell(
                   initialValue: item.catalogNumber,
-                  onChanged: (v) => _materials[idx] = _materials[idx].copyWith(catalogNumber: v),
+                  onChanged: (v) => _materials[idx] = _materials[idx].copyWith(
+                    catalogNumber: v,
+                  ),
                 ),
               ),
               DataCell(
                 _MaterialCell(
                   initialValue: item.manufacturer,
-                  onChanged: (v) => _materials[idx] = _materials[idx].copyWith(manufacturer: v),
+                  onChanged: (v) => _materials[idx] = _materials[idx].copyWith(
+                    manufacturer: v,
+                  ),
                 ),
               ),
-              DataCell(IconButton(
-                icon: const Icon(Icons.delete, color: Colors.red, size: 20),
-                onPressed: () => setState(() => _materials.removeAt(idx)),
-              )),
+              DataCell(
+                IconButton(
+                  icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+                  onPressed: () => setState(() => _materials.removeAt(idx)),
+                ),
+              ),
             ],
           );
         }).toList(),
@@ -797,58 +945,73 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
             Row(
               children: [
                 CircleAvatar(
-                  radius: 12, 
+                  radius: 12,
                   backgroundColor: isLocked ? Colors.grey : null,
-                  child: Text('${index + 1}', style: const TextStyle(fontSize: 12)),
+                  child: Text(
+                    '${index + 1}',
+                    style: const TextStyle(fontSize: 12),
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: TextFormField(
                     initialValue: step.title,
                     readOnly: isLocked,
-                    decoration: const InputDecoration(hintText: 'Step Title', border: InputBorder.none),
+                    decoration: const InputDecoration(
+                      hintText: 'Step Title',
+                      border: InputBorder.none,
+                    ),
                     style: TextStyle(
-                      fontWeight: FontWeight.bold, 
+                      fontWeight: FontWeight.bold,
                       fontSize: _uniformFontSize,
                       color: isLocked ? Colors.grey : null,
                     ),
-                    onChanged: (v) => _steps[index] = _steps[index].copyWith(title: v),
+                    onChanged: (v) =>
+                        _steps[index] = _steps[index].copyWith(title: v),
                   ),
                 ),
-                if (!isLocked)
-                  IconButton(
-                    icon: const Icon(Icons.delete, color: Colors.red, size: 20),
-                    onPressed: () => setState(() => _steps.removeAt(index)),
-                  ),
+                if (!isLocked) _buildStepActions(index, step),
               ],
             ),
             TextFormField(
               initialValue: step.instructions,
               readOnly: isLocked,
-              decoration: const InputDecoration(hintText: 'Instructions...', border: InputBorder.none),
+              decoration: const InputDecoration(
+                hintText: 'Instructions...',
+                border: InputBorder.none,
+              ),
               maxLines: null,
               style: TextStyle(
                 fontSize: _uniformFontSize,
                 color: isLocked ? Colors.grey : null,
               ),
-              onChanged: (v) => _steps[index] = _steps[index].copyWith(instructions: v),
+              onChanged: (v) =>
+                  _steps[index] = _steps[index].copyWith(instructions: v),
             ),
             const Divider(),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Actions', style: TextStyle(
-                  fontWeight: FontWeight.bold, 
-                  fontSize: _uniformFontSize,
-                  color: isLocked ? Colors.grey : null,
-                )),
+                Text(
+                  'Actions',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: _uniformFontSize,
+                    color: isLocked ? Colors.grey : null,
+                  ),
+                ),
                 if (!isLocked)
                   IconButton(
                     icon: const Icon(Icons.add, size: 18, color: Colors.green),
                     onPressed: () {
                       setState(() {
-                        final newActions = List<String>.from(step.actionItems)..add('');
-                        _steps[index] = step.copyWith(actionItems: newActions);
+                        final currentStep = _steps[index];
+                        final newActions = List<String>.from(
+                          currentStep.actionItems,
+                        )..add('');
+                        _steps[index] = currentStep.copyWith(
+                          actionItems: newActions,
+                        );
                       });
                     },
                   ),
@@ -857,26 +1020,40 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
             ...step.actionItems.asMap().entries.map((aEntry) {
               final aIdx = aEntry.key;
               final timer = step.actionTimers[aIdx] ?? 0;
-              
+
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8.0),
                 child: Row(
                   children: [
-                    const Text('• ', style: TextStyle(color: Colors.grey, fontSize: _uniformFontSize)),
+                    const Text(
+                      '• ',
+                      style: TextStyle(
+                        color: Colors.grey,
+                        fontSize: _uniformFontSize,
+                      ),
+                    ),
                     Expanded(
                       flex: 4,
                       child: TextFormField(
                         initialValue: step.actionItems[aIdx],
                         readOnly: isLocked,
-                        decoration: const InputDecoration(hintText: 'Action', isDense: true, border: InputBorder.none),
+                        decoration: const InputDecoration(
+                          hintText: 'Action',
+                          isDense: true,
+                          border: InputBorder.none,
+                        ),
                         style: TextStyle(
                           fontSize: _uniformFontSize,
                           color: isLocked ? Colors.grey : null,
                         ),
                         onChanged: (v) {
-                          final newActions = List<String>.from(_steps[index].actionItems);
+                          final newActions = List<String>.from(
+                            _steps[index].actionItems,
+                          );
                           newActions[aIdx] = v;
-                          _steps[index] = _steps[index].copyWith(actionItems: newActions);
+                          _steps[index] = _steps[index].copyWith(
+                            actionItems: newActions,
+                          );
                         },
                       ),
                     ),
@@ -884,29 +1061,41 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
                       ignoring: isLocked,
                       child: _ActionTimerInput(
                         totalSeconds: timer,
-                        onChanged: (newTotal) => _updateActionTimer(index, aIdx, newTotal),
+                        onChanged: (newTotal) =>
+                            _updateActionTimer(index, aIdx, newTotal),
                       ),
                     ),
                     if (!isLocked)
                       IconButton(
-                        icon: const Icon(Icons.remove_circle_outline, size: 18, color: Colors.red),
+                        icon: const Icon(
+                          Icons.remove_circle_outline,
+                          size: 18,
+                          color: Colors.red,
+                        ),
                         onPressed: () {
-                      setState(() {
-                        final newActions = List<String>.from(_steps[index].actionItems)..removeAt(aIdx);
-                        final newTimers = Map<int, int>.from(_steps[index].actionTimers)..remove(aIdx);
-                        // Re-index timers
-                        final Map<int, int> fixedTimers = {};
-                        newTimers.forEach((k, v) {
-                          if (k < aIdx) {
-                            fixedTimers[k] = v;
-                          }
-                          if (k > aIdx) {
-                            fixedTimers[k - 1] = v;
-                          }
-                        });
-                        _steps[index] = _steps[index].copyWith(actionItems: newActions, actionTimers: fixedTimers);
-                      });
-                    },
+                          setState(() {
+                            final newActions = List<String>.from(
+                              _steps[index].actionItems,
+                            )..removeAt(aIdx);
+                            final newTimers = Map<int, int>.from(
+                              _steps[index].actionTimers,
+                            )..remove(aIdx);
+                            // Re-index timers
+                            final Map<int, int> fixedTimers = {};
+                            newTimers.forEach((k, v) {
+                              if (k < aIdx) {
+                                fixedTimers[k] = v;
+                              }
+                              if (k > aIdx) {
+                                fixedTimers[k - 1] = v;
+                              }
+                            });
+                            _steps[index] = _steps[index].copyWith(
+                              actionItems: newActions,
+                              actionTimers: fixedTimers,
+                            );
+                          });
+                        },
                       ),
                   ],
                 ),
@@ -914,29 +1103,57 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
             }),
             if (_tables.isNotEmpty) ...[
               const SizedBox(height: 8),
-              Text('Linked Tables', style: TextStyle(
-                fontWeight: FontWeight.bold, 
-                fontSize: _uniformFontSize,
-                color: isLocked ? Colors.grey : null,
-              )),
+              Text(
+                'Linked Tables',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: _uniformFontSize,
+                  color: isLocked ? Colors.grey : null,
+                ),
+              ),
               Wrap(
                 spacing: 4,
+                runSpacing: 4,
                 children: _tables.map((t) {
                   final isSelected = step.tableIds.contains(t.id);
+                  final tableColor = _tableColor(t);
                   return FilterChip(
-                    label: Text(t.title.isEmpty ? 'Untitled Table' : t.title, style: const TextStyle(fontSize: _uniformFontSize - 2)),
+                    label: Text(
+                      t.title.isEmpty ? 'Untitled Table' : t.title,
+                      style: TextStyle(
+                        fontSize: _uniformFontSize - 2,
+                        color: isSelected ? tableColor.shadeTextColor() : null,
+                      ),
+                    ),
+                    avatar: Icon(
+                      _tableTypeIcon(t.type),
+                      size: 16,
+                      color: isSelected
+                          ? tableColor.shadeTextColor()
+                          : tableColor,
+                    ),
                     selected: isSelected,
-                    onSelected: isLocked ? null : (val) {
-                      setState(() {
-                        final newTableIds = List<String>.from(step.tableIds);
-                        if (val) {
-                          newTableIds.add(t.id);
-                        } else {
-                          newTableIds.remove(t.id);
-                        }
-                        _steps[index] = step.copyWith(tableIds: newTableIds);
-                      });
-                    },
+                    selectedColor: tableColor.withValues(alpha: 0.16),
+                    checkmarkColor: tableColor,
+                    side: BorderSide(color: tableColor.withValues(alpha: 0.5)),
+                    onSelected: isLocked
+                        ? null
+                        : (val) {
+                            setState(() {
+                              final currentStep = _steps[index];
+                              final newTableIds = List<String>.from(
+                                currentStep.tableIds,
+                              );
+                              if (val) {
+                                newTableIds.add(t.id);
+                              } else {
+                                newTableIds.remove(t.id);
+                              }
+                              _steps[index] = currentStep.copyWith(
+                                tableIds: newTableIds,
+                              );
+                            });
+                          },
                   );
                 }).toList(),
               ),
@@ -945,6 +1162,108 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildStepActions(int index, ProtocolStep step) {
+    return PopupMenuButton<String>(
+      tooltip: 'Step actions',
+      icon: const Icon(Icons.more_vert),
+      onSelected: (value) {
+        switch (value) {
+          case 'insertAbove':
+            _addNewStep(phaseName: step.phaseName, insertIndex: index);
+            break;
+          case 'insert':
+            _addNewStep(phaseName: step.phaseName, insertIndex: index + 1);
+            break;
+          case 'paste':
+            _pasteStepAfter(index);
+            break;
+          case 'copy':
+            _copyStep(index);
+            break;
+          case 'cut':
+            _cutStep(index);
+            break;
+          case 'delete':
+            setState(() => _steps.removeAt(index));
+            break;
+        }
+      },
+      itemBuilder: (context) => [
+        const PopupMenuItem(
+          value: 'insertAbove',
+          child: ListTile(
+            leading: Icon(Icons.vertical_align_top),
+            title: Text('Insert Step Above'),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'insert',
+          child: ListTile(
+            leading: Icon(Icons.add),
+            title: Text('Insert Step Below'),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+        PopupMenuItem(
+          value: 'paste',
+          enabled: _stepClipboard != null,
+          child: const ListTile(
+            leading: Icon(Icons.content_paste),
+            title: Text('Paste Step Below'),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+        const PopupMenuDivider(),
+        const PopupMenuItem(
+          value: 'copy',
+          child: ListTile(
+            leading: Icon(Icons.copy),
+            title: Text('Copy Step'),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'cut',
+          child: ListTile(
+            leading: Icon(Icons.content_cut),
+            title: Text('Cut Step'),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+        const PopupMenuDivider(),
+        const PopupMenuItem(
+          value: 'delete',
+          child: ListTile(
+            leading: Icon(Icons.delete, color: Colors.red),
+            title: Text('Delete Step'),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+      ],
+    );
+  }
+
+  IconData _tableTypeIcon(TableType type) {
+    switch (type) {
+      case TableType.masterMix:
+        return Icons.biotech;
+      case TableType.staining:
+        return Icons.color_lens;
+      case TableType.reagentMix:
+      case TableType.reagentMatrix:
+        return Icons.science;
+      case TableType.serialDilution:
+        return Icons.water_drop;
+      case TableType.plateLayout:
+        return Icons.grid_on;
+      case TableType.checklist:
+        return Icons.checklist;
+      case TableType.generic:
+        return Icons.table_chart;
+    }
   }
 
   void _updateActionTimer(int stepIdx, int actionIdx, int totalSeconds) {
@@ -959,14 +1278,16 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
       _steps[stepIdx] = step.copyWith(actionTimers: newTimers);
     });
   }
-
 }
 
 class _ActionTimerInput extends StatefulWidget {
   final int totalSeconds;
   final Function(int) onChanged;
 
-  const _ActionTimerInput({required this.totalSeconds, required this.onChanged});
+  const _ActionTimerInput({
+    required this.totalSeconds,
+    required this.onChanged,
+  });
 
   @override
   State<_ActionTimerInput> createState() => _ActionTimerInputState();
@@ -986,16 +1307,28 @@ class _ActionTimerInputState extends State<_ActionTimerInput> {
     if (widget.totalSeconds == 0) {
       _unit = 'M';
       _controller = TextEditingController();
-    } else if (widget.totalSeconds % 3600 == 0) {
+    } else if (widget.totalSeconds >= 3600) {
       _unit = 'H';
-      _controller = TextEditingController(text: (widget.totalSeconds ~/ 3600).toString());
-    } else if (widget.totalSeconds % 60 == 0) {
+      _controller = TextEditingController(
+        text: _formatDecimal(widget.totalSeconds / 3600),
+      );
+    } else if (widget.totalSeconds >= 60) {
       _unit = 'M';
-      _controller = TextEditingController(text: (widget.totalSeconds ~/ 60).toString());
+      _controller = TextEditingController(
+        text: _formatDecimal(widget.totalSeconds / 60),
+      );
     } else {
       _unit = 'S';
       _controller = TextEditingController(text: widget.totalSeconds.toString());
     }
+  }
+
+  String _formatDecimal(double value) {
+    if (value == value.roundToDouble()) return value.toInt().toString();
+    return value
+        .toStringAsFixed(2)
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
   }
 
   @override
@@ -1007,10 +1340,10 @@ class _ActionTimerInputState extends State<_ActionTimerInput> {
           width: 45,
           child: TextField(
             controller: _controller,
-            keyboardType: TextInputType.number,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
             textAlign: TextAlign.center,
             decoration: const InputDecoration(
-              isDense: true, 
+              isDense: true,
               contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
               border: OutlineInputBorder(),
             ),
@@ -1041,14 +1374,14 @@ class _ActionTimerInputState extends State<_ActionTimerInput> {
   }
 
   void _updateValue() {
-    final val = int.tryParse(_controller.text) ?? 0;
+    final val = double.tryParse(_controller.text) ?? 0;
     int total = 0;
     if (_unit == 'H') {
-      total = val * 3600;
+      total = (val * 3600).round();
     } else if (_unit == 'M') {
-      total = val * 60;
+      total = (val * 60).round();
     } else {
-      total = val;
+      total = val.round();
     }
     widget.onChanged(total);
   }
@@ -1059,7 +1392,11 @@ class _PhaseNameField extends StatefulWidget {
   final bool readOnly;
   final Function(String) onChanged;
 
-  const _PhaseNameField({required this.initialValue, this.readOnly = false, required this.onChanged});
+  const _PhaseNameField({
+    required this.initialValue,
+    this.readOnly = false,
+    required this.onChanged,
+  });
 
   @override
   State<_PhaseNameField> createState() => _PhaseNameFieldState();
@@ -1107,13 +1444,21 @@ class _PhaseNameFieldState extends State<_PhaseNameField> {
       controller: _controller,
       focusNode: _focusNode,
       readOnly: widget.readOnly,
-      decoration: const InputDecoration(hintText: 'Phase Name (e.g. Day 1)', border: InputBorder.none, isDense: true),
-      style: TextStyle(fontWeight: FontWeight.bold, color: widget.readOnly ? Colors.grey : Colors.blue),
+      decoration: const InputDecoration(
+        hintText: 'Phase Name (e.g. Day 1)',
+        border: InputBorder.none,
+        isDense: true,
+      ),
+      style: TextStyle(
+        fontWeight: FontWeight.bold,
+        color: widget.readOnly ? Colors.grey : Colors.blue,
+      ),
       onSubmitted: (v) {
         if (v != widget.initialValue) {
           widget.onChanged(v);
         }
       },
+      onChanged: widget.onChanged,
     );
   }
 }
@@ -1155,9 +1500,18 @@ class _MaterialCellState extends State<_MaterialCell> {
   Widget build(BuildContext context) {
     return TextField(
       controller: _controller,
-      decoration: const InputDecoration(border: InputBorder.none, isDense: true),
+      decoration: const InputDecoration(
+        border: InputBorder.none,
+        isDense: true,
+      ),
       style: const TextStyle(fontSize: 12),
       onChanged: widget.onChanged,
     );
+  }
+}
+
+extension _ReadableTableColor on Color {
+  Color shadeTextColor() {
+    return computeLuminance() > 0.45 ? Colors.black87 : Colors.white;
   }
 }

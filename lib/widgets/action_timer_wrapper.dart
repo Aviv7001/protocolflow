@@ -44,7 +44,10 @@ class _ActionTimerWrapperState extends State<ActionTimerWrapper> {
       _isRunning = true;
       final elapsed = DateTime.now().difference(widget.startTime!).inSeconds;
       final initialRemaining = widget.remainingSeconds ?? widget.totalSeconds;
-      _displaySeconds = (initialRemaining - elapsed).clamp(0, widget.totalSeconds);
+      _displaySeconds = (initialRemaining - elapsed).clamp(
+        0,
+        widget.totalSeconds,
+      );
       _startTimer(widget.startTime!, initialRemaining);
     } else {
       _isRunning = false;
@@ -55,7 +58,7 @@ class _ActionTimerWrapperState extends State<ActionTimerWrapper> {
   @override
   void didUpdateWidget(ActionTimerWrapper oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.startTime != widget.startTime || 
+    if (oldWidget.startTime != widget.startTime ||
         oldWidget.remainingSeconds != widget.remainingSeconds ||
         oldWidget.totalSeconds != widget.totalSeconds) {
       _timer?.cancel();
@@ -74,7 +77,7 @@ class _ActionTimerWrapperState extends State<ActionTimerWrapper> {
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       final elapsed = DateTime.now().difference(start).inSeconds;
       final remaining = (fromRemaining - elapsed).clamp(0, widget.totalSeconds);
-      
+
       if (mounted) {
         setState(() {
           _displaySeconds = remaining;
@@ -134,7 +137,7 @@ class _ActionTimerWrapperState extends State<ActionTimerWrapper> {
   @override
   Widget build(BuildContext context) {
     double progress = 1 - (_displaySeconds / widget.totalSeconds);
-    
+
     Color progressColor;
     if (_displaySeconds == 0) {
       progressColor = Colors.green.withValues(alpha: 0.2);
@@ -156,42 +159,47 @@ class _ActionTimerWrapperState extends State<ActionTimerWrapper> {
             ),
           ),
         ),
-        widget.child,
-        Positioned(
-          right: 4,
-          top: 0,
-          bottom: 0,
-          child: Center(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _formatTime(_displaySeconds),
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: _displaySeconds == 0 ? Colors.green : Colors.black54,
-                  ),
-                ),
-                IconButton(
-                  onPressed: _toggleTimer,
-                  constraints: const BoxConstraints(),
-                  padding: const EdgeInsets.all(4),
-                  icon: Icon(
-                    _isRunning ? Icons.pause_circle : Icons.play_circle,
-                    color: _isRunning ? Colors.blue : Colors.grey,
-                  ),
-                ),
-                IconButton(
-                  onPressed: _resetTimer,
-                  constraints: const BoxConstraints(),
-                  padding: const EdgeInsets.all(4),
-                  icon: const Icon(Icons.refresh, size: 20, color: Colors.grey),
-                  tooltip: 'Reset',
-                ),
-              ],
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(child: widget.child),
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: _buildTimerControls(),
             ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTimerControls() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          _formatTime(_displaySeconds),
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            color: _displaySeconds == 0 ? Colors.green : Colors.black54,
           ),
+        ),
+        IconButton(
+          onPressed: _toggleTimer,
+          constraints: const BoxConstraints(),
+          padding: const EdgeInsets.all(4),
+          icon: Icon(
+            _isRunning ? Icons.pause_circle : Icons.play_circle,
+            color: _isRunning ? Colors.blue : Colors.grey,
+          ),
+        ),
+        IconButton(
+          onPressed: _resetTimer,
+          constraints: const BoxConstraints(),
+          padding: const EdgeInsets.all(4),
+          icon: const Icon(Icons.refresh, size: 20, color: Colors.grey),
+          tooltip: 'Reset',
         ),
       ],
     );

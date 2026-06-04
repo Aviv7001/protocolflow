@@ -25,12 +25,14 @@ class CompletedProtocol {
 
   factory CompletedProtocol.fromJson(Map<String, dynamic> json) {
     return CompletedProtocol(
-      id: json['id'],
+      id: json['id'] ?? '',
       protocol: Protocol.fromJson(json['protocol']),
-      notes: (json['notes'] as List)
+      notes: (json['notes'] as List? ?? [])
           .map((n) => StepNote.fromJson(n))
           .toList(),
-      completedAt: DateTime.parse(json['completedAt']),
+      completedAt: DateTime.parse(
+        json['completedAt'] ?? DateTime.now().toIso8601String(),
+      ),
     );
   }
 }

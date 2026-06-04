@@ -5,13 +5,13 @@ import 'package:image_picker/image_picker.dart';
 import 'package:protocolflow/models/active_protocol.dart';
 import 'package:protocolflow/models/protocol.dart';
 import 'package:protocolflow/models/protocol_step.dart';
+import 'package:protocolflow/models/protocol_table.dart';
 import 'package:protocolflow/models/step_note.dart';
 import 'package:protocolflow/models/completed_protocol.dart';
 import 'package:protocolflow/data/completed_protocols_data.dart';
 import 'package:protocolflow/widgets/action_timer_wrapper.dart';
 import 'package:protocolflow/widgets/local_image.dart';
 import 'package:protocolflow/widgets/protocol_table_widget.dart';
-import 'package:protocolflow/models/protocol_table.dart';
 import 'package:protocolflow/screens/library_screen.dart';
 
 class RunProtocolScreen extends StatefulWidget {
@@ -102,6 +102,7 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
       startedAt: activeProtocol?.startedAt ?? DateTime.now(),
       timerStartTimes: activeProtocol?.timerStartTimes ?? {},
       pausedSeconds: activeProtocol?.pausedSeconds ?? {},
+      completedStepIds: activeProtocol?.completedStepIds ?? {},
     );
     savePersistentProtocols();
   }
@@ -198,7 +199,7 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
                 (route) => route.isFirst,
               );
             },
-            child: const Text('Return to Home'),
+            child: const Text('Complete Phase'),
           ),
         ],
       ),
@@ -735,6 +736,10 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
   }
 
   void _openFiles() {
+    final currentStepTableIds = currentStep?.tableIds.toSet() ?? <String>{};
+    final currentStepTables = protocol.tables
+        .where((t) => currentStepTableIds.contains(t.id))
+        .toList();
     // Get all tables assigned to any step
     final assignedTableIds = protocol.steps.expand((s) => s.tableIds).toSet();
     // Filter tables that are NOT assigned to any step
@@ -763,9 +768,23 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
                     const SizedBox(height: 12),
-                    if (protocol.files.isEmpty && unassignedTables.isEmpty)
+                    if (protocol.files.isEmpty &&
+                        currentStepTables.isEmpty &&
+                        unassignedTables.isEmpty)
                       const Text('No files or detached tables found.')
                     else ...[
+                      if (currentStepTables.isNotEmpty) ...[
+                        const Text(
+                          'Current Step Tables',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        _buildTableGrid(currentStepTables),
+                        const SizedBox(height: 16),
+                      ],
                       if (protocol.files.isNotEmpty) ...[
                         const Text(
                           'Documents',
@@ -774,16 +793,8 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
                             color: Colors.grey,
                           ),
                         ),
-                        ...protocol.files.map(
-                          (fileName) => ListTile(
-                            leading: const Icon(Icons.insert_drive_file),
-                            title: Text(fileName),
-                            onTap: () {
-                              debugPrint('Open file: $fileName');
-                              Navigator.pop(context);
-                            },
-                          ),
-                        ),
+                        const SizedBox(height: 8),
+                        _buildFileGrid(protocol.files),
                         const SizedBox(height: 16),
                       ],
                       if (unassignedTables.isNotEmpty) ...[
@@ -794,15 +805,8 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
                             color: Colors.grey,
                           ),
                         ),
-                        ...unassignedTables.map(
-                          (table) => Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const SizedBox(height: 8),
-                              ProtocolTableWidget(table: table),
-                            ],
-                          ),
-                        ),
+                        const SizedBox(height: 8),
+                        _buildTableGrid(unassignedTables),
                       ],
                     ],
                   ],
@@ -810,6 +814,67 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
               ),
             );
           },
+        );
+      },
+    );
+  }
+
+  Widget _buildTableGrid(List<ProtocolTable> tables) {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: tables.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        childAspectRatio: 0.82,
+      ),
+      itemBuilder: (context, index) =>
+          ProtocolTableWidget(table: tables[index]),
+    );
+  }
+
+  Widget _buildFileGrid(List<String> files) {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: files.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        childAspectRatio: 0.85,
+      ),
+      itemBuilder: (context, index) {
+        final fileName = files[index];
+        return InkWell(
+          onTap: () {
+            debugPrint('Open file: $fileName');
+            Navigator.pop(context);
+          },
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.insert_drive_file, size: 32),
+                const SizedBox(height: 8),
+                Text(
+                  fileName,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+          ),
         );
       },
     );
@@ -995,10 +1060,7 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
                     style: const TextStyle(fontSize: 12),
                   ),
                 ),
-                title: Padding(
-                  padding: EdgeInsets.only(right: actionTimer != null ? 80 : 0),
-                  child: Text(actionText),
-                ),
+                title: Text(actionText),
               );
 
               if (actionTimer != null) {
@@ -1097,18 +1159,6 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
             },
           ),
         ),
-        if (step.tableIds.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          Text('Tables', style: Theme.of(context).textTheme.titleMedium),
-          ...step.tableIds.map((id) {
-            final table = protocol.tables.firstWhere(
-              (t) => t.id == id,
-              orElse: () => ProtocolTable(id: 'err', title: 'Table Not Found'),
-            );
-            if (table.id == 'err') return const SizedBox.shrink();
-            return ProtocolTableWidget(table: table);
-          }),
-        ],
         _buildNotesList(),
       ],
     );
@@ -1142,20 +1192,28 @@ class _ActionTimerInputState extends State<_ActionTimerInput> {
     if (widget.totalSeconds == 0) {
       _unit = 'M';
       _controller = TextEditingController();
-    } else if (widget.totalSeconds % 3600 == 0) {
+    } else if (widget.totalSeconds >= 3600) {
       _unit = 'H';
       _controller = TextEditingController(
-        text: (widget.totalSeconds ~/ 3600).toString(),
+        text: _formatDecimal(widget.totalSeconds / 3600),
       );
-    } else if (widget.totalSeconds % 60 == 0) {
+    } else if (widget.totalSeconds >= 60) {
       _unit = 'M';
       _controller = TextEditingController(
-        text: (widget.totalSeconds ~/ 60).toString(),
+        text: _formatDecimal(widget.totalSeconds / 60),
       );
     } else {
       _unit = 'S';
       _controller = TextEditingController(text: widget.totalSeconds.toString());
     }
+  }
+
+  String _formatDecimal(double value) {
+    if (value == value.roundToDouble()) return value.toInt().toString();
+    return value
+        .toStringAsFixed(2)
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
   }
 
   @override
@@ -1167,7 +1225,7 @@ class _ActionTimerInputState extends State<_ActionTimerInput> {
           width: 45,
           child: TextField(
             controller: _controller,
-            keyboardType: TextInputType.number,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
             textAlign: TextAlign.center,
             decoration: const InputDecoration(
               isDense: true,
@@ -1201,14 +1259,14 @@ class _ActionTimerInputState extends State<_ActionTimerInput> {
   }
 
   void _updateValue() {
-    final val = int.tryParse(_controller.text) ?? 0;
+    final val = double.tryParse(_controller.text) ?? 0;
     int total = 0;
     if (_unit == 'H') {
-      total = val * 3600;
+      total = (val * 3600).round();
     } else if (_unit == 'M') {
-      total = val * 60;
+      total = (val * 60).round();
     } else {
-      total = val;
+      total = val.round();
     }
     widget.onChanged(total);
   }

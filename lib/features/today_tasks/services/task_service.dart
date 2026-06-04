@@ -42,17 +42,25 @@ class TaskService {
     await prefs.setString(_historyTasksKey, jsonString);
   }
 
+  Future<void> clearHistoryTasks() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_historyTasksKey);
+  }
+
   Future<void> archiveDoneTasks() async {
     List<Task> today = await loadTodayTasks();
     List<Task> history = await loadHistoryTasks();
 
-    final done = today.where((t) => t.isDone).map((t) => t.copyWith(completedAt: DateTime.now())).toList();
+    final done = today
+        .where((t) => t.isDone)
+        .map((t) => t.copyWith(completedAt: DateTime.now()))
+        .toList();
     final remaining = today.where((t) => !t.isDone).toList();
 
     if (done.isEmpty) return;
 
     history.insertAll(0, done);
-    
+
     await saveTodayTasks(remaining);
     await saveHistoryTasks(history);
   }

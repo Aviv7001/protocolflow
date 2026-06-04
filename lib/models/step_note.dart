@@ -24,9 +24,13 @@ class StepNote {
       id: id ?? this.id,
       stepId: stepId ?? this.stepId,
       note: note ?? this.note,
-      photoPaths: photoPaths ?? this.photoPaths,
+      photoPaths: List<String>.from(photoPaths ?? this.photoPaths),
       createdAt: createdAt ?? this.createdAt,
     );
+  }
+
+  StepNote deepCopy() {
+    return copyWith();
   }
 
   Map<String, dynamic> toJson() {
@@ -41,11 +45,16 @@ class StepNote {
 
   factory StepNote.fromJson(Map<String, dynamic> json) {
     return StepNote(
-      id: json['id'],
-      stepId: json['stepId'],
-      note: json['note'],
-      photoPaths: List<String>.from(json['photoPaths'] ?? (json['photoPath'] != null ? [json['photoPath']] : [])),
-      createdAt: DateTime.parse(json['createdAt']),
+      id: json['id'] ?? '',
+      stepId: json['stepId'] ?? '',
+      note: json['note'] ?? '',
+      photoPaths: List<String>.from(
+        json['photoPaths'] ??
+            (json['photoPath'] != null ? [json['photoPath']] : []),
+      ),
+      createdAt: DateTime.parse(
+        json['createdAt'] ?? DateTime.now().toIso8601String(),
+      ),
     );
   }
 }

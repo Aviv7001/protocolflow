@@ -5,6 +5,7 @@ import '../../master_mix/services/master_mix_calculator_service.dart'
 import '../models/serial_dilution_input.dart';
 import '../services/serial_dilution_calculator_service.dart';
 import '../widgets/serial_dilution_result_table.dart';
+import '../../../widgets/unsaved_changes_pop_scope.dart';
 
 class SerialDilutionManagerScreen extends StatefulWidget {
   final SerialDilutionInput input;
@@ -26,6 +27,7 @@ class _SerialDilutionManagerScreenState
   late SerialDilutionInput _input;
   final _calculator = SerialDilutionCalculatorService();
   static const double _uniformFontSize = 14.0;
+  bool _canActuallyPop = false;
 
   static const _allowedConcentrationUnits = [
     ConcentrationUnit.M,
@@ -50,30 +52,35 @@ class _SerialDilutionManagerScreenState
   Widget build(BuildContext context) {
     final result = _calculator.generateDilutionTable(_input);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Serial Dilution Manager'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.save),
-            onPressed: () => _handleDone(context),
-          ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildGeneralInfo(),
-            const SizedBox(height: 16),
-            _buildDilutionOptions(),
-            const SizedBox(height: 24),
-            _buildGlobalResultPreview(result),
-            const SizedBox(height: 12),
-            SerialDilutionResultTable(input: _input, calculator: _calculator),
-            const SizedBox(height: 80),
+    return UnsavedChangesPopScope(
+      canPop: _canActuallyPop,
+      message:
+          'You have unsaved changes in this table. Are you sure you want to exit?',
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Serial Dilution Manager'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.save),
+              onPressed: () => _handleDone(context),
+            ),
           ],
+        ),
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildGeneralInfo(),
+              const SizedBox(height: 16),
+              _buildDilutionOptions(),
+              const SizedBox(height: 24),
+              _buildGlobalResultPreview(result),
+              const SizedBox(height: 12),
+              SerialDilutionResultTable(input: _input, calculator: _calculator),
+              const SizedBox(height: 80),
+            ],
+          ),
         ),
       ),
     );
@@ -169,6 +176,20 @@ class _SerialDilutionManagerScreenState
             ),
             const SizedBox(height: 12),
             _buildStartingConcRow(),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () => setState(
+                  () => _input = _input.copyWith(
+                    startingDilutionConcentration: _input.stockConcentration,
+                    startingDilutionConcentrationUnit:
+                        _input.stockConcentrationUnit,
+                  ),
+                ),
+                icon: const Icon(Icons.science, size: 18),
+                label: const Text('Use stock as D0'),
+              ),
+            ),
             const SizedBox(height: 12),
             _DelayedTextField(
               decoration: const InputDecoration(
@@ -538,7 +559,10 @@ class _SerialDilutionManagerScreenState
     if (name != null) {
       setState(() => _input = _input.copyWith(title: name));
       widget.onUpdate(_input);
-      if (context.mounted) Navigator.pop(context, _input);
+      if (context.mounted) {
+        setState(() => _canActuallyPop = true);
+        Navigator.pop(context, _input);
+      }
     }
   }
 

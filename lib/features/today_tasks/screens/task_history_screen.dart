@@ -37,34 +37,84 @@ class _TaskHistoryScreenState extends State<TaskHistoryScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Tasks History'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.delete_sweep_outlined),
+            tooltip: 'Clear history',
+            onPressed: _historyTasks.isEmpty ? null : _confirmClearHistory,
+          ),
+        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _historyTasks.isEmpty
-              ? const Center(child: Text('No tasks in history.'))
-              : ListView.builder(
-                  itemCount: _historyTasks.length,
-                  itemBuilder: (context, index) {
-                    final task = _historyTasks[index];
-                    final dateStr = task.completedAt != null 
-                        ? _formatDate(task.completedAt!)
-                        : 'Unknown date';
-                    return Card(
-                      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      child: ListTile(
-                        leading: const Icon(Icons.check_circle, color: Colors.grey),
-                        title: Text(task.title, style: const TextStyle(decoration: TextDecoration.lineThrough, color: Colors.grey)),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (task.description.isNotEmpty) Text(task.description),
-                            Text('Completed: $dateStr', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                          ],
-                        ),
+          ? const Center(child: Text('No tasks in history.'))
+          : ListView.builder(
+              itemCount: _historyTasks.length,
+              itemBuilder: (context, index) {
+                final task = _historyTasks[index];
+                final dateStr = task.completedAt != null
+                    ? _formatDate(task.completedAt!)
+                    : 'Unknown date';
+                return Card(
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  child: ListTile(
+                    leading: const Icon(Icons.check_circle, color: Colors.grey),
+                    title: Text(
+                      task.title,
+                      style: const TextStyle(
+                        decoration: TextDecoration.lineThrough,
+                        color: Colors.grey,
                       ),
-                    );
-                  },
-                ),
+                    ),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (task.description.isNotEmpty) Text(task.description),
+                        Text(
+                          'Completed: $dateStr',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+    );
+  }
+
+  void _confirmClearHistory() {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Clear Tasks History?'),
+        content: const Text(
+          'This will permanently remove all completed tasks from history.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              await _taskService.clearHistoryTasks();
+              if (!mounted) return;
+              setState(() => _historyTasks = []);
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Clear'),
+          ),
+        ],
+      ),
     );
   }
 }

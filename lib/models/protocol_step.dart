@@ -44,15 +44,21 @@ class ProtocolStep {
       id: id ?? this.id,
       title: title ?? this.title,
       instructions: instructions ?? this.instructions,
-      actionItems: actionItems ?? this.actionItems,
-      materials: materials ?? this.materials,
+      actionItems: List<String>.from(actionItems ?? this.actionItems),
+      materials: (materials ?? this.materials)
+          .map((m) => m.copyWith())
+          .toList(),
       timerInSeconds: timerInSeconds ?? this.timerInSeconds,
       day: day ?? this.day,
       phaseName: phaseName ?? this.phaseName,
-      actionTimers: actionTimers ?? this.actionTimers,
-      attachedFiles: attachedFiles ?? this.attachedFiles,
-      tableIds: tableIds ?? this.tableIds,
+      actionTimers: Map<int, int>.from(actionTimers ?? this.actionTimers),
+      attachedFiles: List<String>.from(attachedFiles ?? this.attachedFiles),
+      tableIds: List<String>.from(tableIds ?? this.tableIds),
     );
+  }
+
+  ProtocolStep deepCopy() {
+    return copyWith();
   }
 
   Map<String, dynamic> toJson() {
@@ -72,19 +78,22 @@ class ProtocolStep {
   }
 
   factory ProtocolStep.fromJson(Map<String, dynamic> json) {
+    final actionItemsJson = json['actionItems'] ?? json['actions'] ?? [];
+
     return ProtocolStep(
-      id: json['id'],
-      title: json['title'],
-      instructions: json['instructions'],
-      actionItems: List<String>.from(json['actionItems']),
-      materials: (json['materials'] as List)
+      id: json['id'] ?? '',
+      title: json['title'] ?? '',
+      instructions: json['instructions'] ?? '',
+      actionItems: List<String>.from(actionItemsJson),
+      materials: (json['materials'] as List? ?? [])
           .map((m) => MaterialItem.fromJson(m))
           .toList(),
       timerInSeconds: json['timerInSeconds'],
       day: json['day'] ?? 1,
       phaseName: json['phaseName'],
-      actionTimers: (json['actionTimers'] as Map? ?? {})
-          .map((k, v) => MapEntry(int.parse(k.toString()), v as int)),
+      actionTimers: (json['actionTimers'] as Map? ?? {}).map(
+        (k, v) => MapEntry(int.parse(k.toString()), v as int),
+      ),
       attachedFiles: List<String>.from(json['attachedFiles'] ?? []),
       tableIds: List<String>.from(json['tableIds'] ?? []),
     );

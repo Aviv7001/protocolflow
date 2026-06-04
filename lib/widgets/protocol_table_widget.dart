@@ -27,6 +27,7 @@ class ProtocolTableWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tableColor = _getTypeColor(table);
     return Padding(
       padding: const EdgeInsets.all(8.0),
       child: Column(
@@ -40,14 +41,14 @@ class ProtocolTableWidget extends StatelessWidget {
               width: 80,
               height: 80,
               decoration: BoxDecoration(
-                color: Colors.blue.shade50,
+                color: tableColor.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.blue.shade200),
+                border: Border.all(color: tableColor.withValues(alpha: 0.35)),
               ),
               child: Icon(
                 _getTypeIcon(table.type),
                 size: 40,
-                color: Colors.blue.shade700,
+                color: tableColor,
               ),
             ),
           ),
@@ -199,6 +200,32 @@ class ProtocolTableWidget extends StatelessWidget {
         return Icons.water_drop;
       default:
         return Icons.table_chart;
+    }
+  }
+
+  Color _getTypeColor(ProtocolTable table) {
+    final savedColor = table.metadata['typeColor'];
+    if (savedColor != null) {
+      final parsed = int.tryParse(savedColor, radix: 16);
+      if (parsed != null) return Color(parsed);
+    }
+
+    switch (table.type) {
+      case TableType.masterMix:
+        return Colors.blue;
+      case TableType.staining:
+        return Colors.indigo;
+      case TableType.reagentMix:
+      case TableType.reagentMatrix:
+        return Colors.teal;
+      case TableType.serialDilution:
+        return Colors.cyan;
+      case TableType.plateLayout:
+        return Colors.orange;
+      case TableType.checklist:
+        return Colors.green;
+      case TableType.generic:
+        return Colors.grey;
     }
   }
 }

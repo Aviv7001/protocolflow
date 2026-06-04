@@ -2,12 +2,17 @@ import 'package:flutter/material.dart';
 import '../models/reagent_mix_wizard.dart';
 import '../features/reagent_mix/services/reagent_mix_calculator_service.dart';
 import '../features/reagent_mix/widgets/reagent_result_table.dart';
+import '../widgets/unsaved_changes_pop_scope.dart';
 
 class ReagentManagerScreen extends StatefulWidget {
   final ReagentMixWizard wizard;
   final Function(ReagentMixWizard) onUpdate;
 
-  const ReagentManagerScreen({super.key, required this.wizard, required this.onUpdate});
+  const ReagentManagerScreen({
+    super.key,
+    required this.wizard,
+    required this.onUpdate,
+  });
 
   @override
   State<ReagentManagerScreen> createState() => _ReagentManagerScreenState();
@@ -16,6 +21,7 @@ class ReagentManagerScreen extends StatefulWidget {
 class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
   late ReagentMixWizard _wizard;
   static const double _uniformFontSize = 14.0;
+  bool _canActuallyPop = false;
 
   @override
   void initState() {
@@ -44,7 +50,7 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
             stockUnit: lastStockUnit,
             workingUnit: lastWorkingUnit,
             volUnit: lastVolUnit,
-          )
+          ),
         ],
       );
     });
@@ -52,7 +58,8 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
 
   void _removeReagent(int index) {
     setState(() {
-      final newReagents = List<ReagentItem>.from(_wizard.reagents)..removeAt(index);
+      final newReagents = List<ReagentItem>.from(_wizard.reagents)
+        ..removeAt(index);
       _wizard = _wizard.copyWith(reagents: newReagents);
     });
   }
@@ -67,46 +74,47 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Reagent Manager'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.save),
-            onPressed: () => _handleDone(context),
-          ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Reagents', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 12),
-            Center(
-              child: ElevatedButton.icon(
-                onPressed: _addReagent,
-                icon: const Icon(Icons.add),
-                label: const Text('Add Reagent', style: TextStyle(fontSize: _uniformFontSize)),
-              ),
+    return UnsavedChangesPopScope(
+      canPop: _canActuallyPop,
+      message:
+          'You have unsaved changes in this table. Are you sure you want to exit?',
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Reagent Manager'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.save),
+              onPressed: () => _handleDone(context),
             ),
-            const SizedBox(height: 16),
-            ..._wizard.reagents.asMap().entries.map((entry) => _buildReagentEditor(entry.key, entry.value)),
-            if (_wizard.reagents.isNotEmpty)
+          ],
+        ),
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Reagents', style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 16),
+              ..._wizard.reagents.asMap().entries.map(
+                (entry) => _buildReagentEditor(entry.key, entry.value),
+              ),
               Padding(
                 padding: const EdgeInsets.only(top: 8.0),
                 child: Center(
                   child: ElevatedButton.icon(
                     onPressed: _addReagent,
                     icon: const Icon(Icons.add),
-                    label: const Text('Add Reagent', style: TextStyle(fontSize: _uniformFontSize)),
+                    label: const Text(
+                      'Add Reagent',
+                      style: TextStyle(fontSize: _uniformFontSize),
+                    ),
                   ),
                 ),
               ),
-            _buildGlobalPreviewTable(),
-            const SizedBox(height: 40),
-          ],
+              _buildGlobalPreviewTable(),
+              const SizedBox(height: 40),
+            ],
+          ),
         ),
       ),
     );
@@ -120,12 +128,16 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
       });
       widget.onUpdate(_wizard);
       if (context.mounted) {
+        setState(() => _canActuallyPop = true);
         Navigator.pop(context, _wizard);
       }
     }
   }
 
-  Future<String?> _showSaveDialog(BuildContext context, String suggestedName) async {
+  Future<String?> _showSaveDialog(
+    BuildContext context,
+    String suggestedName,
+  ) async {
     String currentName = suggestedName;
     return showDialog<String>(
       context: context,
@@ -133,15 +145,24 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
         title: const Text('Save Table'),
         content: TextField(
           autofocus: true,
-          decoration: const InputDecoration(labelText: 'Table Name', hintText: 'Enter table name...'),
+          decoration: const InputDecoration(
+            labelText: 'Table Name',
+            hintText: 'Enter table name...',
+          ),
           controller: TextEditingController(text: suggestedName),
           onChanged: (v) => currentName = v,
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('CANCEL'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(context, currentName),
-            child: const Text('SAVE', style: TextStyle(fontWeight: FontWeight.bold)),
+            child: const Text(
+              'SAVE',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
@@ -155,7 +176,10 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Divider(height: 40),
-        Text('Generated Reagent Table Preview', style: Theme.of(context).textTheme.titleLarge),
+        Text(
+          'Generated Reagent Table Preview',
+          style: Theme.of(context).textTheme.titleLarge,
+        ),
         const SizedBox(height: 16),
         ReagentResultTable(wizard: _wizard),
       ],
@@ -164,17 +188,19 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
 
   Widget _buildReagentEditor(int index, ReagentItem item) {
     final calc = ReagentMixCalculatorService();
-    final result = calc.calculateMix(ReagentMixInput(
-      reagentName: item.name,
-      stockConcentration: item.stockConc,
-      stockUnit: item.stockUnit,
-      workingConcentration: item.workingConc,
-      workingUnit: item.workingUnit,
-      volumePerTube: item.volPerSample,
-      volumePerTubeUnit: item.volUnit,
-      numberOfTubes: item.numSamples,
-      molecularWeight: item.molecularWeight,
-    ));
+    final result = calc.calculateMix(
+      ReagentMixInput(
+        reagentName: item.name,
+        stockConcentration: item.stockConc,
+        stockUnit: item.stockUnit,
+        workingConcentration: item.workingConc,
+        workingUnit: item.workingUnit,
+        volumePerTube: item.volPerSample,
+        volumePerTubeUnit: item.volUnit,
+        numberOfTubes: item.numSamples,
+        molecularWeight: item.molecularWeight,
+      ),
+    );
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -186,10 +212,16 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
               children: [
                 Expanded(
                   child: _DelayedTextField(
-                    decoration: const InputDecoration(labelText: 'Reagent Name'),
+                    decoration: const InputDecoration(
+                      labelText: 'Reagent Name',
+                    ),
                     initialValue: item.name,
-                    style: const TextStyle(fontSize: _uniformFontSize, fontWeight: FontWeight.bold),
-                    onCommit: (v) => _updateReagent(index, item.copyWith(name: v)),
+                    style: const TextStyle(
+                      fontSize: _uniformFontSize,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    onCommit: (v) =>
+                        _updateReagent(index, item.copyWith(name: v)),
                   ),
                 ),
                 IconButton(
@@ -206,26 +238,47 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
                     decoration: const InputDecoration(labelText: 'Solvent'),
                     initialValue: item.solvent,
                     style: const TextStyle(fontSize: _uniformFontSize),
-                    onCommit: (v) => _updateReagent(index, item.copyWith(solvent: v)),
+                    onCommit: (v) =>
+                        _updateReagent(index, item.copyWith(solvent: v)),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 12),
-            _buildConcRow('C1 (Stock Conc.)', item.stockConc, item.stockUnit, (val) => _updateReagent(index, item.copyWith(stockConc: val)), (unit) => _updateReagent(index, item.copyWith(stockUnit: unit))),
+            _buildConcRow(
+              'C1 (Stock Conc.)',
+              item.stockConc,
+              item.stockUnit,
+              (val) => _updateReagent(index, item.copyWith(stockConc: val)),
+              (unit) => _updateReagent(index, item.copyWith(stockUnit: unit)),
+            ),
             const SizedBox(height: 8),
-            _buildConcRow('C2 (Final Conc.)', item.workingConc, item.workingUnit, (val) => _updateReagent(index, item.copyWith(workingConc: val)), (unit) => _updateReagent(index, item.copyWith(workingUnit: unit))),
+            _buildConcRow(
+              'C2 (Final Conc.)',
+              item.workingConc,
+              item.workingUnit,
+              (val) => _updateReagent(index, item.copyWith(workingConc: val)),
+              (unit) => _updateReagent(index, item.copyWith(workingUnit: unit)),
+            ),
             const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
                   flex: 3,
                   child: _DelayedTextField(
-                    decoration: const InputDecoration(labelText: 'Vol. / Tube', isDense: true),
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: 'Vol. / Tube',
+                      isDense: true,
+                    ),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
                     initialValue: item.volPerSample.toString(),
                     style: const TextStyle(fontSize: _uniformFontSize),
-                    onCommit: (v) => _updateReagent(index, item.copyWith(volPerSample: double.tryParse(v) ?? 0)),
+                    onCommit: (v) => _updateReagent(
+                      index,
+                      item.copyWith(volPerSample: double.tryParse(v) ?? 0),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -233,25 +286,49 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
                   flex: 2,
                   child: DropdownButtonFormField<VolumeUnit>(
                     initialValue: item.volUnit,
-                    decoration: const InputDecoration(labelText: 'Unit', isDense: true),
-                    items: VolumeUnit.values.map((u) => DropdownMenuItem(value: u, child: Text(u.name, style: const TextStyle(fontSize: _uniformFontSize)))).toList(),
-                    onChanged: (v) => _updateReagent(index, item.copyWith(volUnit: v!)),
+                    decoration: const InputDecoration(
+                      labelText: 'Unit',
+                      isDense: true,
+                    ),
+                    items: VolumeUnit.values
+                        .map(
+                          (u) => DropdownMenuItem(
+                            value: u,
+                            child: Text(
+                              u.name,
+                              style: const TextStyle(
+                                fontSize: _uniformFontSize,
+                              ),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) =>
+                        _updateReagent(index, item.copyWith(volUnit: v!)),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   flex: 2,
                   child: _DelayedTextField(
-                    decoration: const InputDecoration(labelText: '# Tubes', isDense: true),
+                    decoration: const InputDecoration(
+                      labelText: '# Tubes',
+                      isDense: true,
+                    ),
                     keyboardType: TextInputType.number,
                     initialValue: item.numSamples.toString(),
                     style: const TextStyle(fontSize: _uniformFontSize),
-                    onCommit: (v) => _updateReagent(index, item.copyWith(numSamples: int.tryParse(v) ?? 1)),
+                    onCommit: (v) => _updateReagent(
+                      index,
+                      item.copyWith(numSamples: int.tryParse(v) ?? 1),
+                    ),
                   ),
                 ),
               ],
             ),
-            if (result.success || result.warnings.isNotEmpty || result.errorMessage != null) ...[
+            if (result.success ||
+                result.warnings.isNotEmpty ||
+                result.errorMessage != null) ...[
               const Divider(height: 24),
               _buildResultPreview(index, item, result),
             ],
@@ -281,7 +358,13 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
     return double.tryParse(v) ?? 0;
   }
 
-  Widget _buildConcRow(String label, double value, ConcentrationUnit unit, Function(double) onVal, Function(ConcentrationUnit) onUnit) {
+  Widget _buildConcRow(
+    String label,
+    double value,
+    ConcentrationUnit unit,
+    Function(double) onVal,
+    Function(ConcentrationUnit) onUnit,
+  ) {
     String displayValue = value.toString();
     if (unit == ConcentrationUnit.ratio && value >= 1) {
       displayValue = '1:${value == value.toInt() ? value.toInt() : value}';
@@ -295,9 +378,13 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
             decoration: InputDecoration(
               labelText: label,
               isDense: true,
-              hintText: unit == ConcentrationUnit.ratio ? 'e.g. 1:400 or 1/400' : '',
+              hintText: unit == ConcentrationUnit.ratio
+                  ? 'e.g. 1:400 or 1/400'
+                  : '',
             ),
-            keyboardType: unit == ConcentrationUnit.ratio ? TextInputType.text : const TextInputType.numberWithOptions(decimal: true),
+            keyboardType: unit == ConcentrationUnit.ratio
+                ? TextInputType.text
+                : const TextInputType.numberWithOptions(decimal: true),
             initialValue: displayValue,
             style: const TextStyle(fontSize: _uniformFontSize),
             onCommit: (v) => onVal(_parseConcentration(v)),
@@ -309,7 +396,17 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
           child: DropdownButtonFormField<ConcentrationUnit>(
             initialValue: unit,
             decoration: const InputDecoration(labelText: 'Unit', isDense: true),
-            items: ConcentrationUnit.values.map((u) => DropdownMenuItem(value: u, child: Text(_unitLabel(u), style: const TextStyle(fontSize: _uniformFontSize)))).toList(),
+            items: ConcentrationUnit.values
+                .map(
+                  (u) => DropdownMenuItem(
+                    value: u,
+                    child: Text(
+                      _unitLabel(u),
+                      style: const TextStyle(fontSize: _uniformFontSize),
+                    ),
+                  ),
+                )
+                .toList(),
             onChanged: (v) => onUnit(v!),
           ),
         ),
@@ -319,22 +416,43 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
 
   String _unitLabel(ConcentrationUnit unit) {
     switch (unit) {
-      case ConcentrationUnit.M: return 'M';
-      case ConcentrationUnit.mM: return 'mM';
-      case ConcentrationUnit.uM: return 'µM';
-      case ConcentrationUnit.nM: return 'nM';
-      case ConcentrationUnit.gL: return 'g/L';
-      case ConcentrationUnit.mgML: return 'mg/mL';
-      case ConcentrationUnit.ugML: return 'µg/mL';
-      case ConcentrationUnit.percent: return '%';
-      case ConcentrationUnit.ratio: return 'ratio';
-      case ConcentrationUnit.gMol: return 'g/mol';
+      case ConcentrationUnit.M:
+        return 'M';
+      case ConcentrationUnit.mM:
+        return 'mM';
+      case ConcentrationUnit.uM:
+        return 'µM';
+      case ConcentrationUnit.nM:
+        return 'nM';
+      case ConcentrationUnit.gL:
+        return 'g/L';
+      case ConcentrationUnit.mgML:
+        return 'mg/mL';
+      case ConcentrationUnit.ugML:
+        return 'µg/mL';
+      case ConcentrationUnit.percent:
+        return '%';
+      case ConcentrationUnit.ratio:
+        return 'ratio';
+      case ConcentrationUnit.gMol:
+        return 'g/mol';
     }
   }
 
-  Widget _buildResultPreview(int index, ReagentItem item, ReagentMixResult result) {
+  Widget _buildResultPreview(
+    int index,
+    ReagentItem item,
+    ReagentMixResult result,
+  ) {
     if (!result.success) {
-      return Text(result.errorMessage ?? 'Error in calculation', style: const TextStyle(color: Colors.red, fontSize: _uniformFontSize, fontWeight: FontWeight.bold));
+      return Text(
+        result.errorMessage ?? 'Error in calculation',
+        style: const TextStyle(
+          color: Colors.red,
+          fontSize: _uniformFontSize,
+          fontWeight: FontWeight.bold,
+        ),
+      );
     }
 
     final bool isMass = result.reagentMassGrams != null;
@@ -346,61 +464,63 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             if (isMass)
-              _resItemEditableMass(
-                'V1 (Stock)',
-                result.reagentMassGrams!,
-                (val) {
-                  // val is in grams. We don't adjust C1 (MW) or C2. 
-                  // If mass is adjusted, we adjust the total volume V2 to keep the same C2.
-                  final bool isStockMW = item.stockUnit == ConcentrationUnit.gMol;
-                  final double mw = isStockMW ? item.stockConc : item.workingConc;
-                  final double targetConc = isStockMW ? item.workingConc : item.stockConc;
-                  final ConcentrationUnit targetUnit = isStockMW ? item.workingUnit : item.stockUnit;
-                  
-                  double newV2L = 0;
-                  if (targetUnit.index < 4) { // Molar
-                    final double m = targetConc * [1, 1e-3, 1e-6, 1e-9][targetUnit.index];
-                    newV2L = val / (mw * m);
-                  } else if (targetUnit == ConcentrationUnit.gL || targetUnit == ConcentrationUnit.mgML) {
-                    newV2L = val / targetConc;
-                  } else if (targetUnit == ConcentrationUnit.ugML) {
-                    newV2L = val / (targetConc * 1e-3);
-                  }
+              _resItemEditableMass('V1 (Stock)', result.reagentMassGrams!, (
+                val,
+              ) {
+                // val is in grams. We don't adjust C1 (MW) or C2.
+                // If mass is adjusted, we adjust the total volume V2 to keep the same C2.
+                final bool isStockMW = item.stockUnit == ConcentrationUnit.gMol;
+                final double mw = isStockMW ? item.stockConc : item.workingConc;
+                final double targetConc = isStockMW
+                    ? item.workingConc
+                    : item.stockConc;
+                final ConcentrationUnit targetUnit = isStockMW
+                    ? item.workingUnit
+                    : item.stockUnit;
 
-                  if (newV2L > 0) {
-                    final newV2uL = newV2L * 1e6;
-                    // Round to 1 decimal place to avoid floating point issues
-                    final newVolPerTube = (newV2uL / item.numSamples * 10).round() / 10.0;
-                    _updateReagent(index, item.copyWith(volPerSample: newVolPerTube));
-                  }
-                },
-                Colors.blue,
-              )
+                double newV2L = 0;
+                if (targetUnit.index < 4) {
+                  // Molar
+                  final double m =
+                      targetConc * [1, 1e-3, 1e-6, 1e-9][targetUnit.index];
+                  newV2L = val / (mw * m);
+                } else if (targetUnit == ConcentrationUnit.gL ||
+                    targetUnit == ConcentrationUnit.mgML) {
+                  newV2L = val / targetConc;
+                } else if (targetUnit == ConcentrationUnit.ugML) {
+                  newV2L = val / (targetConc * 1e-3);
+                }
+
+                if (newV2L > 0) {
+                  final newV2uL = newV2L * 1e6;
+                  // Round to 1 decimal place to avoid floating point issues
+                  final newVolPerTube =
+                      (newV2uL / item.numSamples * 10).round() / 10.0;
+                  _updateReagent(
+                    index,
+                    item.copyWith(volPerSample: newVolPerTube),
+                  );
+                }
+              }, Colors.blue)
             else
-              _resItemEditable(
-                'V1 (Stock)',
-                result.reagentVolumeUl,
-                (val) {
-                  if (result.reagentVolumeUl > 0) {
-                    final ratio = result.totalVolumeUl / result.reagentVolumeUl;
-                    final newV2 = val * ratio;
-                    // Round to 1 decimal place to keep it clean
-                    final newVolPerTube = (newV2 / (item.numSamples * 1.1) * 10).round() / 10.0;
-                    _updateReagent(index, item.copyWith(volPerSample: newVolPerTube));
-                  }
-                },
-                Colors.blue,
-              ),
+              _resItemEditable('V1 (Stock)', result.reagentVolumeUl, (val) {
+                if (result.reagentVolumeUl > 0) {
+                  final ratio = result.totalVolumeUl / result.reagentVolumeUl;
+                  final newV2 = val * ratio;
+                  // Round to 1 decimal place to keep it clean
+                  final newVolPerTube =
+                      (newV2 / (item.numSamples * 1.1) * 10).round() / 10.0;
+                  _updateReagent(
+                    index,
+                    item.copyWith(volPerSample: newVolPerTube),
+                  );
+                }
+              }, Colors.blue),
             _resItem('Solvent', result.formattedSolventVolume, Colors.green),
-            _resItemEditable(
-              'V2 (Total)',
-              result.totalVolumeUl,
-              (val) {
-                final newVolPerTube = val / (item.numSamples * 1.1);
-                _updateReagent(index, item.copyWith(volPerSample: newVolPerTube));
-              },
-              Colors.black,
-            ),
+            _resItemEditable('V2 (Total)', result.totalVolumeUl, (val) {
+              final newVolPerTube = val / (item.numSamples * 1.1);
+              _updateReagent(index, item.copyWith(volPerSample: newVolPerTube));
+            }, Colors.black),
           ],
         ),
         if (result.warnings.isNotEmpty)
@@ -408,14 +528,29 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
             padding: const EdgeInsets.only(top: 8.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: result.warnings.map((w) => Text('• $w', style: TextStyle(color: Colors.orange.shade900, fontSize: _uniformFontSize - 2))).toList(),
+              children: result.warnings
+                  .map(
+                    (w) => Text(
+                      '• $w',
+                      style: TextStyle(
+                        color: Colors.orange.shade900,
+                        fontSize: _uniformFontSize - 2,
+                      ),
+                    ),
+                  )
+                  .toList(),
             ),
           ),
       ],
     );
   }
 
-  Widget _resItemEditableMass(String label, double valGrams, Function(double) onVal, Color color) {
+  Widget _resItemEditableMass(
+    String label,
+    double valGrams,
+    Function(double) onVal,
+    Color color,
+  ) {
     String displayVal;
     String unit;
     double factor;
@@ -436,7 +571,13 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(fontSize: _uniformFontSize - 4, color: Colors.grey)),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: _uniformFontSize - 4,
+            color: Colors.grey,
+          ),
+        ),
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -444,16 +585,29 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
               width: 70,
               child: _DelayedTextField(
                 initialValue: displayVal,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                style: TextStyle(fontSize: _uniformFontSize, fontWeight: FontWeight.bold, color: color),
-                decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.zero, border: InputBorder.none),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                style: TextStyle(
+                  fontSize: _uniformFontSize,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+                decoration: const InputDecoration(
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
+                  border: InputBorder.none,
+                ),
                 onCommit: (v) {
                   final d = double.tryParse(v) ?? 0;
                   onVal(d * factor);
                 },
               ),
             ),
-            Text(unit, style: TextStyle(fontSize: _uniformFontSize - 2, color: color)),
+            Text(
+              unit,
+              style: TextStyle(fontSize: _uniformFontSize - 2, color: color),
+            ),
           ],
         ),
       ],
@@ -464,13 +618,31 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(fontSize: _uniformFontSize - 4, color: Colors.grey)),
-        Text(val, style: TextStyle(fontSize: _uniformFontSize, fontWeight: FontWeight.bold, color: color)),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: _uniformFontSize - 4,
+            color: Colors.grey,
+          ),
+        ),
+        Text(
+          val,
+          style: TextStyle(
+            fontSize: _uniformFontSize,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
       ],
     );
   }
 
-  Widget _resItemEditable(String label, double valUl, Function(double) onVal, Color color) {
+  Widget _resItemEditable(
+    String label,
+    double valUl,
+    Function(double) onVal,
+    Color color,
+  ) {
     // Convert uL to mL if needed for display/edit
     String displayVal;
     String unit;
@@ -488,7 +660,13 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(fontSize: _uniformFontSize - 4, color: Colors.grey)),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: _uniformFontSize - 4,
+            color: Colors.grey,
+          ),
+        ),
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -496,16 +674,29 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
               width: 70,
               child: _DelayedTextField(
                 initialValue: displayVal,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                style: TextStyle(fontSize: _uniformFontSize, fontWeight: FontWeight.bold, color: color),
-                decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.zero, border: InputBorder.none),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                style: TextStyle(
+                  fontSize: _uniformFontSize,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+                decoration: const InputDecoration(
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
+                  border: InputBorder.none,
+                ),
                 onCommit: (v) {
                   final d = double.tryParse(v) ?? 0;
                   onVal(d * factor);
                 },
               ),
             ),
-            Text(unit, style: TextStyle(fontSize: _uniformFontSize - 2, color: color)),
+            Text(
+              unit,
+              style: TextStyle(fontSize: _uniformFontSize - 2, color: color),
+            ),
           ],
         ),
       ],

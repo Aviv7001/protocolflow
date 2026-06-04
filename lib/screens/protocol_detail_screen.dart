@@ -15,7 +15,11 @@ class ProtocolDetailScreen extends StatefulWidget {
   final Protocol protocol;
   final ActiveProtocol? activeState;
 
-  const ProtocolDetailScreen({super.key, required this.protocol, this.activeState});
+  const ProtocolDetailScreen({
+    super.key,
+    required this.protocol,
+    this.activeState,
+  });
 
   @override
   State<ProtocolDetailScreen> createState() => _ProtocolDetailScreenState();
@@ -37,7 +41,9 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Delete Protocol?'),
-        content: const Text('Are you sure you want to delete this protocol from your library?'),
+        content: const Text(
+          'Are you sure you want to delete this protocol from your library?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
@@ -47,13 +53,15 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
             onPressed: () async {
               final scaffoldNavigator = Navigator.of(context);
               final dialogNavigator = Navigator.of(dialogContext);
-              
+
               final existingProtocols = await StorageService().loadProtocols();
               existingProtocols.removeWhere((p) => p.id == protocol.id);
               await StorageService().saveProtocols(existingProtocols);
-              
+
               if (mounted) {
-                if (dialogContext.mounted) dialogNavigator.pop(); // Close dialog
+                if (dialogContext.mounted) {
+                  dialogNavigator.pop(); // Close dialog
+                }
                 scaffoldNavigator.pop(); // Go back to list
               }
             },
@@ -65,7 +73,11 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
     );
   }
 
-    void _editProtocol(BuildContext context, {String? targetPhase, bool isAddingPhase = false}) async {
+  void _editProtocol(
+    BuildContext context, {
+    String? targetPhase,
+    bool isAddingPhase = false,
+  }) async {
     final updatedProtocol = await Navigator.push(
       context,
       MaterialPageRoute(
@@ -84,7 +96,9 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
         if (activeState != null) {
           activeState = activeState!.copyWith(protocol: updatedProtocol);
           // Sync with global state
-          int idx = runningProtocols.indexWhere((p) => p.protocol.id == protocol.id);
+          int idx = runningProtocols.indexWhere(
+            (p) => p.protocol.id == protocol.id,
+          );
           if (idx != -1) {
             runningProtocols[idx] = activeState!;
             savePersistentProtocols();
@@ -131,11 +145,23 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
     );
   }
 
+  void _refreshActiveState() {
+    final updatedState = activeProtocol?.protocol.id == protocol.id
+        ? activeProtocol
+        : runningProtocols
+              .where((p) => p.protocol.id == protocol.id)
+              .cast<ActiveProtocol?>()
+              .firstWhere((p) => p != null, orElse: () => activeState);
+    setState(() => activeState = updatedState);
+  }
+
   @override
   Widget build(BuildContext context) {
     final sortedSteps = protocol.sortedSteps;
-    
-    final bool hasPhases = sortedSteps.any((s) => s.phaseName != null && s.phaseName!.isNotEmpty);
+
+    final bool hasPhases = sortedSteps.any(
+      (s) => s.phaseName != null && s.phaseName!.isNotEmpty,
+    );
     String fabLabel = 'Run Protocol';
     int? nextPhaseStartIdx;
     int? nextPhaseEndIdx;
@@ -156,9 +182,12 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
       bool foundNext = false;
       for (var phase in phaseOrder) {
         final phaseSteps = stepsByPhase[phase]!;
-        final bool isPhaseDone = activeState != null && 
-            phaseSteps.every((s) => activeState!.completedStepIds.contains(s.id));
-        
+        final bool isPhaseDone =
+            activeState != null &&
+            phaseSteps.every(
+              (s) => activeState!.completedStepIds.contains(s.id),
+            );
+
         if (!isPhaseDone) {
           fabLabel = 'Run $phase';
           nextPhaseStartIdx = currentGlobalIdx;
@@ -168,7 +197,7 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
         }
         currentGlobalIdx += phaseSteps.length;
       }
-      
+
       if (!foundNext) {
         fabLabel = 'Protocol Completed';
       }
@@ -179,15 +208,18 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
         stepsByDay.putIfAbsent(step.day, () => []).add(step);
       }
       final sortedDays = stepsByDay.keys.toList()..sort();
-      
+
       if (sortedDays.length > 1) {
         int currentGlobalIdx = 0;
         bool foundNext = false;
         for (var day in sortedDays) {
           final daySteps = stepsByDay[day]!;
-          final bool isDayDone = activeState != null && 
-              daySteps.every((s) => activeState!.completedStepIds.contains(s.id));
-          
+          final bool isDayDone =
+              activeState != null &&
+              daySteps.every(
+                (s) => activeState!.completedStepIds.contains(s.id),
+              );
+
           if (!isDayDone) {
             fabLabel = 'Run Day $day';
             nextPhaseStartIdx = currentGlobalIdx;
@@ -233,12 +265,17 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
                 Expanded(
                   child: Text(
                     protocol.title,
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
                 if (protocol.isTemplate)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.purple.shade50,
                       borderRadius: BorderRadius.circular(12),
@@ -256,23 +293,28 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
               ],
             ),
             const Divider(height: 32),
-            
+
             _buildSection(context, 'Objective', protocol.objective),
             _buildSection(context, 'Description', protocol.description),
-            
+
             if (protocol.samples.isNotEmpty) ...[
               const SizedBox(height: 16),
               Text('Samples', style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 8),
-              ...protocol.samples.map((sample) => Padding(
-                padding: const EdgeInsets.only(bottom: 4.0),
-                child: Text('• $sample'),
-              )),
+              ...protocol.samples.map(
+                (sample) => Padding(
+                  padding: const EdgeInsets.only(bottom: 4.0),
+                  child: Text('• $sample'),
+                ),
+              ),
               const SizedBox(height: 16),
             ],
 
             const SizedBox(height: 16),
-            Text('Material List', style: Theme.of(context).textTheme.titleLarge),
+            Text(
+              'Material List',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
             const SizedBox(height: 8),
             if (protocol.materials.isEmpty)
               const Text('No materials listed.')
@@ -289,19 +331,23 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
                     DataColumn(label: Text('Location')),
                     DataColumn(label: Text('Stock Conc.')),
                   ],
-                  rows: protocol.materials.map((m) => DataRow(
-                    cells: [
-                      DataCell(Text(m.name)),
-                      DataCell(Text(m.quantity)),
-                      DataCell(Text(m.catalogNumber)),
-                      DataCell(Text(m.manufacturer)),
-                      DataCell(Text(m.location)),
-                      DataCell(Text(m.stockConcentration)),
-                    ],
-                  )).toList(),
+                  rows: protocol.materials
+                      .map(
+                        (m) => DataRow(
+                          cells: [
+                            DataCell(Text(m.name)),
+                            DataCell(Text(m.quantity)),
+                            DataCell(Text(m.catalogNumber)),
+                            DataCell(Text(m.manufacturer)),
+                            DataCell(Text(m.location)),
+                            DataCell(Text(m.stockConcentration)),
+                          ],
+                        ),
+                      )
+                      .toList(),
                 ),
               ),
-            
+
             const SizedBox(height: 24),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -311,7 +357,7 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
             ),
             const SizedBox(height: 8),
             ..._buildGroupedSteps(context),
-            
+
             // Supplementary Section
             _buildSupplementarySection(context),
 
@@ -319,25 +365,28 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
           ],
         ),
       ),
-      floatingActionButton: (fabLabel == 'Protocol Completed' || protocol.isTemplate) ? null : FloatingActionButton.extended(
-        onPressed: () {
-          if (activeState != null) {
-            activeProtocol = activeState;
-          }
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => RunProtocolScreen(
-                protocol: protocol,
-                initialStepIndex: nextPhaseStartIdx,
-                finalStepIndex: nextPhaseEndIdx,
-              ),
+      floatingActionButton:
+          (fabLabel == 'Protocol Completed' || protocol.isTemplate)
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: () {
+                if (activeState != null) {
+                  activeProtocol = activeState;
+                }
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => RunProtocolScreen(
+                      protocol: protocol,
+                      initialStepIndex: nextPhaseStartIdx,
+                      finalStepIndex: nextPhaseEndIdx,
+                    ),
+                  ),
+                ).then((_) => _refreshActiveState());
+              },
+              label: Text(fabLabel),
+              icon: const Icon(Icons.play_arrow),
             ),
-          );
-        },
-        label: Text(fabLabel),
-        icon: const Icon(Icons.play_arrow),
-      ),
     );
   }
 
@@ -345,7 +394,9 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
     final Map<String, List<ProtocolStep>> stepsByPhase = {};
     final sortedSteps = protocol.sortedSteps;
 
-    bool hasPhases = sortedSteps.any((s) => s.phaseName != null && s.phaseName!.isNotEmpty);
+    bool hasPhases = sortedSteps.any(
+      (s) => s.phaseName != null && s.phaseName!.isNotEmpty,
+    );
 
     if (hasPhases) {
       // Group by phase name in order of appearance
@@ -365,64 +416,90 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
         final phaseSteps = stepsByPhase[phase]!;
         final startIdx = currentGlobalIdx;
         final endIdx = currentGlobalIdx + phaseSteps.length - 1;
-        
-        final bool isPhaseDone = activeState != null && 
-            phaseSteps.every((s) => activeState!.completedStepIds.contains(s.id));
 
-        widgets.add(Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8.0),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: isPhaseDone ? BoxDecoration(
-              color: Colors.green.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(4),
-            ) : null,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    Text(phase, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.blue)),
-                    if (isPhaseDone) ...[
-                      const SizedBox(width: 8),
-                      const Icon(Icons.check_circle, color: Colors.green, size: 18),
-                    ],
-                  ],
-                ),
-                if (!isPhaseDone && !protocol.isTemplate)
+        final bool isPhaseDone =
+            activeState != null &&
+            phaseSteps.every(
+              (s) => activeState!.completedStepIds.contains(s.id),
+            );
+
+        widgets.add(
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: isPhaseDone
+                  ? BoxDecoration(
+                      color: Colors.green.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(4),
+                    )
+                  : null,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
                   Row(
                     children: [
-                      if (activeState != null)
-                        IconButton(
-                          icon: const Icon(Icons.edit, size: 20, color: Colors.blue),
-                          onPressed: () => _editProtocol(context, targetPhase: phase),
-                          tooltip: 'Edit Phase',
+                      Text(
+                        phase,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                          color: Colors.blue,
                         ),
-                      TextButton.icon(
-                        onPressed: () {
-                          if (activeState != null) {
-                            activeProtocol = activeState;
-                          }
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => RunProtocolScreen(
-                                protocol: protocol,
-                                initialStepIndex: startIdx,
-                                finalStepIndex: endIdx,
-                              ),
-                            ),
-                          );
-                        },
-                        icon: const Icon(Icons.play_circle_outline, size: 20),
-                        label: Text(isPhaseDone ? 'Run Again' : 'Run $phase', style: const TextStyle(fontSize: 12)),
                       ),
+                      if (isPhaseDone) ...[
+                        const SizedBox(width: 8),
+                        const Icon(
+                          Icons.check_circle,
+                          color: Colors.green,
+                          size: 18,
+                        ),
+                      ],
                     ],
                   ),
-              ],
+                  if (!isPhaseDone && !protocol.isTemplate)
+                    Row(
+                      children: [
+                        if (activeState != null)
+                          IconButton(
+                            icon: const Icon(
+                              Icons.edit,
+                              size: 20,
+                              color: Colors.blue,
+                            ),
+                            onPressed: () =>
+                                _editProtocol(context, targetPhase: phase),
+                            tooltip: 'Edit Phase',
+                          ),
+                        TextButton.icon(
+                          onPressed: () {
+                            if (activeState != null) {
+                              activeProtocol = activeState;
+                            }
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => RunProtocolScreen(
+                                  protocol: protocol,
+                                  initialStepIndex: startIdx,
+                                  finalStepIndex: endIdx,
+                                ),
+                              ),
+                            ).then((_) => _refreshActiveState());
+                          },
+                          icon: const Icon(Icons.play_circle_outline, size: 20),
+                          label: Text(
+                            isPhaseDone ? 'Run Again' : 'Run $phase',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
             ),
           ),
-        ));
+        );
 
         for (var step in phaseSteps) {
           widgets.add(_buildStepCard(context, step, currentGlobalIdx));
@@ -464,20 +541,33 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
         final startIdx = currentGlobalIdx;
         final endIdx = currentGlobalIdx + daySteps.length - 1;
 
-        final bool isDayDone = activeState != null && 
+        final bool isDayDone =
+            activeState != null &&
             daySteps.every((s) => activeState!.completedStepIds.contains(s.id));
 
-        widgets.add(Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8.0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        widgets.add(
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Row(
                   children: [
-                    Text('Day $day', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.blue)),
+                    Text(
+                      'Day $day',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                        color: Colors.blue,
+                      ),
+                    ),
                     if (isDayDone) ...[
                       const SizedBox(width: 8),
-                      const Icon(Icons.check_circle, color: Colors.green, size: 18),
+                      const Icon(
+                        Icons.check_circle,
+                        color: Colors.green,
+                        size: 18,
+                      ),
                     ],
                   ],
                 ),
@@ -486,7 +576,11 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
                     children: [
                       if (activeState != null && !isDayDone)
                         IconButton(
-                          icon: const Icon(Icons.edit, size: 20, color: Colors.blue),
+                          icon: const Icon(
+                            Icons.edit,
+                            size: 20,
+                            color: Colors.blue,
+                          ),
                           onPressed: () => _editProtocol(context),
                           tooltip: 'Edit Protocol',
                         ),
@@ -504,16 +598,20 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
                                 finalStepIndex: endIdx,
                               ),
                             ),
-                          );
+                          ).then((_) => _refreshActiveState());
                         },
                         icon: const Icon(Icons.play_circle_outline, size: 20),
-                        label: Text('Run Day $day', style: const TextStyle(fontSize: 12)),
+                        label: Text(
+                          'Run Day $day',
+                          style: const TextStyle(fontSize: 12),
+                        ),
                       ),
                     ],
                   ),
-            ],
+              ],
+            ),
           ),
-        ));
+        );
 
         for (var step in daySteps) {
           widgets.add(_buildStepCard(context, step, currentGlobalIdx));
@@ -543,8 +641,9 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
   }
 
   Widget _buildStepCard(BuildContext context, ProtocolStep step, int index) {
-    final bool isDone = activeState != null && activeState!.completedStepIds.contains(step.id);
-    
+    final bool isDone =
+        activeState != null && activeState!.completedStepIds.contains(step.id);
+
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8),
       color: isDone ? Colors.green.withValues(alpha: 0.05) : null,
@@ -556,18 +655,24 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
             Row(
               children: [
                 Expanded(
-                  child: Text('Step ${index + 1}: ${step.title}', 
+                  child: Text(
+                    'Step ${index + 1}: ${step.title}',
                     style: TextStyle(
-                      fontWeight: FontWeight.bold, 
+                      fontWeight: FontWeight.bold,
                       fontSize: 16,
                       color: isDone ? Colors.green.shade700 : null,
-                    )),
+                    ),
+                  ),
                 ),
-                if (isDone) const Icon(Icons.check, color: Colors.green, size: 16),
+                if (isDone)
+                  const Icon(Icons.check, color: Colors.green, size: 16),
               ],
             ),
             const SizedBox(height: 4),
-            Text(step.instructions, style: TextStyle(color: isDone ? Colors.grey : null)),
+            Text(
+              step.instructions,
+              style: TextStyle(color: isDone ? Colors.grey : null),
+            ),
             if (step.actionItems.isNotEmpty) ...[
               const SizedBox(height: 8),
               ...step.actionItems.asMap().entries.map((aEntry) {
@@ -600,7 +705,8 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
                 children: step.tableIds.map((id) {
                   final table = protocol.tables.firstWhere(
                     (t) => t.id == id,
-                    orElse: () => ProtocolTable(id: 'err', title: 'Table Not Found'),
+                    orElse: () =>
+                        ProtocolTable(id: 'err', title: 'Table Not Found'),
                   );
                   if (table.id == 'err') return const SizedBox.shrink();
                   return ProtocolTableWidget(table: table);
@@ -627,9 +733,13 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
 
   Widget _buildSupplementarySection(BuildContext context) {
     final assignedTableIds = protocol.steps.expand((s) => s.tableIds).toSet();
-    final unassignedTables = protocol.tables.where((t) => !assignedTableIds.contains(t.id)).toList();
+    final unassignedTables = protocol.tables
+        .where((t) => !assignedTableIds.contains(t.id))
+        .toList();
 
-    if (protocol.files.isEmpty && unassignedTables.isEmpty) return const SizedBox.shrink();
+    if (protocol.files.isEmpty && unassignedTables.isEmpty) {
+      return const SizedBox.shrink();
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -639,24 +749,77 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
         Text('Supplementary', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 8),
         if (protocol.files.isNotEmpty) ...[
-          const Text('Attached Files:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
-          ...protocol.files.map((file) => ListTile(
-            leading: const Icon(Icons.insert_drive_file_outlined),
-            title: Text(file),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-          )),
+          const Text(
+            'Attached Files:',
+            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
+          ),
+          const SizedBox(height: 8),
+          _buildFileGrid(protocol.files),
           const SizedBox(height: 16),
         ],
         if (unassignedTables.isNotEmpty) ...[
-          const Text('Reference Tables:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: unassignedTables.map((table) => ProtocolTableWidget(table: table)).toList(),
+          const Text(
+            'Reference Tables:',
+            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
           ),
+          const SizedBox(height: 8),
+          _buildTableGrid(unassignedTables),
         ],
       ],
+    );
+  }
+
+  Widget _buildTableGrid(List<ProtocolTable> tables) {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: tables.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        childAspectRatio: 0.82,
+      ),
+      itemBuilder: (context, index) =>
+          ProtocolTableWidget(table: tables[index]),
+    );
+  }
+
+  Widget _buildFileGrid(List<String> files) {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: files.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        childAspectRatio: 0.85,
+      ),
+      itemBuilder: (context, index) {
+        final fileName = files[index];
+        return Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.insert_drive_file_outlined, size: 32),
+              const SizedBox(height: 8),
+              Text(
+                fileName,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

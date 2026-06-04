@@ -51,12 +51,12 @@ class SerialDilutionCalculatorService {
         errorMessage: 'Starting dilution concentration must be greater than 0.',
       );
     }
-    if (startingBase >= stockBase) {
+    if (startingBase > stockBase) {
       return SerialDilutionResult(
         success: false,
         title: input.title,
         errorMessage:
-            'Starting dilution concentration must be lower than stock concentration.',
+            'Starting dilution concentration cannot be higher than stock concentration.',
       );
     }
 

@@ -49,13 +49,19 @@ class Protocol {
       title: title ?? this.title,
       objective: objective ?? this.objective,
       description: description ?? this.description,
-      materials: materials ?? this.materials,
-      samples: samples ?? this.samples,
-      files: files ?? this.files,
-      steps: steps ?? this.steps,
-      tables: tables ?? this.tables,
+      materials: (materials ?? this.materials)
+          .map((m) => m.copyWith())
+          .toList(),
+      samples: List<String>.from(samples ?? this.samples),
+      files: List<String>.from(files ?? this.files),
+      steps: (steps ?? this.steps).map((s) => s.deepCopy()).toList(),
+      tables: (tables ?? this.tables).map((t) => t.deepCopy()).toList(),
       isTemplate: isTemplate ?? this.isTemplate,
     );
+  }
+
+  Protocol deepCopy() {
+    return copyWith();
   }
 
   Map<String, dynamic> toJson() {
@@ -75,16 +81,16 @@ class Protocol {
 
   factory Protocol.fromJson(Map<String, dynamic> json) {
     return Protocol(
-      id: json['id'],
-      title: json['title'],
-      objective: json['objective'],
-      description: json['description'],
-      materials: (json['materials'] as List)
+      id: json['id'] ?? '',
+      title: json['title'] ?? '',
+      objective: json['objective'] ?? '',
+      description: json['description'] ?? '',
+      materials: (json['materials'] as List? ?? [])
           .map((m) => MaterialItem.fromJson(m))
           .toList(),
       samples: List<String>.from(json['samples'] ?? []),
       files: List<String>.from(json['files'] ?? []),
-      steps: (json['steps'] as List)
+      steps: (json['steps'] as List? ?? [])
           .map((s) => ProtocolStep.fromJson(s))
           .toList(),
       tables: (json['tables'] as List? ?? [])

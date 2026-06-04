@@ -43,10 +43,14 @@ class ProtocolTable {
     };
   }
 
+  ProtocolTable deepCopy() {
+    return copyWith();
+  }
+
   factory ProtocolTable.fromJson(Map<String, dynamic> json) {
     return ProtocolTable(
-      id: json['id'],
-      title: json['title'],
+      id: json['id'] ?? '',
+      title: json['title'] ?? '',
       type: TableType.values.firstWhere(
         (e) => e.name == json['type'],
         orElse: () => TableType.generic,
@@ -77,11 +81,15 @@ class ProtocolTable {
       id: id ?? this.id,
       title: title ?? this.title,
       type: type ?? this.type,
-      columnHeaders: columnHeaders ?? this.columnHeaders,
-      rowHeaders: rowHeaders ?? this.rowHeaders,
-      data: data ?? this.data,
-      cellColors: cellColors ?? this.cellColors,
-      metadata: metadata ?? this.metadata,
+      columnHeaders: List<String>.from(columnHeaders ?? this.columnHeaders),
+      rowHeaders: List<String>.from(rowHeaders ?? this.rowHeaders),
+      data: (data ?? this.data)
+          .map<List<dynamic>>((row) => List<dynamic>.from(row))
+          .toList(),
+      cellColors: (cellColors ?? this.cellColors)
+          .map<List<String>>((row) => List<String>.from(row))
+          .toList(),
+      metadata: Map<String, String>.from(metadata ?? this.metadata),
     );
   }
 }
