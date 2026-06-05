@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/serial_dilution_input.dart';
 import '../services/serial_dilution_calculator_service.dart';
+import '../../../widgets/table_export_actions.dart';
 
 class SerialDilutionResultTable extends StatelessWidget {
   final SerialDilutionInput input;
@@ -34,103 +35,106 @@ class SerialDilutionResultTable extends StatelessWidget {
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Output Table', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 12),
-        Card(
-          clipBehavior: Clip.antiAlias,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-            side: BorderSide(color: Colors.grey.shade300),
-          ),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: DataTable(
-              columnSpacing: 20,
-              headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
-              columns: const [
-                DataColumn(label: _HeaderCell('Dilution')),
-                DataColumn(label: _HeaderCell('Concentration')),
-                DataColumn(label: _HeaderCell('Transfer From')),
-                DataColumn(label: _HeaderCell('Transfer')),
-                DataColumn(label: _HeaderCell('Solvent')),
-                DataColumn(label: _HeaderCell('Final')),
-              ],
-              rows: result.rows
-                  .map(
-                    (row) => DataRow(
-                      color: row.isZeroConcentrationRow
-                          ? WidgetStateProperty.all(Colors.blue.shade50)
-                          : null,
-                      cells: [
-                        DataCell(
-                          Text(
-                            row.dilutionName,
-                            style: const TextStyle(fontSize: 10),
-                          ),
-                        ),
-                        DataCell(
-                          Text(
-                            row.formattedConcentration,
-                            style: const TextStyle(fontSize: 10),
-                          ),
-                        ),
-                        DataCell(
-                          Text(
-                            row.transferFrom,
-                            style: const TextStyle(fontSize: 10),
-                          ),
-                        ),
-                        DataCell(
-                          Text(
-                            row.formattedTransferVolume,
-                            style: const TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue,
+    return TableExportActions(
+      table: input.generateTable(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Output Table', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 12),
+          Card(
+            clipBehavior: Clip.antiAlias,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+              side: BorderSide(color: Colors.grey.shade300),
+            ),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                columnSpacing: 20,
+                headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
+                columns: const [
+                  DataColumn(label: _HeaderCell('Dilution')),
+                  DataColumn(label: _HeaderCell('Concentration')),
+                  DataColumn(label: _HeaderCell('Transfer From')),
+                  DataColumn(label: _HeaderCell('Transfer')),
+                  DataColumn(label: _HeaderCell('Solvent')),
+                  DataColumn(label: _HeaderCell('Final')),
+                ],
+                rows: result.rows
+                    .map(
+                      (row) => DataRow(
+                        color: row.isZeroConcentrationRow
+                            ? WidgetStateProperty.all(Colors.blue.shade50)
+                            : null,
+                        cells: [
+                          DataCell(
+                            Text(
+                              row.dilutionName,
+                              style: const TextStyle(fontSize: 10),
                             ),
                           ),
-                        ),
-                        DataCell(
-                          Text(
-                            row.formattedSolventVolume,
-                            style: const TextStyle(fontSize: 10),
+                          DataCell(
+                            Text(
+                              row.formattedConcentration,
+                              style: const TextStyle(fontSize: 10),
+                            ),
                           ),
-                        ),
-                        DataCell(
-                          Text(
-                            row.formattedFinalVolume,
-                            style: const TextStyle(fontSize: 10),
+                          DataCell(
+                            Text(
+                              row.transferFrom,
+                              style: const TextStyle(fontSize: 10),
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  )
-                  .toList(),
+                          DataCell(
+                            Text(
+                              row.formattedTransferVolume,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue,
+                              ),
+                            ),
+                          ),
+                          DataCell(
+                            Text(
+                              row.formattedSolventVolume,
+                              style: const TextStyle(fontSize: 10),
+                            ),
+                          ),
+                          DataCell(
+                            Text(
+                              row.formattedFinalVolume,
+                              style: const TextStyle(fontSize: 10),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                    .toList(),
+              ),
             ),
           ),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            _SummaryItem(
-              label: 'Dilutions',
-              value: result.calculatedNumberOfDilutions.toString(),
-            ),
-            const SizedBox(width: 24),
-            _SummaryItem(
-              label: 'Optimized final volume',
-              value: result.formattedOptimizedFinalVolume,
-            ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _SummaryItem(
+                label: 'Dilutions',
+                value: result.calculatedNumberOfDilutions.toString(),
+              ),
+              const SizedBox(width: 24),
+              _SummaryItem(
+                label: 'Optimized final volume',
+                value: result.formattedOptimizedFinalVolume,
+              ),
+            ],
+          ),
+          if (result.warnings.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            ...result.warnings.map((w) => _warningItem(w)),
           ],
-        ),
-        if (result.warnings.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          ...result.warnings.map((w) => _warningItem(w)),
         ],
-      ],
+      ),
     );
   }
 

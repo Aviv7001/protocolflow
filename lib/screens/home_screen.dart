@@ -104,7 +104,10 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
           ElevatedButton(
             onPressed: () {
               if (titleController.text.isNotEmpty) {
@@ -151,7 +154,8 @@ class _HomeScreenState extends State<HomeScreen> {
       await Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => RunProtocolScreen(protocol: activeProtocol!.protocol),
+          builder: (context) =>
+              RunProtocolScreen(protocol: activeProtocol!.protocol),
         ),
       );
       if (mounted) setState(() {});
@@ -166,131 +170,186 @@ class _HomeScreenState extends State<HomeScreen> {
           slivers: [
             SliverAppBar(
               expandedHeight: 90.0,
-            floating: false,
-            pinned: true,
-            flexibleSpace: FlexibleSpaceBar(
-              centerTitle: true,
-              expandedTitleScale: 1.0,
-              background: Container(
-                color: Theme.of(context).primaryColor,
-                padding: const EdgeInsets.only(top: 12.0, bottom: 0.0, left: 48.0, right: 48.0),
-                child: Image.asset(
-                  'assets/App_icons/PF_logo_flat_2.png',
-                  fit: BoxFit.contain,
-                  filterQuality: FilterQuality.high,
-                  isAntiAlias: true,
+              floating: false,
+              pinned: true,
+              flexibleSpace: FlexibleSpaceBar(
+                centerTitle: true,
+                expandedTitleScale: 1.0,
+                background: Container(
+                  color: Theme.of(context).primaryColor,
+                  padding: const EdgeInsets.only(
+                    top: 12.0,
+                    bottom: 0.0,
+                    left: 48.0,
+                    right: 48.0,
+                  ),
+                  child: Image.asset(
+                    'assets/App_icons/PF_logo_flat_2.png',
+                    fit: BoxFit.contain,
+                    filterQuality: FilterQuality.high,
+                    isAntiAlias: true,
+                  ),
+                ),
+              ),
+              actions: [
+                IconButton(
+                  icon: const Icon(
+                    Icons.account_circle,
+                    color: Colors.white,
+                    size: 30,
+                  ),
+                  onPressed: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Profile features coming soon!'),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        _buildSectionTitle('Today\'s Tasks'),
+                        TextButton(
+                          onPressed: () =>
+                              Navigator.pushNamed(context, '/task_history'),
+                          child: const Text('Tasks History'),
+                        ),
+                      ],
+                    ),
+                    if (_isLoadingTasks)
+                      const Center(child: CircularProgressIndicator())
+                    else if (_todayTasks.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8.0),
+                        child: Text(
+                          'No tasks for today.',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      )
+                    else
+                      ..._todayTasks.map((task) => _buildTaskItem(task)),
+
+                    const SizedBox(height: 8),
+                    Center(
+                      child: ElevatedButton.icon(
+                        onPressed: _showAddTaskDialog,
+                        icon: const Icon(Icons.add),
+                        label: const Text('Add Task'),
+                      ),
+                    ),
+                    if (_todayTasks.any((t) => t.isDone))
+                      Center(
+                        child: TextButton.icon(
+                          onPressed: _archiveTasks,
+                          icon: const Icon(Icons.archive_outlined),
+                          label: const Text('Move done tasks to history'),
+                        ),
+                      ),
+
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 24),
+                      child: Divider(indent: 24, endIndent: 24, thickness: 1),
+                    ),
+                    _buildSectionTitle('Running Protocols'),
+                    if (activeProtocol != null || runningProtocols.isNotEmpty)
+                      Column(
+                        children: [
+                          if (activeProtocol != null)
+                            _buildRunningProtocolCard(),
+                          if (runningProtocols.isNotEmpty)
+                            ...runningProtocols
+                                .where(
+                                  (p) =>
+                                      activeProtocol == null ||
+                                      p.protocol.id !=
+                                          activeProtocol!.protocol.id,
+                                )
+                                .map((p) => _buildInProgressItem(p)),
+                        ],
+                      )
+                    else
+                      const Card(
+                        child: Padding(
+                          padding: EdgeInsets.all(16.0),
+                          child: Text(
+                            'No protocols currently running.',
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        ),
+                      ),
+
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 24),
+                      child: Divider(indent: 24, endIndent: 24, thickness: 1),
+                    ),
+                    _buildSectionTitle('Quick Actions'),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildActionButton(
+                            Icons.add_box,
+                            'Create',
+                            () => Navigator.pushNamed(
+                              context,
+                              '/create',
+                            ).then((_) => setState(() {})),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: _buildActionButton(
+                            Icons.library_books,
+                            'Protocols',
+                            () => Navigator.pushNamed(
+                              context,
+                              '/library',
+                            ).then((_) => setState(() {})),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildActionButton(
+                            Icons.science,
+                            'Lab Tools',
+                            () => Navigator.pushNamed(
+                              context,
+                              '/lab_tools',
+                            ).then((_) => setState(() {})),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: _buildActionButton(
+                            Icons.table_chart,
+                            'Saved Tables',
+                            () => Navigator.pushNamed(
+                              context,
+                              '/saved_tables',
+                            ).then((_) => setState(() {})),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
             ),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.account_circle, color: Colors.white, size: 30),
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Profile features coming soon!')),
-                  );
-                },
-              ),
-            ],
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      _buildSectionTitle('Today\'s Tasks'),
-                      TextButton(
-                        onPressed: () => Navigator.pushNamed(context, '/task_history'),
-                        child: const Text('Tasks History'),
-                      ),
-                    ],
-                  ),
-                  if (_isLoadingTasks)
-                    const Center(child: CircularProgressIndicator())
-                  else if (_todayTasks.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 8.0),
-                      child: Text('No tasks for today.', style: TextStyle(color: Colors.grey)),
-                    )
-                  else
-                    ..._todayTasks.map((task) => _buildTaskItem(task)),
-                  
-                  const SizedBox(height: 8),
-                  Center(
-                    child: ElevatedButton.icon(
-                      onPressed: _showAddTaskDialog,
-                      icon: const Icon(Icons.add),
-                      label: const Text('Add Task'),
-                    ),
-                  ),
-                  if (_todayTasks.any((t) => t.isDone))
-                    Center(
-                      child: TextButton.icon(
-                        onPressed: _archiveTasks,
-                        icon: const Icon(Icons.archive_outlined),
-                        label: const Text('Move done tasks to history'),
-                      ),
-                    ),
-                  
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 24),
-                    child: Divider(indent: 24, endIndent: 24, thickness: 1),
-                  ),
-                  _buildSectionTitle('Running Protocols'),
-                  if (activeProtocol != null || runningProtocols.isNotEmpty)
-                    Column(
-                      children: [
-                        if (activeProtocol != null) 
-                          _buildRunningProtocolCard(),
-                        if (runningProtocols.isNotEmpty)
-                          ...runningProtocols
-                              .where((p) => activeProtocol == null || p.protocol.id != activeProtocol!.protocol.id)
-                              .map((p) => _buildInProgressItem(p)),
-                      ],
-                    )
-                  else
-                    const Card(
-                      child: Padding(
-                        padding: EdgeInsets.all(16.0),
-                        child: Text('No protocols currently running.', style: TextStyle(color: Colors.grey)),
-                      ),
-                    ),
-
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 24),
-                    child: Divider(indent: 24, endIndent: 24, thickness: 1),
-                  ),
-                  _buildSectionTitle('Quick Actions'),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildActionButton(
-                          Icons.add_box, 
-                          'Create', 
-                          () => Navigator.pushNamed(context, '/create').then((_) => setState(() {})),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: _buildActionButton(
-                          Icons.library_books, 
-                          'Library', 
-                          () => Navigator.pushNamed(context, '/library').then((_) => setState(() {})),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
     );
   }
 
@@ -328,11 +387,15 @@ class _HomeScreenState extends State<HomeScreen> {
             color: task.isDone ? Colors.grey : null,
           ),
         ),
-        subtitle: task.description.isNotEmpty 
-            ? Text(task.description, style: const TextStyle(fontSize: 12)) 
+        subtitle: task.description.isNotEmpty
+            ? Text(task.description, style: const TextStyle(fontSize: 12))
             : null,
         trailing: IconButton(
-          icon: const Icon(Icons.remove_circle_outline, color: Colors.red, size: 18),
+          icon: const Icon(
+            Icons.remove_circle_outline,
+            color: Colors.red,
+            size: 18,
+          ),
           onPressed: () => _removeTask(task),
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(),
@@ -366,14 +429,20 @@ class _HomeScreenState extends State<HomeScreen> {
                 Expanded(
                   child: Text(
                     protocol.title,
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 Text(
                   _formatDuration(_elapsedTime),
-                  style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    color: Colors.blue,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ],
             ),
@@ -399,12 +468,21 @@ class _HomeScreenState extends State<HomeScreen> {
       child: ListTile(
         dense: true,
         leading: const Icon(Icons.history, color: Colors.blue),
-        title: Text(p.protocol.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-        subtitle: Text('${p.completedStepIds.length}/${p.protocol.steps.length} steps completed', style: const TextStyle(fontSize: 12)),
+        title: Text(
+          p.protocol.title,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+        ),
+        subtitle: Text(
+          '${p.completedStepIds.length}/${p.protocol.steps.length} steps completed',
+          style: const TextStyle(fontSize: 12),
+        ),
         trailing: const Icon(Icons.chevron_right, size: 20),
         onTap: () => Navigator.push(
           context,
-          MaterialPageRoute(builder: (context) => ProtocolDetailScreen(protocol: p.protocol, activeState: p)),
+          MaterialPageRoute(
+            builder: (context) =>
+                ProtocolDetailScreen(protocol: p.protocol, activeState: p),
+          ),
         ).then((_) => setState(() {})),
       ),
     );

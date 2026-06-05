@@ -8,33 +8,41 @@ import '../features/master_mix/screens/master_mix_manager_screen.dart';
 import '../features/serial_dilution/models/serial_dilution_input.dart';
 import '../features/serial_dilution/screens/serial_dilution_manager_screen.dart';
 import '../features/staining_table/screens/staining_table_manager_screen.dart';
+import '../services/storage_service.dart';
 import 'reagent_manager_screen.dart';
 import 'plate_wizard_samples_screen.dart';
+import 'saved_table_picker_screen.dart';
 import 'table_data_editor_screen.dart';
 
 class TableSelectionScreen extends StatelessWidget {
-  const TableSelectionScreen({super.key});
+  final String title;
+  final String subtitle;
+  final bool standaloneMode;
+
+  const TableSelectionScreen({
+    super.key,
+    this.title = 'Add New Table',
+    this.subtitle = 'Choose a specialized manager to create your table',
+    this.standaloneMode = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Add New Table'), centerTitle: true),
+      appBar: AppBar(title: Text(title), centerTitle: true),
       body: Padding(
         padding: const EdgeInsets.all(20.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Select Table Type',
+              standaloneMode ? 'Select Tool' : 'Select Table Type',
               style: Theme.of(
                 context,
               ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
-            Text(
-              'Choose a specialized manager to create your table',
-              style: TextStyle(color: Colors.grey.shade600),
-            ),
+            Text(subtitle, style: TextStyle(color: Colors.grey.shade600)),
             const SizedBox(height: 24),
             Expanded(
               child: GridView.count(
@@ -91,6 +99,15 @@ class TableSelectionScreen extends StatelessWidget {
                     Colors.grey,
                     onTap: () => _openGenericTable(context),
                   ),
+                  if (!standaloneMode)
+                    _buildTypeCard(
+                      context,
+                      'Saved Tables',
+                      'Choose Existing',
+                      Icons.folder_copy,
+                      Colors.green,
+                      onTap: () => _openSavedTables(context),
+                    ),
                   _buildTypeCard(
                     context,
                     'Import Table',
@@ -210,8 +227,9 @@ class TableSelectionScreen extends StatelessWidget {
         ),
       ),
     );
+    if (!context.mounted) return;
     if (result != null && result is MasterMixWizard) {
-      if (context.mounted) Navigator.pop(context, result.generateTable());
+      await _handleCreatedTable(context, result.generateTable());
     }
   }
 
@@ -225,8 +243,9 @@ class TableSelectionScreen extends StatelessWidget {
         ),
       ),
     );
+    if (!context.mounted) return;
     if (result != null && result is StainingWizard) {
-      if (context.mounted) Navigator.pop(context, result.generateTable());
+      await _handleCreatedTable(context, result.generateTable());
     }
   }
 
@@ -240,8 +259,9 @@ class TableSelectionScreen extends StatelessWidget {
         ),
       ),
     );
+    if (!context.mounted) return;
     if (result != null && result is ReagentMixWizard) {
-      if (context.mounted) Navigator.pop(context, result.generateTable());
+      await _handleCreatedTable(context, result.generateTable());
     }
   }
 
@@ -255,8 +275,9 @@ class TableSelectionScreen extends StatelessWidget {
         ),
       ),
     );
+    if (!context.mounted) return;
     if (result != null && result is SerialDilutionInput) {
-      if (context.mounted) Navigator.pop(context, result.generateTable());
+      await _handleCreatedTable(context, result.generateTable());
     }
   }
 
@@ -279,8 +300,9 @@ class TableSelectionScreen extends StatelessWidget {
       ),
     );
 
+    if (!context.mounted) return;
     if (result != null && result is List<ProtocolTable> && result.isNotEmpty) {
-      if (context.mounted) Navigator.pop(context, result.first);
+      await _handleCreatedTable(context, result.first);
     }
   }
 
@@ -294,8 +316,47 @@ class TableSelectionScreen extends StatelessWidget {
         ),
       ),
     );
+    if (!context.mounted) return;
     if (result != null && result is PlateLayoutWizard) {
-      if (context.mounted) Navigator.pop(context, result.toProtocolTable());
+      await _handleCreatedTable(context, result.toProtocolTable());
     }
+  }
+
+  void _openSavedTables(BuildContext context) async {
+    final result = await Navigator.push<ProtocolTable>(
+      context,
+      MaterialPageRoute(builder: (context) => const SavedTablePickerScreen()),
+    );
+    if (!context.mounted) return;
+    if (result != null) {
+      Navigator.pop(context, result);
+    }
+  }
+
+  Future<void> _handleCreatedTable(
+    BuildContext context,
+    ProtocolTable table,
+  ) async {
+    if (!context.mounted) return;
+
+    if (!standaloneMode) {
+      Navigator.pop(context, table);
+      return;
+    }
+
+    await StorageService().upsertSavedTable(table);
+    if (!context.mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '"${table.title.isEmpty ? 'Untitled Table' : table.title}" saved',
+        ),
+        action: SnackBarAction(
+          label: 'View',
+          onPressed: () => Navigator.pushNamed(context, '/saved_tables'),
+        ),
+      ),
+    );
   }
 }
