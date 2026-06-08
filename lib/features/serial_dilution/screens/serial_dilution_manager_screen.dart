@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../master_mix/services/master_mix_calculator_service.dart'
-    show ConcentrationFamily, ConcentrationUnit, VolumeUnit;
+import '../../lab_math/lab_calculation.dart';
 import '../models/serial_dilution_input.dart';
 import '../services/serial_dilution_calculator_service.dart';
 import '../widgets/serial_dilution_result_table.dart';
@@ -689,25 +688,7 @@ class _SerialDilutionManagerScreenState
   }
 
   ConcentrationFamily _family(ConcentrationUnit unit) {
-    switch (unit) {
-      case ConcentrationUnit.M:
-      case ConcentrationUnit.mM:
-      case ConcentrationUnit.uM:
-      case ConcentrationUnit.nM:
-      case ConcentrationUnit.pM:
-        return ConcentrationFamily.molar;
-      case ConcentrationUnit.gL:
-      case ConcentrationUnit.mgML:
-      case ConcentrationUnit.ugML:
-      case ConcentrationUnit.ngML:
-        return ConcentrationFamily.massVolume;
-      case ConcentrationUnit.percent:
-        return ConcentrationFamily.percentage;
-      case ConcentrationUnit.X:
-        return ConcentrationFamily.fold;
-      case ConcentrationUnit.gMol:
-        return ConcentrationFamily.molecularWeight;
-    }
+    return LabCalculation.familyOf(unit);
   }
 
   String _dilutionModeLabel(DilutionMode mode) {
@@ -729,32 +710,7 @@ class _SerialDilutionManagerScreenState
   }
 
   String _unitLabel(ConcentrationUnit unit) {
-    switch (unit) {
-      case ConcentrationUnit.M:
-        return 'M';
-      case ConcentrationUnit.mM:
-        return 'mM';
-      case ConcentrationUnit.uM:
-        return 'uM';
-      case ConcentrationUnit.nM:
-        return 'nM';
-      case ConcentrationUnit.pM:
-        return 'pM';
-      case ConcentrationUnit.gL:
-        return 'g/L';
-      case ConcentrationUnit.mgML:
-        return 'mg/mL';
-      case ConcentrationUnit.ugML:
-        return 'ug/mL';
-      case ConcentrationUnit.ngML:
-        return 'ng/mL';
-      case ConcentrationUnit.percent:
-        return '%';
-      case ConcentrationUnit.X:
-        return 'X';
-      case ConcentrationUnit.gMol:
-        return 'g/mol';
-    }
+    return LabCalculation.unitLabel(unit);
   }
 }
 

@@ -13,6 +13,7 @@ class PlateLayoutWizard {
   final Direction conditionDirection;
   final Direction dilutionDirection;
   final Direction duplicateDirection;
+  final List<ProtocolTable> importedTables;
 
   PlateLayoutWizard({
     this.title = 'Plate Layout',
@@ -24,6 +25,7 @@ class PlateLayoutWizard {
     this.conditionDirection = Direction.horizontal,
     this.dilutionDirection = Direction.vertical,
     this.duplicateDirection = Direction.horizontal,
+    this.importedTables = const [],
   });
 
   Map<String, dynamic> toJson() {
@@ -37,6 +39,7 @@ class PlateLayoutWizard {
       'conditionDirection': conditionDirection.name,
       'dilutionDirection': dilutionDirection.name,
       'duplicateDirection': duplicateDirection.name,
+      'importedTables': importedTables.map((table) => table.toJson()).toList(),
     };
   }
 
@@ -65,6 +68,9 @@ class PlateLayoutWizard {
         (e) => e.name == (json['duplicateDirection'] ?? 'horizontal'),
         orElse: () => Direction.horizontal,
       ),
+      importedTables: (json['importedTables'] as List? ?? [])
+          .map<ProtocolTable>((table) => ProtocolTable.fromJson(table))
+          .toList(),
     );
   }
 
@@ -78,6 +84,7 @@ class PlateLayoutWizard {
     Direction? conditionDirection,
     Direction? dilutionDirection,
     Direction? duplicateDirection,
+    List<ProtocolTable>? importedTables,
   }) {
     return PlateLayoutWizard(
       title: title ?? this.title,
@@ -89,106 +96,149 @@ class PlateLayoutWizard {
       conditionDirection: conditionDirection ?? this.conditionDirection,
       dilutionDirection: dilutionDirection ?? this.dilutionDirection,
       duplicateDirection: duplicateDirection ?? this.duplicateDirection,
+      importedTables: importedTables ?? this.importedTables,
     );
   }
 
   List<ProtocolTable> generateTables() {
+    if (importedTables.isNotEmpty) {
+      return importedTables
+          .map(
+            (table) => table.copyWith(
+              metadata: {
+                ...table.metadata,
+                'wizard_state': jsonEncode(toJson()),
+              },
+            ),
+          )
+          .toList();
+    }
+
     final List<ProtocolTable> tables = [];
     final service = PlateWizardService();
 
     // Separate TestItems into global (Standard Curve for all plates) and regular
     final List<SampleSpec> globalSpecs = items
         .where((it) => it.isStandardCurve && it.applyToAllPlates)
-        .map((item) => SampleSpec(
-              name: item.sampleName,
-              conditions: item.conditions,
-              dilutions: item.dilutions,
-              duplicates: item.duplicates,
-            ))
+        .map(
+          (item) => SampleSpec(
+            name: item.sampleName,
+            conditions: item.conditions,
+            dilutions: item.dilutions,
+            duplicates: item.duplicates,
+          ),
+        )
         .toList();
 
     final List<SampleSpec> regularSpecs = items
         .where((it) => !(it.isStandardCurve && it.applyToAllPlates))
-        .map((item) => SampleSpec(
-              name: item.sampleName,
-              conditions: item.conditions,
-              dilutions: item.dilutions,
-              duplicates: item.duplicates,
-            ))
+        .map(
+          (item) => SampleSpec(
+            name: item.sampleName,
+            conditions: item.conditions,
+            dilutions: item.dilutions,
+            duplicates: item.duplicates,
+          ),
+        )
         .toList();
 
     int currentRegularIdx = 0;
 
     final List<String> palette = [
-      '#FFEBEE', '#E3F2FD', '#F1F8E9', '#FFF3E0', '#F3E5F5',
-      '#E0F2F1', '#FFFDE7', '#FBE9E7', '#EFEBE9', '#ECEFF1',
+      '#FFEBEE',
+      '#E3F2FD',
+      '#F1F8E9',
+      '#FFF3E0',
+      '#F3E5F5',
+      '#E0F2F1',
+      '#FFFDE7',
+      '#FBE9E7',
+      '#EFEBE9',
+      '#ECEFF1',
     ];
 
-      // Always generate at least plateCount tables to keep UI consistent
-      for (int pIdx = 0; pIdx < plateCount; pIdx++) {
-        PlateLayoutResult? result;
-        int fitCount = 0;
+    // Always generate at least plateCount tables to keep UI consistent
+    for (int pIdx = 0; pIdx < plateCount; pIdx++) {
+      PlateLayoutResult? result;
+      int fitCount = 0;
 
-        // Try to fit global items + maximum number of remaining regular samples on the current plate
-        for (int count = regularSpecs.length - currentRegularIdx; count >= 0; count--) {
-          final currentSamples = [...globalSpecs, ...regularSpecs.sublist(currentRegularIdx, currentRegularIdx + count)];
-          
-          final input = PlateWizardInput(
-            plateRows: rows,
-            plateCols: columns,
-            samples: currentSamples,
-            sampleDirection: sampleDirection,
-            conditionDirection: conditionDirection,
-            dilutionDirection: dilutionDirection,
-            duplicateDirection: duplicateDirection,
-          );
+      // Try to fit global items + maximum number of remaining regular samples on the current plate
+      for (
+        int count = regularSpecs.length - currentRegularIdx;
+        count >= 0;
+        count--
+      ) {
+        final currentSamples = [
+          ...globalSpecs,
+          ...regularSpecs.sublist(currentRegularIdx, currentRegularIdx + count),
+        ];
 
-          final r = service.generatePlateLayout(input);
-          if (r.success) {
-            result = r;
-            fitCount = count;
-            break;
-          }
+        final input = PlateWizardInput(
+          plateRows: rows,
+          plateCols: columns,
+          samples: currentSamples,
+          sampleDirection: sampleDirection,
+          conditionDirection: conditionDirection,
+          dilutionDirection: dilutionDirection,
+          duplicateDirection: duplicateDirection,
+        );
+
+        final r = service.generatePlateLayout(input);
+        if (r.success) {
+          result = r;
+          fitCount = count;
+          break;
         }
+      }
 
-        final localResult = result;
+      final localResult = result;
 
-        final List<List<dynamic>> data = List.generate(
-          rows,
-          (r) => List.generate(columns, (c) {
-            if (localResult?.plates != null && localResult!.plates!.isNotEmpty && localResult.plates![0][r][c] != null) {
-              return localResult.plates![0][r][c]!.toString();
-            }
+      final List<List<dynamic>> data = List.generate(
+        rows,
+        (r) => List.generate(columns, (c) {
+          if (localResult?.plates != null &&
+              localResult!.plates!.isNotEmpty &&
+              localResult.plates![0][r][c] != null) {
+            return localResult.plates![0][r][c]!.toString();
+          }
+          return '';
+        }),
+      );
+
+      final List<List<String>> colors = List.generate(
+        rows,
+        (r) => List.generate(columns, (c) {
+          if (localResult?.plates == null ||
+              localResult!.plates!.isEmpty ||
+              localResult.plates![0][r][c] == null) {
             return '';
-          }),
-        );
+          }
+          int globalIdx = items.indexWhere(
+            (it) => it.sampleName == localResult.plates![0][r][c]!.sampleName,
+          );
+          if (globalIdx == -1) return '';
+          return palette[globalIdx % palette.length];
+        }),
+      );
 
-        final List<List<String>> colors = List.generate(
-          rows,
-          (r) => List.generate(columns, (c) {
-            if (localResult?.plates == null || localResult!.plates!.isEmpty || localResult.plates![0][r][c] == null) return '';
-            int globalIdx = items.indexWhere((it) => it.sampleName == localResult.plates![0][r][c]!.sampleName);
-            if (globalIdx == -1) return '';
-            return palette[globalIdx % palette.length];
-          }),
-        );
-
-      tables.add(ProtocolTable(
-        id: 'table_${DateTime.now().millisecondsSinceEpoch}_$pIdx',
-        title: plateCount > 1 ? '$title ${pIdx + 1}' : title,
-        type: TableType.plateLayout,
-        columnHeaders: List.generate(columns, (i) => (i + 1).toString()),
-        rowHeaders: List.generate(rows, (i) => String.fromCharCode(65 + i)),
-        data: data,
-        cellColors: colors,
-        metadata: {
-          'rows': rows.toString(),
-          'columns': columns.toString(),
-          'plateIndex': pIdx.toString(),
-          'totalPlates': plateCount.toString(),
-          'wizard_state': jsonEncode(toJson()),
-        },
-      ));
+      tables.add(
+        ProtocolTable(
+          id: 'table_${DateTime.now().millisecondsSinceEpoch}_$pIdx',
+          title: plateCount > 1 ? '$title ${pIdx + 1}' : title,
+          type: TableType.plateLayout,
+          columnHeaders: List.generate(columns, (i) => (i + 1).toString()),
+          rowHeaders: List.generate(rows, (i) => String.fromCharCode(65 + i)),
+          data: data,
+          cellColors: colors,
+          metadata: {
+            'rows': rows.toString(),
+            'columns': columns.toString(),
+            'plateIndex': pIdx.toString(),
+            'totalPlates': plateCount.toString(),
+            'wizard_state': jsonEncode(toJson()),
+          },
+        ),
+      );
 
       currentRegularIdx += fitCount;
     }

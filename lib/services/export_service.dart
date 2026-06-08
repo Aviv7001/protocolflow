@@ -26,17 +26,15 @@ class ExportService {
     final jsonString = const JsonEncoder.withIndent(
       '  ',
     ).convert(completed.toJson());
-    final fileName =
-        'completed_${completed.protocol.title.replaceAll(' ', '_')}_${completed.id}.json';
-    await _saveFile(jsonString, fileName);
+    await _saveFile(jsonString, '${completed.protocol.id}.json');
   }
 
   Future<void> exportSingleTemplate(Protocol protocol) async {
     final jsonString = const JsonEncoder.withIndent(
       '  ',
     ).convert(protocol.toJson());
-    final fileName = 'template_${protocol.title.replaceAll(' ', '_')}.json';
-    await _saveFile(jsonString, fileName);
+    // Drive sync should use the same stable protocol ID as the JSON filename.
+    await _saveFile(jsonString, '${protocol.id}.json');
   }
 
   Future<void> exportAllData() async {

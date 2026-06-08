@@ -1,7 +1,6 @@
 import 'dart:math';
 
-import '../../master_mix/services/master_mix_calculator_service.dart'
-    show ConcentrationFamily, ConcentrationUnit, VolumeUnit;
+import '../../lab_math/lab_calculation.dart';
 import '../models/serial_dilution_input.dart';
 import '../models/serial_dilution_result.dart';
 import '../models/serial_dilution_row.dart';
@@ -347,150 +346,34 @@ class SerialDilutionCalculatorService {
   }
 
   double _decimalPenalty(double val) {
-    if ((val - val.round()).abs() < 0.0001) return 0;
-    if (((val * 2) - (val * 2).round()).abs() < 0.0001) return 1;
-    return 10;
+    return LabCalculation.decimalPenalty(val);
   }
 
   ConcentrationFamily _getFamily(ConcentrationUnit unit) {
-    switch (unit) {
-      case ConcentrationUnit.M:
-      case ConcentrationUnit.mM:
-      case ConcentrationUnit.uM:
-      case ConcentrationUnit.nM:
-      case ConcentrationUnit.pM:
-        return ConcentrationFamily.molar;
-      case ConcentrationUnit.gL:
-      case ConcentrationUnit.mgML:
-      case ConcentrationUnit.ugML:
-      case ConcentrationUnit.ngML:
-        return ConcentrationFamily.massVolume;
-      case ConcentrationUnit.percent:
-        return ConcentrationFamily.percentage;
-      case ConcentrationUnit.X:
-        return ConcentrationFamily.fold;
-      case ConcentrationUnit.gMol:
-        return ConcentrationFamily.molecularWeight;
-    }
+    return LabCalculation.familyOf(unit);
   }
 
   double _convertToBaseConc(double val, ConcentrationUnit unit) {
-    switch (unit) {
-      case ConcentrationUnit.M:
-        return val;
-      case ConcentrationUnit.mM:
-        return val * 1e-3;
-      case ConcentrationUnit.uM:
-        return val * 1e-6;
-      case ConcentrationUnit.nM:
-        return val * 1e-9;
-      case ConcentrationUnit.pM:
-        return val * 1e-12;
-      case ConcentrationUnit.gL:
-      case ConcentrationUnit.mgML:
-        return val;
-      case ConcentrationUnit.ugML:
-        return val * 1e-3;
-      case ConcentrationUnit.ngML:
-        return val * 1e-6;
-      case ConcentrationUnit.percent:
-      case ConcentrationUnit.X:
-      case ConcentrationUnit.gMol:
-        return val;
-    }
+    return LabCalculation.concentrationToBase(val, unit);
   }
 
   double _convertFromBaseConc(double val, ConcentrationUnit unit) {
-    switch (unit) {
-      case ConcentrationUnit.M:
-        return val;
-      case ConcentrationUnit.mM:
-        return val / 1e-3;
-      case ConcentrationUnit.uM:
-        return val / 1e-6;
-      case ConcentrationUnit.nM:
-        return val / 1e-9;
-      case ConcentrationUnit.pM:
-        return val / 1e-12;
-      case ConcentrationUnit.gL:
-      case ConcentrationUnit.mgML:
-        return val;
-      case ConcentrationUnit.ugML:
-        return val / 1e-3;
-      case ConcentrationUnit.ngML:
-        return val / 1e-6;
-      case ConcentrationUnit.percent:
-      case ConcentrationUnit.X:
-      case ConcentrationUnit.gMol:
-        return val;
-    }
+    return LabCalculation.concentrationFromBase(val, unit);
   }
 
   double _convertToUl(double val, VolumeUnit unit) {
-    switch (unit) {
-      case VolumeUnit.nL:
-        return val / 1000;
-      case VolumeUnit.uL:
-        return val;
-      case VolumeUnit.mL:
-        return val * 1000;
-      case VolumeUnit.L:
-        return val * 1000000;
-    }
+    return LabCalculation.volumeToUl(val, unit);
   }
 
   String _formatConcentration(double baseValue, ConcentrationUnit unit) {
-    final value = _convertFromBaseConc(baseValue, unit);
-    return '${_formatNumber(value)} ${_unitLabel(unit)}';
+    return LabCalculation.formatConcentration(baseValue, unit);
   }
 
   String _formatVolume(double ul) {
-    if (ul == 0) return '0 uL';
-    if (ul >= 1000000) return '${_formatNumber(ul / 1000000)} L';
-    if (ul >= 1000) return '${_formatNumber(ul / 1000)} mL';
-    if (ul >= 0.1) return '${_formatNumber(ul)} uL';
-    return '${_formatNumber(ul * 1000)} nL';
-  }
-
-  String _formatNumber(double value) {
-    if (!value.isFinite) return 'N/A';
-    if ((value - value.round()).abs() < 0.0001) {
-      return value.round().toString();
-    }
-    if (value.abs() >= 100) return value.toStringAsFixed(1);
-    if (value.abs() >= 10) return value.toStringAsFixed(2);
-    return value
-        .toStringAsFixed(3)
-        .replaceFirst(RegExp(r'0+$'), '')
-        .replaceFirst(RegExp(r'\.$'), '');
+    return LabCalculation.formatVolume(ul);
   }
 
   String _unitLabel(ConcentrationUnit unit) {
-    switch (unit) {
-      case ConcentrationUnit.M:
-        return 'M';
-      case ConcentrationUnit.mM:
-        return 'mM';
-      case ConcentrationUnit.uM:
-        return 'uM';
-      case ConcentrationUnit.nM:
-        return 'nM';
-      case ConcentrationUnit.pM:
-        return 'pM';
-      case ConcentrationUnit.gL:
-        return 'g/L';
-      case ConcentrationUnit.mgML:
-        return 'mg/mL';
-      case ConcentrationUnit.ugML:
-        return 'ug/mL';
-      case ConcentrationUnit.ngML:
-        return 'ng/mL';
-      case ConcentrationUnit.percent:
-        return '%';
-      case ConcentrationUnit.X:
-        return 'X';
-      case ConcentrationUnit.gMol:
-        return 'g/mol';
-    }
+    return LabCalculation.unitLabel(unit);
   }
 }

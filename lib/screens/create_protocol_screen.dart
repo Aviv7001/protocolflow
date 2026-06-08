@@ -9,7 +9,10 @@ import '../models/reagent_mix_wizard.dart';
 import '../features/master_mix/services/master_mix_calculator_service.dart';
 import '../features/reagent_mix/services/reagent_mix_calculator_service.dart';
 import '../widgets/protocol_table_widget.dart';
+import '../services/auth_service.dart';
+import '../services/drive_sync_service.dart';
 import '../services/storage_service.dart';
+import '../utils/protocol_id.dart';
 import 'table_selection_screen.dart';
 
 class CreateProtocolScreen extends StatefulWidget {
@@ -273,6 +276,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
               mixName: wizard.mixName,
               finalVolume: wizard.finalVolume,
               finalVolumeUnit: wizard.finalVolumeUnit,
+              extraVolumePercent: wizard.extraVolumePercent,
               baseSolventName: wizard.baseSolventName,
               reagents: wizard.reagents.map((r) => r.toInput()).toList(),
             ),
@@ -310,6 +314,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
               volumePerTube: r.volPerSample,
               volumePerTubeUnit: r.volUnit,
               numberOfTubes: r.numSamples,
+              extraVolumePercent: wizard.extraVolumePercent,
               molecularWeight: r.molecularWeight,
             );
             final result = service.calculateMix(input);
@@ -413,15 +418,31 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
           widget.initialProtocol != null &&
           isTemplate == widget.initialProtocol!.isTemplate;
 
+      final now = DateTime.now();
+      final signedInUser = AuthService.instance.currentUser;
       String newId = isUpdating
           ? widget.initialProtocol!.id
-          : 'proto_${DateTime.now().millisecondsSinceEpoch}';
+          : generateProtocolId(initials: signedInUser?.initials);
+      if (newId.trim().isEmpty) {
+        newId = generateProtocolId(initials: signedInUser?.initials);
+      }
 
       final newProtocol = Protocol(
         id: newId,
         title: _titleController.text,
         objective: _objectiveController.text,
         description: _descriptionController.text,
+        // Future Drive sync will use ownerId with protocolId to locate the
+        // user's remote protocol record without depending on editable names.
+        ownerId: signedInUser?.googleUserId ?? widget.initialProtocol?.ownerId,
+        createdByName:
+            signedInUser?.displayName ?? widget.initialProtocol?.createdByName,
+        createdAt: isUpdating ? widget.initialProtocol!.createdAt : now,
+        updatedAt: now,
+        schemaVersion: Protocol.currentSchemaVersion,
+        syncStatus: signedInUser == null
+            ? ProtocolSyncStatus.localOnly
+            : ProtocolSyncStatus.modified,
         materials: _materials.map((m) => m.copyWith()).toList(),
         samples: List.from(_samples),
         files: List.from(_files),
@@ -442,10 +463,15 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
         existingProtocols.add(newProtocol);
       }
       await _storageService.saveProtocols(existingProtocols);
+      final savedProtocol = signedInUser == null
+          ? newProtocol
+          : await DriveSyncService.instance.syncProtocolAfterLocalSave(
+              newProtocol,
+            );
 
       if (mounted) {
         setState(() => _canActuallyPop = true);
-        Navigator.pop(context, newProtocol);
+        Navigator.pop(context, savedProtocol);
       }
     }
   }

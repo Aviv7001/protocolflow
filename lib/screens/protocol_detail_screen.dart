@@ -6,6 +6,7 @@ import '../models/protocol_table.dart';
 import '../data/completed_protocols_data.dart';
 import '../services/storage_service.dart';
 import '../widgets/protocol_table_widget.dart';
+import '../widgets/sync_status_chip.dart';
 import '../services/pdf_service.dart';
 import '../services/export_service.dart';
 import 'run_protocol_screen.dart';
@@ -54,9 +55,7 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
               final scaffoldNavigator = Navigator.of(context);
               final dialogNavigator = Navigator.of(dialogContext);
 
-              final existingProtocols = await StorageService().loadProtocols();
-              existingProtocols.removeWhere((p) => p.id == protocol.id);
-              await StorageService().saveProtocols(existingProtocols);
+              await StorageService().deleteProtocol(protocol);
 
               if (mounted) {
                 if (dialogContext.mounted) {
@@ -290,6 +289,8 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
                       ),
                     ),
                   ),
+                const SizedBox(width: 8),
+                SyncStatusChip(status: protocol.syncStatus, compact: true),
               ],
             ),
             const Divider(height: 32),

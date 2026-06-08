@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../lab_math/lab_calculation.dart';
 import '../services/master_mix_calculator_service.dart';
 import '../../../models/master_mix_wizard.dart';
 import '../widgets/master_mix_result_table.dart';
@@ -22,6 +23,20 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
   late MasterMixWizard _wizard;
   final MasterMixCalculatorService _calculator = MasterMixCalculatorService();
   static const double _uniformFontSize = 14.0;
+  static const List<ConcentrationUnit> _masterMixConcentrationUnits = [
+    ConcentrationUnit.M,
+    ConcentrationUnit.mM,
+    ConcentrationUnit.uM,
+    ConcentrationUnit.nM,
+    ConcentrationUnit.pM,
+    ConcentrationUnit.gL,
+    ConcentrationUnit.mgML,
+    ConcentrationUnit.ugML,
+    ConcentrationUnit.ngML,
+    ConcentrationUnit.percent,
+    ConcentrationUnit.X,
+    ConcentrationUnit.gMol,
+  ];
   bool _canActuallyPop = false;
 
   @override
@@ -77,6 +92,7 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
         mixName: _wizard.mixName,
         finalVolume: _wizard.finalVolume,
         finalVolumeUnit: _wizard.finalVolumeUnit,
+        extraVolumePercent: _wizard.extraVolumePercent,
         baseSolventName: _wizard.baseSolventName,
         reagents: _wizard.reagents.map((r) => r.toInput()).toList(),
       ),
@@ -147,7 +163,7 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
             _resItemEditable('V2 (Total Mix)', res.optimizedFinalVolumeUl, (
               val,
             ) {
-              final roundedV2 = (val * 10).round() / 10.0;
+              final roundedV2 = (val / _extraFactor * 10).round() / 10.0;
               setState(
                 () => _wizard = _wizard.copyWith(
                   finalVolume: roundedV2,
@@ -284,6 +300,23 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
             ),
             const SizedBox(height: 12),
             _DelayedTextField(
+              initialValue: _wizard.extraVolumePercent.toString(),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: const InputDecoration(
+                labelText: 'Extra Volume %',
+                border: OutlineInputBorder(),
+              ),
+              style: const TextStyle(fontSize: _uniformFontSize),
+              onCommit: (v) => setState(
+                () => _wizard = _wizard.copyWith(
+                  extraVolumePercent: double.tryParse(v) ?? 0,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            _DelayedTextField(
               initialValue: _wizard.baseSolventName,
               decoration: const InputDecoration(
                 labelText: 'Base Solvent Name',
@@ -409,7 +442,7 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
             if (newV2L > 0) {
               final newV2uL = newV2L * 1e6;
               // Round to 1 decimal place to keep it clean
-              final roundedV2 = (newV2uL * 10).round() / 10.0;
+              final roundedV2 = (newV2uL / _extraFactor * 10).round() / 10.0;
               setState(
                 () => _wizard = _wizard.copyWith(
                   finalVolume: roundedV2,
@@ -438,7 +471,7 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
             if (ratio > 0) {
               final newV2 = val / ratio;
               // Round to 1 decimal place to keep it clean
-              final roundedV2 = (newV2 * 10).round() / 10.0;
+              final roundedV2 = (newV2 / _extraFactor * 10).round() / 10.0;
               setState(
                 () => _wizard = _wizard.copyWith(
                   finalVolume: roundedV2,
@@ -454,51 +487,15 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
   }
 
   ConcentrationFamily _getFamily(ConcentrationUnit unit) {
-    switch (unit) {
-      case ConcentrationUnit.M:
-      case ConcentrationUnit.mM:
-      case ConcentrationUnit.uM:
-      case ConcentrationUnit.nM:
-      case ConcentrationUnit.pM:
-        return ConcentrationFamily.molar;
-      case ConcentrationUnit.gL:
-      case ConcentrationUnit.mgML:
-      case ConcentrationUnit.ugML:
-      case ConcentrationUnit.ngML:
-        return ConcentrationFamily.massVolume;
-      case ConcentrationUnit.percent:
-        return ConcentrationFamily.percentage;
-      case ConcentrationUnit.X:
-        return ConcentrationFamily.fold;
-      case ConcentrationUnit.gMol:
-        return ConcentrationFamily.molecularWeight;
-    }
+    return LabCalculation.familyOf(unit);
   }
 
   double _convertToBaseConc(double val, ConcentrationUnit unit) {
-    switch (unit) {
-      case ConcentrationUnit.M:
-        return val;
-      case ConcentrationUnit.mM:
-        return val * 1e-3;
-      case ConcentrationUnit.uM:
-        return val * 1e-6;
-      case ConcentrationUnit.nM:
-        return val * 1e-9;
-      case ConcentrationUnit.pM:
-        return val * 1e-12;
-      case ConcentrationUnit.gL:
-      case ConcentrationUnit.mgML:
-        return val;
-      case ConcentrationUnit.ugML:
-        return val * 1e-3;
-      case ConcentrationUnit.ngML:
-        return val * 1e-6;
-      case ConcentrationUnit.percent:
-      case ConcentrationUnit.X:
-      case ConcentrationUnit.gMol:
-        return val;
-    }
+    return LabCalculation.concentrationToBase(val, unit);
+  }
+
+  double get _extraFactor {
+    return (1 + _wizard.extraVolumePercent.clamp(0, 100) / 100).toDouble();
   }
 
   Widget _resItem(String label, String val, Color color) {
@@ -688,7 +685,7 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
               labelText: 'Unit',
               border: OutlineInputBorder(),
             ),
-            items: ConcentrationUnit.values
+            items: _masterMixConcentrationUnits
                 .map(
                   (u) => DropdownMenuItem(
                     value: u,
@@ -730,6 +727,8 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
         return '%';
       case ConcentrationUnit.X:
         return 'X';
+      case ConcentrationUnit.ratio:
+        return 'ratio';
       case ConcentrationUnit.gMol:
         return 'g/mol';
     }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../features/lab_math/lab_calculation.dart';
 import '../models/reagent_mix_wizard.dart';
 import '../features/reagent_mix/services/reagent_mix_calculator_service.dart';
 import '../features/reagent_mix/widgets/reagent_result_table.dart';
@@ -93,6 +94,8 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              _buildGeneralInfo(),
+              const SizedBox(height: 24),
               Text('Reagents', style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 16),
               ..._wizard.reagents.asMap().entries.map(
@@ -198,6 +201,7 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
         volumePerTube: item.volPerSample,
         volumePerTubeUnit: item.volUnit,
         numberOfTubes: item.numSamples,
+        extraVolumePercent: _wizard.extraVolumePercent,
         molecularWeight: item.molecularWeight,
       ),
     );
@@ -338,6 +342,51 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
     );
   }
 
+  Widget _buildGeneralInfo() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'General Information',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 16),
+            _DelayedTextField(
+              decoration: const InputDecoration(
+                labelText: 'Table Title',
+                border: OutlineInputBorder(),
+              ),
+              initialValue: _wizard.title,
+              style: const TextStyle(fontSize: _uniformFontSize),
+              onCommit: (v) =>
+                  setState(() => _wizard = _wizard.copyWith(title: v)),
+            ),
+            const SizedBox(height: 12),
+            _DelayedTextField(
+              decoration: const InputDecoration(
+                labelText: 'Extra Volume %',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              initialValue: _wizard.extraVolumePercent.toString(),
+              style: const TextStyle(fontSize: _uniformFontSize),
+              onCommit: (v) => setState(
+                () => _wizard = _wizard.copyWith(
+                  extraVolumePercent: double.tryParse(v) ?? 0,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   double _parseConcentration(String v) {
     if (v.contains(':')) {
       final parts = v.split(':');
@@ -424,6 +473,8 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
         return 'µM';
       case ConcentrationUnit.nM:
         return 'nM';
+      case ConcentrationUnit.pM:
+        return 'pM';
       case ConcentrationUnit.gL:
         return 'g/L';
       case ConcentrationUnit.mgML:
@@ -432,8 +483,12 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
         return 'µg/mL';
       case ConcentrationUnit.percent:
         return '%';
+      case ConcentrationUnit.ngML:
+        return 'ng/mL';
       case ConcentrationUnit.ratio:
         return 'ratio';
+      case ConcentrationUnit.X:
+        return 'X';
       case ConcentrationUnit.gMol:
         return 'g/mol';
     }
@@ -479,10 +534,12 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
                     : item.stockUnit;
 
                 double newV2L = 0;
-                if (targetUnit.index < 4) {
-                  // Molar
-                  final double m =
-                      targetConc * [1, 1e-3, 1e-6, 1e-9][targetUnit.index];
+                if (LabCalculation.familyOf(targetUnit) ==
+                    ConcentrationFamily.molar) {
+                  final double m = LabCalculation.concentrationToBase(
+                    targetConc,
+                    targetUnit,
+                  );
                   newV2L = val / (mw * m);
                 } else if (targetUnit == ConcentrationUnit.gL ||
                     targetUnit == ConcentrationUnit.mgML) {
@@ -495,7 +552,9 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
                   final newV2uL = newV2L * 1e6;
                   // Round to 1 decimal place to avoid floating point issues
                   final newVolPerTube =
-                      (newV2uL / item.numSamples * 10).round() / 10.0;
+                      (newV2uL / (item.numSamples * _extraFactor) * 10)
+                          .round() /
+                      10.0;
                   _updateReagent(
                     index,
                     item.copyWith(volPerSample: newVolPerTube),
@@ -509,7 +568,8 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
                   final newV2 = val * ratio;
                   // Round to 1 decimal place to keep it clean
                   final newVolPerTube =
-                      (newV2 / (item.numSamples * 1.1) * 10).round() / 10.0;
+                      (newV2 / (item.numSamples * _extraFactor) * 10).round() /
+                      10.0;
                   _updateReagent(
                     index,
                     item.copyWith(volPerSample: newVolPerTube),
@@ -518,7 +578,7 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
               }, Colors.blue),
             _resItem('Solvent', result.formattedSolventVolume, Colors.green),
             _resItemEditable('V2 (Total)', result.totalVolumeUl, (val) {
-              final newVolPerTube = val / (item.numSamples * 1.1);
+              final newVolPerTube = val / (item.numSamples * _extraFactor);
               _updateReagent(index, item.copyWith(volPerSample: newVolPerTube));
             }, Colors.black),
           ],
@@ -701,6 +761,10 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
         ),
       ],
     );
+  }
+
+  double get _extraFactor {
+    return 1 + _wizard.extraVolumePercent.clamp(0, 100) / 100;
   }
 }
 

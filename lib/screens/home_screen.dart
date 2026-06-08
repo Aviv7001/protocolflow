@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 
-import '../models/user.dart';
 import '../models/task.dart';
 import '../models/active_protocol.dart';
 import '../data/completed_protocols_data.dart';
 import '../features/today_tasks/services/task_service.dart';
+import '../services/auth_service.dart';
+import '../services/drive_sync_service.dart';
+import '../widgets/google_sign_in_button.dart';
 import 'run_protocol_screen.dart';
 import 'protocol_detail_screen.dart';
 
@@ -17,15 +19,15 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final User currentUser = User(
-    id: 'u1',
-    fullName: 'Aviv Yehuda',
-    email: 'labuser@example.com',
-  );
-
   final TaskService _taskService = TaskService();
+  final AuthService _authService = AuthService.instance;
   List<Task> _todayTasks = [];
   bool _isLoadingTasks = true;
+  bool _isSigningIn = false;
+  bool _isSyncing = false;
+  bool _hasAttemptedStartupSync = false;
+  AppUser? _signedInUser;
+  StreamSubscription<AppUser?>? _userSubscription;
 
   Timer? _timer;
   Duration _elapsedTime = Duration.zero;
@@ -35,6 +37,28 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _startTimer();
     _loadTasks();
+    _initializeAuth();
+  }
+
+  Future<void> _initializeAuth() async {
+    await _authService.initialize();
+    if (!mounted) return;
+    setState(() => _signedInUser = _authService.currentUser);
+    if (_signedInUser != null && _authService.hasAuthenticatedAccount) {
+      _runDriveSync(promptIfNecessary: false, showSnackBar: false);
+      _hasAttemptedStartupSync = true;
+    }
+    _userSubscription = _authService.userChanges.listen((user) {
+      if (mounted) {
+        setState(() => _signedInUser = user);
+        if (user != null &&
+            _authService.hasAuthenticatedAccount &&
+            !_hasAttemptedStartupSync) {
+          _hasAttemptedStartupSync = true;
+          _runDriveSync(promptIfNecessary: false, showSnackBar: false);
+        }
+      }
+    });
   }
 
   Future<void> _loadTasks() async {
@@ -125,7 +149,149 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    _userSubscription?.cancel();
     super.dispose();
+  }
+
+  Future<void> _handleProfilePressed() async {
+    final user = _signedInUser;
+    if (user == null) {
+      if (!_authService.supportsDirectAuthenticate) {
+        await _showWebSignInDialog();
+        return;
+      }
+      setState(() => _isSigningIn = true);
+      try {
+        final signedIn = await _authService.signIn();
+        if (signedIn != null) {
+          await _runDriveSync(promptIfNecessary: true);
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(_googleSignInErrorMessage(e))));
+        }
+      } finally {
+        if (mounted) setState(() => _isSigningIn = false);
+      }
+      return;
+    }
+
+    await _showProfileDialog(user);
+  }
+
+  Future<void> _showWebSignInDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Sign in'),
+        content: SizedBox(width: 260, child: buildGoogleSignInButton()),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _runDriveSync({
+    required bool promptIfNecessary,
+    bool showSnackBar = true,
+  }) async {
+    if (_isSyncing) return;
+    if (mounted) setState(() => _isSyncing = true);
+    final summary = await DriveSyncService.instance.syncNow(
+      promptIfNecessary: promptIfNecessary,
+    );
+    if (mounted) {
+      setState(() => _isSyncing = false);
+      if (!showSnackBar) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(summary.message),
+          duration: const Duration(seconds: 6),
+        ),
+      );
+    }
+  }
+
+  Future<void> _showProfileDialog(AppUser user) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Google Profile'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                _buildUserAvatar(user, size: 48),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        user.displayName ?? 'Google user',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      Text(
+                        user.email,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            SelectableText(
+              'Google ID: ${user.googleUserId}',
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Close'),
+          ),
+          TextButton(
+            onPressed: _isSyncing
+                ? null
+                : () async {
+                    Navigator.pop(dialogContext);
+                    await _runDriveSync(promptIfNecessary: true);
+                  },
+            child: Text(_isSyncing ? 'Syncing...' : 'Sync now'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              await _authService.signOut();
+            },
+            child: const Text('Sign out'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _googleSignInErrorMessage(Object error) {
+    final raw = error.toString();
+    if (raw.contains('clientConfigurationError')) {
+      return 'Google Sign-In needs an Android OAuth client. Add google-services.json or run with GOOGLE_SERVER_CLIENT_ID.';
+    }
+    if (raw.contains('28444') ||
+        raw.contains('Developer console is not set up correctly')) {
+      return 'Google Sign-In config mismatch. Check package name, release SHA-1, and Web client ID.';
+    }
+    return 'Google Sign-In failed: $error';
   }
 
   void _startTimer() {
@@ -193,18 +359,17 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               actions: [
                 IconButton(
-                  icon: const Icon(
-                    Icons.account_circle,
-                    color: Colors.white,
-                    size: 30,
-                  ),
-                  onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Profile features coming soon!'),
-                      ),
-                    );
-                  },
+                  icon: _isSigningIn
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : _buildUserAvatar(_signedInUser, size: 30),
+                  onPressed: _isSigningIn ? null : _handleProfilePressed,
                 ),
               ],
             ),
@@ -360,6 +525,30 @@ class _HomeScreenState extends State<HomeScreen> {
         title,
         style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
       ),
+    );
+  }
+
+  Widget _buildUserAvatar(AppUser? user, {required double size}) {
+    final photoUrl = user?.photoUrl;
+    if (photoUrl != null && photoUrl.isNotEmpty) {
+      return CircleAvatar(
+        radius: size / 2,
+        backgroundImage: NetworkImage(photoUrl),
+        backgroundColor: Colors.white,
+      );
+    }
+
+    final name = user?.displayName ?? user?.email;
+    final initial = name != null && name.isNotEmpty
+        ? name[0].toUpperCase()
+        : '';
+    return CircleAvatar(
+      radius: size / 2,
+      backgroundColor: Colors.white,
+      foregroundColor: Colors.blue,
+      child: initial.isEmpty
+          ? Icon(Icons.account_circle, size: size)
+          : Text(initial, style: const TextStyle(fontWeight: FontWeight.bold)),
     );
   }
 

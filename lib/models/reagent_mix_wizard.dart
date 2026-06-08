@@ -5,41 +5,46 @@ import '../features/reagent_mix/services/reagent_mix_calculator_service.dart';
 class ReagentMixWizard {
   final String title;
   final List<ReagentItem> reagents;
-  final double overfillFactor;
+  final double extraVolumePercent;
 
   ReagentMixWizard({
     this.title = 'Reagent Mix',
     this.reagents = const [],
-    this.overfillFactor = 1.1,
+    this.extraVolumePercent = 10,
   });
 
   Map<String, dynamic> toJson() {
     return {
       'title': title,
       'reagents': reagents.map((r) => r.toJson()).toList(),
-      'overfillFactor': overfillFactor,
+      'extraVolumePercent': extraVolumePercent,
     };
   }
 
   factory ReagentMixWizard.fromJson(Map<String, dynamic> json) {
+    final legacyOverfillFactor = (json['overfillFactor'] as num?)?.toDouble();
     return ReagentMixWizard(
       title: json['title'] ?? 'Reagent Mix',
       reagents: (json['reagents'] as List? ?? [])
           .map<ReagentItem>((r) => ReagentItem.fromJson(r))
           .toList(),
-      overfillFactor: (json['overfillFactor'] ?? 1.1).toDouble(),
+      extraVolumePercent: json['extraVolumePercent'] != null
+          ? (json['extraVolumePercent'] as num).toDouble()
+          : legacyOverfillFactor == null
+          ? 10
+          : ((legacyOverfillFactor - 1) * 100),
     );
   }
 
   ReagentMixWizard copyWith({
     String? title,
     List<ReagentItem>? reagents,
-    double? overfillFactor,
+    double? extraVolumePercent,
   }) {
     return ReagentMixWizard(
       title: title ?? this.title,
       reagents: reagents ?? this.reagents,
-      overfillFactor: overfillFactor ?? this.overfillFactor,
+      extraVolumePercent: extraVolumePercent ?? this.extraVolumePercent,
     );
   }
 
@@ -53,7 +58,7 @@ class ReagentMixWizard {
       '# Samples',
       'V2 (Total)',
       'V1 (from Stock)',
-      'Solvent Vol.'
+      'Solvent Vol.',
     ];
 
     final service = ReagentMixCalculatorService();
@@ -68,17 +73,30 @@ class ReagentMixWizard {
         volumePerTube: r.volPerSample,
         volumePerTubeUnit: r.volUnit,
         numberOfTubes: r.numSamples,
+        extraVolumePercent: extraVolumePercent,
         molecularWeight: r.molecularWeight,
       );
 
       final result = service.calculateMix(input);
 
       if (!result.success) {
-        return [r.name, r.solvent, 'ERR', 'ERR', 'ERR', r.numSamples, 'ERROR', result.errorMessage ?? 'Calc failed', ''];
+        return [
+          r.name,
+          r.solvent,
+          'ERR',
+          'ERR',
+          'ERR',
+          r.numSamples,
+          'ERROR',
+          result.errorMessage ?? 'Calc failed',
+          '',
+        ];
       }
 
       String formatConc(double val, ConcentrationUnit unit) {
-        if (unit == ConcentrationUnit.ratio) return '1:${val.toStringAsFixed(val == val.toInt() ? 0 : 1)}';
+        if (unit == ConcentrationUnit.ratio) {
+          return '1:${val.toStringAsFixed(val == val.toInt() ? 0 : 1)}';
+        }
         if (unit == ConcentrationUnit.gMol) return '$val g/mol';
         return '$val ${unit.name}';
       }
@@ -103,10 +121,11 @@ class ReagentMixWizard {
       columnHeaders: headers,
       rowHeaders: List.generate(reagents.length, (i) => (i + 1).toString()),
       data: data,
-      cellColors: List.generate(reagents.length, (_) => List.generate(headers.length, (_) => '')),
-      metadata: {
-        'wizard_state': jsonEncode(toJson()),
-      },
+      cellColors: List.generate(
+        reagents.length,
+        (_) => List.generate(headers.length, (_) => ''),
+      ),
+      metadata: {'wizard_state': jsonEncode(toJson())},
     );
   }
 }
@@ -156,11 +175,20 @@ class ReagentItem {
       name: json['name'] ?? '',
       solvent: json['solvent'] ?? '',
       stockConc: (json['stockConc'] ?? 0).toDouble(),
-      stockUnit: ConcentrationUnit.values.firstWhere((e) => e.name == json['stockUnit'], orElse: () => ConcentrationUnit.ugML),
+      stockUnit: ConcentrationUnit.values.firstWhere(
+        (e) => e.name == json['stockUnit'],
+        orElse: () => ConcentrationUnit.ugML,
+      ),
       workingConc: (json['workingConc'] ?? 0).toDouble(),
-      workingUnit: ConcentrationUnit.values.firstWhere((e) => e.name == json['workingUnit'], orElse: () => ConcentrationUnit.ugML),
+      workingUnit: ConcentrationUnit.values.firstWhere(
+        (e) => e.name == json['workingUnit'],
+        orElse: () => ConcentrationUnit.ugML,
+      ),
       volPerSample: (json['volPerSample'] ?? 0).toDouble(),
-      volUnit: VolumeUnit.values.firstWhere((e) => e.name == json['volUnit'], orElse: () => VolumeUnit.uL),
+      volUnit: VolumeUnit.values.firstWhere(
+        (e) => e.name == json['volUnit'],
+        orElse: () => VolumeUnit.uL,
+      ),
       numSamples: json['numSamples'] ?? 1,
       molecularWeight: json['molecularWeight'],
     );

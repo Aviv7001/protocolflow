@@ -1,7 +1,7 @@
 {
     "name": "protocolflow",
     "short_name": "protocolflow",
-    "start_url": ".",
+    "start_url": "/protocolflow/",
     "display": "standalone",
     "background_color": "#003E68",
     "theme_color": "#003E68",

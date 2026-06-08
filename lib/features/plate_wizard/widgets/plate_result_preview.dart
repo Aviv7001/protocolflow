@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../models/plate_wizard.dart';
 import '../../../models/protocol_table.dart';
+import '../../../services/table_export_service.dart';
 import '../../../widgets/table_export_actions.dart';
 
 class PlateResultPreview extends StatefulWidget {
@@ -15,6 +16,7 @@ class PlateResultPreview extends StatefulWidget {
 
 class _PlateResultPreviewState extends State<PlateResultPreview> {
   final Map<int, ScrollController> _scrollControllers = {};
+  final _exportService = const TableExportService();
 
   @override
   void dispose() {
@@ -33,6 +35,15 @@ class _PlateResultPreviewState extends State<PlateResultPreview> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton.icon(
+            onPressed: () => _exportLongFormat(tables),
+            icon: const Icon(Icons.view_list, size: 18),
+            label: const Text('Export long Excel'),
+          ),
+        ),
+        const SizedBox(height: 16),
         ...tables.asMap().entries.map(
           (entry) => _buildPlateGrid(entry.key, entry.value),
         ),
@@ -54,7 +65,7 @@ class _PlateResultPreviewState extends State<PlateResultPreview> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            table.title,
+            _plateTitle(table),
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
           ),
           const SizedBox(height: 12),
@@ -216,6 +227,29 @@ class _PlateResultPreviewState extends State<PlateResultPreview> {
                   ),
               ],
             ),
+    );
+  }
+
+  String _plateTitle(ProtocolTable table) {
+    final plateNumber =
+        table.metadata['plateNumber'] ??
+        ((int.tryParse(table.metadata['plateIndex'] ?? '') ?? 0) + 1)
+            .toString();
+    final totalPlates = int.tryParse(table.metadata['totalPlates'] ?? '') ?? 1;
+    if (totalPlates <= 1 && table.title.isNotEmpty) return table.title;
+    return table.title.contains(plateNumber)
+        ? table.title
+        : '${table.title} $plateNumber';
+  }
+
+  Future<void> _exportLongFormat(List<ProtocolTable> tables) async {
+    await _exportService.exportPlateLongToExcel(
+      tables,
+      title: widget.wizard.title,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Long-format Excel export ready')),
     );
   }
 }

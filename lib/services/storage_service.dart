@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/completed_protocol.dart';
 import '../models/active_protocol.dart';
+import '../models/deleted_protocol_record.dart';
 import '../models/protocol.dart';
 import '../models/protocol_table.dart';
 
@@ -10,7 +11,9 @@ class StorageService {
   static const String _activeKey = 'active_protocol_json';
   static const String _runningKey = 'running_protocols_json';
   static const String _libraryKey = 'protocols_library_json';
+  static const String _deletedProtocolsKey = 'deleted_protocols_json';
   static const String _savedTablesKey = 'saved_tables_json';
+  static const String _deletedSavedTablesKey = 'deleted_saved_tables_json';
 
   Future<void> saveProtocols(List<Protocol> protocols) async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -30,7 +33,93 @@ class StorageService {
       }
 
       final List<dynamic> jsonList = jsonDecode(jsonString);
-      return jsonList.map((j) => Protocol.fromJson(j)).toList();
+      var migrated = false;
+      final protocols = jsonList.map((j) {
+        if (j is Map<String, dynamic>) {
+          final hasId = (j['id'] as String?)?.trim().isNotEmpty ?? false;
+          final hasSchemaVersion = j.containsKey('schemaVersion');
+          final hasCreatedAt = j.containsKey('createdAt');
+          final hasUpdatedAt = j.containsKey('updatedAt');
+          final hasSyncStatus = j.containsKey('syncStatus');
+          if (!hasId ||
+              !hasSchemaVersion ||
+              !hasCreatedAt ||
+              !hasUpdatedAt ||
+              !hasSyncStatus) {
+            migrated = true;
+          }
+          return Protocol.fromJson(j);
+        }
+        migrated = true;
+        return Protocol.fromJson(Map<String, dynamic>.from(j));
+      }).toList();
+
+      if (migrated) {
+        await saveProtocols(protocols);
+      }
+      return protocols;
+    } catch (e) {
+      return [];
+    }
+  }
+
+  Future<void> upsertProtocol(Protocol protocol) async {
+    final protocols = await loadProtocols();
+    final index = protocols.indexWhere(
+      (existing) => existing.id == protocol.id,
+    );
+    if (index == -1) {
+      protocols.add(protocol);
+    } else {
+      protocols[index] = protocol;
+    }
+    await saveProtocols(protocols);
+  }
+
+  Future<void> deleteProtocol(Protocol protocol) async {
+    final protocols = await loadProtocols();
+    protocols.removeWhere((existing) => existing.id == protocol.id);
+    await saveProtocols(protocols);
+
+    final records = await loadDeletedProtocolRecords();
+    final record = DeletedProtocolRecord(
+      protocol: protocol,
+      deletedAt: DateTime.now(),
+      driveFileId: protocol.driveFileId,
+    );
+    final index = records.indexWhere((item) => item.protocolId == protocol.id);
+    if (index == -1) {
+      records.add(record);
+    } else {
+      records[index] = record;
+    }
+    await saveDeletedProtocolRecords(records);
+  }
+
+  Future<void> saveDeletedProtocolRecords(
+    List<DeletedProtocolRecord> records,
+  ) async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _deletedProtocolsKey,
+      jsonEncode(records.map((record) => record.toJson()).toList()),
+    );
+  }
+
+  Future<List<DeletedProtocolRecord>> loadDeletedProtocolRecords() async {
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String? jsonString = prefs.getString(_deletedProtocolsKey);
+
+      if (jsonString == null || jsonString.isEmpty) {
+        return [];
+      }
+
+      final List<dynamic> jsonList = jsonDecode(jsonString);
+      return jsonList
+          .whereType<Map<String, dynamic>>()
+          .map(DeletedProtocolRecord.fromJson)
+          .toList();
     } catch (e) {
       return [];
     }
@@ -149,5 +238,29 @@ class StorageService {
     final tables = await loadSavedTables();
     tables.removeWhere((table) => table.id == tableId);
     await saveSavedTables(tables);
+
+    final deletedIds = await loadDeletedSavedTableIds();
+    if (!deletedIds.contains(tableId)) {
+      deletedIds.add(tableId);
+      await saveDeletedSavedTableIds(deletedIds);
+    }
+  }
+
+  Future<void> saveDeletedSavedTableIds(List<String> tableIds) async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_deletedSavedTablesKey, jsonEncode(tableIds));
+  }
+
+  Future<List<String>> loadDeletedSavedTableIds() async {
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String? jsonString = prefs.getString(_deletedSavedTablesKey);
+      if (jsonString == null || jsonString.isEmpty) return [];
+
+      final List<dynamic> jsonList = jsonDecode(jsonString);
+      return jsonList.whereType<String>().toList();
+    } catch (e) {
+      return [];
+    }
   }
 }

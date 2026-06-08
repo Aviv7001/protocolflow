@@ -20,6 +20,7 @@ class MasterMixResultTable extends StatelessWidget {
         mixName: wizard.mixName,
         finalVolume: wizard.finalVolume,
         finalVolumeUnit: wizard.finalVolumeUnit,
+        extraVolumePercent: wizard.extraVolumePercent,
         baseSolventName: wizard.baseSolventName,
         reagents: wizard.reagents.map((r) => r.toInput()).toList(),
       ),

@@ -5,6 +5,7 @@ import 'package:protocolflow/models/material.dart';
 import 'package:protocolflow/models/protocol.dart';
 import 'package:protocolflow/models/protocol_step.dart';
 import 'package:protocolflow/models/protocol_table.dart';
+import 'package:protocolflow/utils/protocol_id.dart';
 
 void main() {
   test('protocol JSON round trip preserves nested step data', () {
@@ -90,5 +91,21 @@ void main() {
     });
 
     expect(restored.actionItems, equals(['Legacy action']));
+  });
+
+  test('protocol IDs include display name initials and random suffix', () {
+    expect(initialsFromDisplayName('Aviv Yehuda'), equals('AY'));
+    expect(initialsFromDisplayName('John Smith'), equals('JS'));
+    expect(initialsFromDisplayName('Sarah Kim Lee'), equals('SL'));
+    expect(initialsFromDisplayName('Madonna'), equals('MA'));
+    expect(initialsFromDisplayName(''), equals('XX'));
+
+    final id = generateProtocolId(
+      date: DateTime(2026, 6, 6),
+      initials: initialsFromDisplayName('Aviv Yehuda'),
+    );
+
+    expect(id, matches(RegExp(r'^PT-20260606-AY-[A-Z0-9]{4}$')));
+    expect(isProtocolId(id), isTrue);
   });
 }

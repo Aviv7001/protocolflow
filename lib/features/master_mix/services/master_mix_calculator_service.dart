@@ -1,38 +1,15 @@
-/// Units for volume measurements
-enum VolumeUnit { nL, uL, mL, L }
+export '../../lab_math/lab_calculation.dart'
+    show ConcentrationFamily, ConcentrationUnit, VolumeUnit;
 
-/// Units for concentration measurements
-enum ConcentrationUnit {
-  // Molar family
-  M,
-  mM,
-  uM,
-  nM,
-  pM,
-  // Mass/Volume family
-  gL,
-  mgML,
-  ugML,
-  ngML,
-  // Percentage
-  percent,
-  // Fold/X
-  X,
-  // Molecular Weight
-  gMol
-}
+import '../../lab_math/lab_calculation.dart';
 
-/// Categories of concentrations that can be converted between each other
-enum ConcentrationFamily { molar, massVolume, percentage, fold, molecularWeight, unknown }
-
-/// Input data for a single reagent in the Master Mix
 class MasterMixReagentInput {
   final String reagentName;
   final double stockConcentration;
   final ConcentrationUnit stockConcentrationUnit;
   final double finalConcentration;
   final ConcentrationUnit finalConcentrationUnit;
-  final double? molecularWeight; // Required for cross-family conversion
+  final double? molecularWeight;
 
   MasterMixReagentInput({
     required this.reagentName,
@@ -44,11 +21,11 @@ class MasterMixReagentInput {
   });
 }
 
-/// Input data for the Master Mix calculation
 class MasterMixInput {
   final String mixName;
   final double finalVolume;
   final VolumeUnit finalVolumeUnit;
+  final double extraVolumePercent;
   final String baseSolventName;
   final List<MasterMixReagentInput> reagents;
 
@@ -56,12 +33,12 @@ class MasterMixInput {
     required this.mixName,
     required this.finalVolume,
     required this.finalVolumeUnit,
+    this.extraVolumePercent = 10,
     required this.baseSolventName,
     required this.reagents,
   });
 }
 
-/// Result for a single reagent in the Master Mix
 class MasterMixReagentResult {
   final String reagentName;
   final double reagentVolumeUl;
@@ -82,7 +59,6 @@ class MasterMixReagentResult {
   });
 }
 
-/// Result of the Master Mix calculation
 class MasterMixResult {
   final bool success;
   final String? errorMessage;
@@ -112,13 +88,12 @@ class MasterMixResult {
 }
 
 class MasterMixCalculatorService {
-  static const double minPipettableVolumeUl = 0.2;
+  static const double minPipettableVolumeUl =
+      LabCalculation.minPipettableVolumeUl;
 
-  /// Main calculation method for Master Mix with optimization
   MasterMixResult calculateMasterMix(MasterMixInput input) {
-    final List<String> globalWarnings = [];
+    final globalWarnings = <String>[];
 
-    // 1. Basic Validations
     if (input.finalVolume <= 0 || input.finalVolume.isNaN) {
       return MasterMixResult(
         success: false,
@@ -135,43 +110,52 @@ class MasterMixCalculatorService {
       );
     }
 
-    final double requestedUl = _convertToUl(input.finalVolume, input.finalVolumeUnit);
-    final double maxTotalUl = requestedUl * 1.3;
+    final requestedUl = LabCalculation.volumeToUl(
+      input.finalVolume,
+      input.finalVolumeUnit,
+    );
+    final extraFactor = 1 + input.extraVolumePercent.clamp(0, 100) / 100;
+    final minimumPreparedUl = requestedUl * extraFactor;
+    final maxTotalUl = minimumPreparedUl * 1.3;
+    final params = <_ReagentCalcParams>[];
 
-    // 2. Pre-calculate reagent parameters (concentration ratios)
-    final List<_ReagentCalcParams> params = [];
-    for (final r in input.reagents) {
-      if (r.stockConcentration <= 0 || r.stockConcentration.isNaN) {
+    for (final reagent in input.reagents) {
+      if (reagent.stockConcentration <= 0 || reagent.stockConcentration.isNaN) {
         return MasterMixResult(
           success: false,
-          errorMessage: 'Stock concentration for ${r.reagentName} must be a valid number greater than 0',
+          errorMessage:
+              'Stock concentration for ${reagent.reagentName} must be a valid number greater than 0',
           mixName: input.mixName,
         );
       }
-      if (r.finalConcentration.isNaN) {
+      if (reagent.finalConcentration.isNaN) {
         return MasterMixResult(
           success: false,
-          errorMessage: 'Final concentration for ${r.reagentName} must be a valid number',
+          errorMessage:
+              'Final concentration for ${reagent.reagentName} must be a valid number',
           mixName: input.mixName,
         );
       }
+
       try {
-        final ratio = _calculateConcentrationRatio(r);
+        final ratio = _calculateConcentrationRatio(reagent);
         if (!ratio.isFinite || ratio.isNaN) {
           return MasterMixResult(
             success: false,
-            errorMessage: 'Invalid concentration ratio for ${r.reagentName}',
+            errorMessage:
+                'Invalid concentration ratio for ${reagent.reagentName}',
             mixName: input.mixName,
           );
         }
         if (ratio >= 1.0) {
           return MasterMixResult(
             success: false,
-            errorMessage: 'Final concentration of ${r.reagentName} must be less than its stock concentration',
+            errorMessage:
+                'Final concentration of ${reagent.reagentName} must be less than its stock concentration',
             mixName: input.mixName,
           );
         }
-        params.add(_ReagentCalcParams(input: r, ratio: ratio));
+        params.add(_ReagentCalcParams(input: reagent, ratio: ratio));
       } catch (e) {
         return MasterMixResult(
           success: false,
@@ -181,116 +165,130 @@ class MasterMixCalculatorService {
       }
     }
 
-    // 3. Optimization Loop
-    double bestTotalUl = requestedUl;
-    double bestScore = double.infinity;
-    List<double> bestReagentVolumes = [];
+    var bestTotalUl = minimumPreparedUl;
+    var bestScore = double.infinity;
+    var bestReagentVolumes = <double>[];
 
-    // Determine step size based on volume
-    double step;
-    if (requestedUl < 100) {
-      step = 0.1;
-    } else if (requestedUl < 1000) {
-      step = 1.0;
-    } else if (requestedUl < 10000) {
-      step = 10.0;
-    } else {
-      step = 100.0;
-    }
+    final step = requestedUl < 100
+        ? 0.1
+        : requestedUl < 1000
+        ? 1.0
+        : requestedUl < 10000
+        ? 10.0
+        : 100.0;
 
-    for (double currentTotalUl = requestedUl;
-        currentTotalUl <= maxTotalUl + (step / 2);
-        currentTotalUl += step) {
-      
-      final List<double> currentReagentVols = params.map((p) => p.ratio * currentTotalUl).toList();
-      final double sumReagents = currentReagentVols.fold(0, (a, b) => a + b);
-      final double currentSolventUl = currentTotalUl - sumReagents;
+    for (
+      var currentTotalUl = minimumPreparedUl;
+      currentTotalUl <= maxTotalUl + (step / 2);
+      currentTotalUl += step
+    ) {
+      final reagentVolumes = params
+          .map((param) => param.ratio * currentTotalUl)
+          .toList();
+      final sumReagents = reagentVolumes.fold<double>(0, (a, b) => a + b);
+      final solventUl = currentTotalUl - sumReagents;
+      if (solventUl < 0) continue;
 
-      if (currentSolventUl < 0) continue; // Infeasible
-
-      // Check if any reagent is below absolute minimum
-      bool anyTooSmall = false;
-      for (int i = 0; i < currentReagentVols.length; i++) {
-        final bool isPowder = params[i].ratio == 0;
-        if (!isPowder && currentReagentVols[i] < minPipettableVolumeUl) {
-          anyTooSmall = true;
-          break;
-        }
-      }
+      final anyTooSmall = reagentVolumes.asMap().entries.any((entry) {
+        final isPowder = params[entry.key].ratio == 0;
+        return !isPowder && entry.value < minPipettableVolumeUl;
+      });
       if (anyTooSmall) continue;
 
-      final double score = _calculatePipettingScore(currentTotalUl, requestedUl, currentReagentVols, currentSolventUl);
+      final score = LabCalculation.pipettingScore(
+        totalUl: currentTotalUl,
+        requestedUl: minimumPreparedUl,
+        measuredVolumesUl: [...reagentVolumes, solventUl],
+      );
 
       if (score < bestScore) {
         bestScore = score;
         bestTotalUl = currentTotalUl;
-        bestReagentVolumes = currentReagentVols;
+        bestReagentVolumes = reagentVolumes;
       }
     }
 
-    // 4. Final Validation and Result Construction
     if (bestReagentVolumes.isEmpty) {
       return MasterMixResult(
         success: false,
-        errorMessage: 'Could not find a valid mix. Some reagent volumes might be too small.',
+        errorMessage:
+            'Could not find a valid mix. Some reagent volumes might be too small.',
         mixName: input.mixName,
       );
     }
 
-    final double finalSolventUl = bestTotalUl - bestReagentVolumes.fold(0, (a, b) => a + b);
-    final List<MasterMixReagentResult> reagentResults = [];
+    final finalSolventUl =
+        bestTotalUl - bestReagentVolumes.fold<double>(0, (a, b) => a + b);
+    final reagentResults = <MasterMixReagentResult>[];
 
-    for (int i = 0; i < params.length; i++) {
-      final p = params[i];
-      final vol = bestReagentVolumes[i];
-      final List<String> rWarnings = [];
+    for (var i = 0; i < params.length; i++) {
+      final param = params[i];
+      final volumeUl = bestReagentVolumes[i];
+      final reagentWarnings = <String>[];
+      final stockFamily = LabCalculation.familyOf(
+        param.input.stockConcentrationUnit,
+      );
+      final finalFamily = LabCalculation.familyOf(
+        param.input.finalConcentrationUnit,
+      );
+      final isStockMw = stockFamily == ConcentrationFamily.molecularWeight;
+      final isFinalMw = finalFamily == ConcentrationFamily.molecularWeight;
 
-      final bool isStockMW = _getFamily(p.input.stockConcentrationUnit) == ConcentrationFamily.molecularWeight;
-      final bool isFinalMW = _getFamily(p.input.finalConcentrationUnit) == ConcentrationFamily.molecularWeight;
-      
       double? massGrams;
-      String formattedVolume = _formatVolume(vol);
+      var formattedAmount = LabCalculation.formatVolume(
+        volumeUl,
+        unicodeMicro: true,
+      );
 
-      if (isStockMW || isFinalMW) {
-        final mw = isStockMW ? p.input.stockConcentration : p.input.finalConcentration;
-        final targetConc = isStockMW ? p.input.finalConcentration : p.input.stockConcentration;
-        final targetUnit = isStockMW ? p.input.finalConcentrationUnit : p.input.stockConcentrationUnit;
-        
-        final double volL = bestTotalUl / 1e6;
-        final family = _getFamily(targetUnit);
-
-        if (family == ConcentrationFamily.molar) {
-          final double molarity = _convertToBaseConc(targetConc, targetUnit);
-          massGrams = molarity * volL * mw;
-        } else if (family == ConcentrationFamily.massVolume) {
-          final double gL = _convertToBaseConc(targetConc, targetUnit);
-          massGrams = gL * volL;
-        } else if (family == ConcentrationFamily.percentage) {
-          massGrams = (targetConc / 100.0) * (volL * 1000);
-        }
-        
+      if (isStockMw || isFinalMw) {
+        final mw = isStockMw
+            ? param.input.stockConcentration
+            : param.input.finalConcentration;
+        final targetConc = isStockMw
+            ? param.input.finalConcentration
+            : param.input.stockConcentration;
+        final targetUnit = isStockMw
+            ? param.input.finalConcentrationUnit
+            : param.input.stockConcentrationUnit;
+        massGrams = _calculateMassGrams(
+          targetConc,
+          targetUnit,
+          bestTotalUl,
+          mw,
+        );
         if (massGrams != null) {
-          formattedVolume = _formatMass(massGrams);
+          formattedAmount = LabCalculation.formatMass(
+            massGrams,
+            unicodeMicro: true,
+          );
         }
       }
 
-      if (vol < 1.0 && massGrams == null) {
-        rWarnings.add('Volume is very low (${vol.toStringAsFixed(2)} µL). Consider a pre-dilution.');
+      if (volumeUl < 1.0 && massGrams == null) {
+        reagentWarnings.add(
+          'Volume is very low (${volumeUl.toStringAsFixed(2)} µL). Consider a pre-dilution.',
+        );
       }
 
-      reagentResults.add(MasterMixReagentResult(
-        reagentName: p.input.reagentName,
-        reagentVolumeUl: massGrams != null ? 0 : vol,
-        reagentMassGrams: massGrams,
-        formattedReagentVolume: formattedVolume,
-        formattedStockConcentration: '${p.input.stockConcentration} ${_unitLabel(p.input.stockConcentrationUnit)}',
-        formattedFinalConcentration: '${p.input.finalConcentration} ${_unitLabel(p.input.finalConcentrationUnit)}',
-        warnings: rWarnings,
-      ));
+      reagentResults.add(
+        MasterMixReagentResult(
+          reagentName: param.input.reagentName,
+          reagentVolumeUl: massGrams != null ? 0 : volumeUl,
+          reagentMassGrams: massGrams,
+          formattedReagentVolume: formattedAmount,
+          formattedStockConcentration:
+              '${param.input.stockConcentration} ${_unitLabel(param.input.stockConcentrationUnit)}',
+          formattedFinalConcentration:
+              '${param.input.finalConcentration} ${_unitLabel(param.input.finalConcentrationUnit)}',
+          warnings: reagentWarnings,
+        ),
+      );
     }
 
     if (finalSolventUl < 1.0 && finalSolventUl > 0) {
-      globalWarnings.add('Base solvent volume is very low (${finalSolventUl.toStringAsFixed(2)} µL).');
+      globalWarnings.add(
+        'Base solvent volume is very low (${finalSolventUl.toStringAsFixed(2)} µL).',
+      );
     }
 
     return MasterMixResult(
@@ -298,203 +296,115 @@ class MasterMixCalculatorService {
       mixName: input.mixName,
       requestedFinalVolumeUl: requestedUl,
       optimizedFinalVolumeUl: bestTotalUl,
-      formattedRequestedFinalVolume: _formatVolume(requestedUl),
-      formattedOptimizedFinalVolume: _formatVolume(bestTotalUl),
+      formattedRequestedFinalVolume: LabCalculation.formatVolume(
+        requestedUl,
+        unicodeMicro: true,
+      ),
+      formattedOptimizedFinalVolume: LabCalculation.formatVolume(
+        bestTotalUl,
+        unicodeMicro: true,
+      ),
       reagentResults: reagentResults,
       baseSolventVolumeUl: finalSolventUl,
-      formattedBaseSolventVolume: _formatVolume(finalSolventUl),
+      formattedBaseSolventVolume: LabCalculation.formatVolume(
+        finalSolventUl,
+        unicodeMicro: true,
+      ),
       warnings: globalWarnings,
     );
   }
 
-  // --- Helper Methods ---
+  double _calculateConcentrationRatio(MasterMixReagentInput reagent) {
+    final stockFamily = LabCalculation.familyOf(reagent.stockConcentrationUnit);
+    final finalFamily = LabCalculation.familyOf(reagent.finalConcentrationUnit);
 
-  /// Calculates ratio: finalConcentration / stockConcentration in same base units
-  double _calculateConcentrationRatio(MasterMixReagentInput r) {
-    final stockFamily = _getFamily(r.stockConcentrationUnit);
-    final finalFamily = _getFamily(r.finalConcentrationUnit);
-
-    if (stockFamily == ConcentrationFamily.molecularWeight || finalFamily == ConcentrationFamily.molecularWeight) {
-      // For powders, they don't contribute to volume displacement in the same way liquids do
-      // but usually we assume they take up negligible volume.
-      return 0; 
+    if (stockFamily == ConcentrationFamily.molecularWeight ||
+        finalFamily == ConcentrationFamily.molecularWeight) {
+      return 0;
     }
 
     if (stockFamily == finalFamily) {
-      final stockBase = _convertToBaseConc(r.stockConcentration, r.stockConcentrationUnit);
-      final finalBase = _convertToBaseConc(r.finalConcentration, r.finalConcentrationUnit);
+      final stockBase = LabCalculation.concentrationToBase(
+        reagent.stockConcentration,
+        reagent.stockConcentrationUnit,
+      );
+      final finalBase = LabCalculation.concentrationToBase(
+        reagent.finalConcentration,
+        reagent.finalConcentrationUnit,
+      );
       return finalBase / stockBase;
     }
 
-    // Cross-family conversion (Molar <-> Mass)
-    if ((stockFamily == ConcentrationFamily.molar && finalFamily == ConcentrationFamily.massVolume) ||
-        (stockFamily == ConcentrationFamily.massVolume && finalFamily == ConcentrationFamily.molar)) {
-      
-      if (r.molecularWeight == null || r.molecularWeight! <= 0) {
-        throw 'Molecular weight is required to convert between ${r.stockConcentrationUnit.name} and ${r.finalConcentrationUnit.name}';
-      }
-
-      // Convert both to Molar Base (M)
-      double stockMolar;
-      double finalMolar;
-
-      if (stockFamily == ConcentrationFamily.molar) {
-        stockMolar = _convertToBaseConc(r.stockConcentration, r.stockConcentrationUnit);
-      } else {
-        // Mass (g/L) to Molar (M): M = (g/L) / MW
-        final stockMassBase = _convertToBaseConc(r.stockConcentration, r.stockConcentrationUnit);
-        stockMolar = stockMassBase / r.molecularWeight!;
-      }
-
-      if (finalFamily == ConcentrationFamily.molar) {
-        finalMolar = _convertToBaseConc(r.finalConcentration, r.finalConcentrationUnit);
-      } else {
-        final finalMassBase = _convertToBaseConc(r.finalConcentration, r.finalConcentrationUnit);
-        finalMolar = finalMassBase / r.molecularWeight!;
-      }
-
-      return finalMolar / stockMolar;
+    final isMolarMassPair =
+        (stockFamily == ConcentrationFamily.molar &&
+            finalFamily == ConcentrationFamily.massVolume) ||
+        (stockFamily == ConcentrationFamily.massVolume &&
+            finalFamily == ConcentrationFamily.molar);
+    if (!isMolarMassPair) {
+      throw 'Incompatible concentration units: ${reagent.stockConcentrationUnit.name} and ${reagent.finalConcentrationUnit.name}';
     }
 
-    throw 'Incompatible concentration units: ${r.stockConcentrationUnit.name} and ${r.finalConcentrationUnit.name}';
+    final mw = reagent.molecularWeight;
+    if (mw == null || mw <= 0) {
+      throw 'Molecular weight is required to convert between ${reagent.stockConcentrationUnit.name} and ${reagent.finalConcentrationUnit.name}';
+    }
+
+    final stockMolar = stockFamily == ConcentrationFamily.molar
+        ? LabCalculation.concentrationToBase(
+            reagent.stockConcentration,
+            reagent.stockConcentrationUnit,
+          )
+        : LabCalculation.concentrationToBase(
+                reagent.stockConcentration,
+                reagent.stockConcentrationUnit,
+              ) /
+              mw;
+    final finalMolar = finalFamily == ConcentrationFamily.molar
+        ? LabCalculation.concentrationToBase(
+            reagent.finalConcentration,
+            reagent.finalConcentrationUnit,
+          )
+        : LabCalculation.concentrationToBase(
+                reagent.finalConcentration,
+                reagent.finalConcentrationUnit,
+              ) /
+              mw;
+
+    return finalMolar / stockMolar;
   }
 
-  /// Calculates a penalty score for a set of volumes. Lower is better.
-  double _calculatePipettingScore(
-    double totalUl,
-    double requestedUl,
-    List<double> reagentsUl,
-    double solventUl,
+  double? _calculateMassGrams(
+    double targetConc,
+    ConcentrationUnit targetUnit,
+    double totalVolumeUl,
+    double molecularWeight,
   ) {
-    double score = 0;
+    final volumeL = totalVolumeUl / 1e6;
+    final family = LabCalculation.familyOf(targetUnit);
 
-    // Penalty for extra volume (prefer keeping close to requested)
-    score += (totalUl - requestedUl) * 0.1;
-
-    // Penalty for decimals in reagents
-    for (final v in reagentsUl) {
-      score += _decimalPenalty(v);
-      if (v < 1.0) score += 10.0; // Strong penalty for < 1uL
+    if (family == ConcentrationFamily.molar) {
+      return LabCalculation.concentrationToBase(targetConc, targetUnit) *
+          volumeL *
+          molecularWeight;
     }
-
-    // Penalty for decimals in solvent and total
-    score += _decimalPenalty(solventUl);
-    score += _decimalPenalty(totalUl) * 0.5;
-
-    return score;
-  }
-
-  double _decimalPenalty(double val) {
-    if (!val.isFinite) return 100.0;
-
-    final double remainder = (val * 10) % 10;
-    if ((val - val.round()).abs() < 0.0001) return 0; // Integer
-    if ((remainder - 5).abs() < 0.0001) return 1;    // .5
-    return 10; // Other decimals
-  }
-
-  ConcentrationFamily _getFamily(ConcentrationUnit unit) {
-    switch (unit) {
-      case ConcentrationUnit.M:
-      case ConcentrationUnit.mM:
-      case ConcentrationUnit.uM:
-      case ConcentrationUnit.nM:
-      case ConcentrationUnit.pM:
-        return ConcentrationFamily.molar;
-      case ConcentrationUnit.gL:
-      case ConcentrationUnit.mgML:
-      case ConcentrationUnit.ugML:
-      case ConcentrationUnit.ngML:
-        return ConcentrationFamily.massVolume;
-      case ConcentrationUnit.percent:
-        return ConcentrationFamily.percentage;
-      case ConcentrationUnit.X:
-        return ConcentrationFamily.fold;
-      case ConcentrationUnit.gMol:
-        return ConcentrationFamily.molecularWeight;
+    if (family == ConcentrationFamily.massVolume) {
+      return LabCalculation.concentrationToBase(targetConc, targetUnit) *
+          volumeL;
     }
-  }
-
-  /// Converts concentration to family's base unit (M, g/L, %, X)
-  double _convertToBaseConc(double val, ConcentrationUnit unit) {
-    switch (unit) {
-      case ConcentrationUnit.M: return val;
-      case ConcentrationUnit.mM: return val * 1e-3;
-      case ConcentrationUnit.uM: return val * 1e-6;
-      case ConcentrationUnit.nM: return val * 1e-9;
-      case ConcentrationUnit.pM: return val * 1e-12;
-      case ConcentrationUnit.gL:
-      case ConcentrationUnit.mgML: return val;
-      case ConcentrationUnit.ugML: return val * 1e-3;
-      case ConcentrationUnit.ngML: return val * 1e-6;
-      case ConcentrationUnit.percent:
-      case ConcentrationUnit.X:
-      case ConcentrationUnit.gMol:
-        return val;
+    if (family == ConcentrationFamily.percentage) {
+      return (targetConc / 100.0) * (volumeL * 1000);
     }
-  }
-
-  double _convertToUl(double val, VolumeUnit unit) {
-    switch (unit) {
-      case VolumeUnit.nL: return val / 1000;
-      case VolumeUnit.uL: return val;
-      case VolumeUnit.mL: return val * 1000;
-      case VolumeUnit.L: return val * 1000000;
-    }
-  }
-
-  String _formatVolume(double ul) {
-    if (!ul.isFinite) return 'N/A';
-
-    if (ul >= 1000000) {
-      return '${(ul / 1000000).toStringAsFixed(_isClean(ul / 1000000) ? 0 : 2)} L';
-    } else if (ul >= 1000) {
-      final double ml = ul / 1000;
-      return '${ml.toStringAsFixed(_isClean(ml) ? 0 : 2)} mL';
-    } else if (ul >= 0.1) {
-      return '${ul.toStringAsFixed(_isClean(ul) ? 0 : 1)} µL';
-    } else {
-      return '${(ul * 1000).toStringAsFixed(0)} nL';
-    }
-  }
-
-  String _formatMass(double grams) {
-    if (grams >= 1) {
-      return '${grams.toStringAsFixed(_isClean(grams) ? 0 : 2)} g';
-    } else if (grams >= 0.001) {
-      final double mg = grams * 1000;
-      return '${mg.toStringAsFixed(_isClean(mg) ? 0 : 2)} mg';
-    } else {
-      final double ug = grams * 1000000;
-      return '${ug.toStringAsFixed(_isClean(ug) ? 0 : 2)} µg';
-    }
-  }
-
-  bool _isClean(double val) {
-    if (!val.isFinite) return false;
-    return (val - val.round()).abs() < 0.0001;
+    return null;
   }
 
   String _unitLabel(ConcentrationUnit unit) {
-    switch (unit) {
-      case ConcentrationUnit.M: return 'M';
-      case ConcentrationUnit.mM: return 'mM';
-      case ConcentrationUnit.uM: return 'µM';
-      case ConcentrationUnit.nM: return 'nM';
-      case ConcentrationUnit.pM: return 'pM';
-      case ConcentrationUnit.gL: return 'g/L';
-      case ConcentrationUnit.mgML: return 'mg/mL';
-      case ConcentrationUnit.ugML: return 'µg/mL';
-      case ConcentrationUnit.ngML: return 'ng/mL';
-      case ConcentrationUnit.percent: return '%';
-      case ConcentrationUnit.X: return 'X';
-      case ConcentrationUnit.gMol: return 'g/mol';
-    }
+    return LabCalculation.unitLabel(unit, unicodeMicro: true);
   }
 }
 
 class _ReagentCalcParams {
   final MasterMixReagentInput input;
   final double ratio;
+
   _ReagentCalcParams({required this.input, required this.ratio});
 }

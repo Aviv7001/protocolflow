@@ -6,6 +6,7 @@ import '../services/storage_service.dart';
 import '../services/export_service.dart';
 import '../services/import_service.dart';
 import '../data/mock_protocols.dart';
+import '../widgets/sync_status_chip.dart';
 import 'protocol_detail_screen.dart';
 import 'completed_protocol_detail_screen.dart';
 import 'run_protocol_screen.dart';
@@ -191,10 +192,17 @@ class _LibraryScreenState extends State<LibraryScreen>
             color: isTemplate ? Colors.purple : Colors.blue,
           ),
           title: Text(protocol.title),
-          subtitle: Text(
-            protocol.objective,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                protocol.objective,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 4),
+              SyncStatusChip(status: protocol.syncStatus, compact: true),
+            ],
           ),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => Navigator.push(

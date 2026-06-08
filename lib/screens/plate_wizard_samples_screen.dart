@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/plate_wizard.dart';
 import '../features/plate_wizard/models/plate_wizard_models.dart';
+import '../features/plate_wizard/services/plate_long_format_service.dart';
 import '../features/plate_wizard/widgets/plate_result_preview.dart';
 import '../widgets/unsaved_changes_pop_scope.dart';
 
@@ -22,6 +23,7 @@ class PlateWizardSamplesScreen extends StatefulWidget {
 class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
   late PlateLayoutWizard _wizard;
   final Map<int, ScrollController> _scrollControllers = {};
+  final _longFormatService = const PlateLongFormatService();
   static const double _uniformFontSize = 14.0;
   bool _canActuallyPop = false;
 
@@ -41,17 +43,19 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
 
   void _addTestItem({bool isStandardCurve = false}) {
     setState(() {
-      _wizard = _wizard.copyWith(
-        items: [
-          ..._wizard.items,
-          TestItem(
-            sampleName: isStandardCurve
-                ? 'Standard Curve ${_wizard.items.where((i) => i.isStandardCurve).length + 1}'
-                : 'Sample ${_wizard.items.where((i) => !i.isStandardCurve).length + 1}',
-            isStandardCurve: isStandardCurve,
-            applyToAllPlates: isStandardCurve,
-          ),
-        ],
+      _wizard = _asGeneratedLayout(
+        _wizard.copyWith(
+          items: [
+            ..._wizard.items,
+            TestItem(
+              sampleName: isStandardCurve
+                  ? 'Standard Curve ${_wizard.items.where((i) => i.isStandardCurve).length + 1}'
+                  : 'Sample ${_wizard.items.where((i) => !i.isStandardCurve).length + 1}',
+              isStandardCurve: isStandardCurve,
+              applyToAllPlates: isStandardCurve,
+            ),
+          ],
+        ),
       );
     });
   }
@@ -64,14 +68,14 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
       );
       final newItems = List<TestItem>.from(_wizard.items)
         ..insert(index + 1, newItem);
-      _wizard = _wizard.copyWith(items: newItems);
+      _wizard = _asGeneratedLayout(_wizard.copyWith(items: newItems));
     });
   }
 
   void _removeTestItem(int index) {
     setState(() {
       final newItems = List<TestItem>.from(_wizard.items)..removeAt(index);
-      _wizard = _wizard.copyWith(items: newItems);
+      _wizard = _asGeneratedLayout(_wizard.copyWith(items: newItems));
     });
   }
 
@@ -79,7 +83,7 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
     setState(() {
       final newItems = List<TestItem>.from(_wizard.items);
       newItems[index] = newItem;
-      _wizard = _wizard.copyWith(items: newItems);
+      _wizard = _asGeneratedLayout(_wizard.copyWith(items: newItems));
     });
   }
 
@@ -93,6 +97,16 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
         appBar: AppBar(
           title: const Text('Sample Manager'),
           actions: [
+            IconButton(
+              icon: const Icon(Icons.upload_file),
+              onPressed: _importTemplate,
+              tooltip: 'Import filled template',
+            ),
+            IconButton(
+              icon: const Icon(Icons.download),
+              onPressed: _downloadTemplate,
+              tooltip: 'Download import template',
+            ),
             IconButton(
               icon: const Icon(Icons.save),
               onPressed: () => _handleDone(context),
@@ -151,6 +165,45 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _downloadTemplate() async {
+    await _longFormatService.downloadTemplate();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Plate import template downloaded')),
+    );
+  }
+
+  Future<void> _importTemplate() async {
+    final result = await _longFormatService.importTemplate();
+    if (!mounted) return;
+
+    if (!result.success) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(result.message)));
+      return;
+    }
+
+    setState(() {
+      _wizard = _wizard.copyWith(
+        title: _wizard.title.isEmpty ? 'Imported Plate Layout' : _wizard.title,
+        items: result.items,
+        rows: result.rows ?? _wizard.rows,
+        columns: result.columns ?? _wizard.columns,
+        plateCount: result.plateCount ?? _wizard.plateCount,
+        importedTables: result.tables,
+      );
+    });
+
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(result.message)));
+  }
+
+  PlateLayoutWizard _asGeneratedLayout(PlateLayoutWizard wizard) {
+    return wizard.copyWith(importedTables: const []);
   }
 
   void _handleDone(BuildContext context) async {
@@ -231,7 +284,9 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
                     'Samples',
                     _wizard.sampleDirection,
                     (v) => setState(
-                      () => _wizard = _wizard.copyWith(sampleDirection: v),
+                      () => _wizard = _asGeneratedLayout(
+                        _wizard.copyWith(sampleDirection: v),
+                      ),
                     ),
                   ),
                 ),
@@ -240,7 +295,9 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
                     'Conditions',
                     _wizard.conditionDirection,
                     (v) => setState(
-                      () => _wizard = _wizard.copyWith(conditionDirection: v),
+                      () => _wizard = _asGeneratedLayout(
+                        _wizard.copyWith(conditionDirection: v),
+                      ),
                     ),
                   ),
                 ),
@@ -249,7 +306,9 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
                     'Dilutions',
                     _wizard.dilutionDirection,
                     (v) => setState(
-                      () => _wizard = _wizard.copyWith(dilutionDirection: v),
+                      () => _wizard = _asGeneratedLayout(
+                        _wizard.copyWith(dilutionDirection: v),
+                      ),
                     ),
                   ),
                 ),
@@ -258,7 +317,9 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
                     'Replicates',
                     _wizard.duplicateDirection,
                     (v) => setState(
-                      () => _wizard = _wizard.copyWith(duplicateDirection: v),
+                      () => _wizard = _asGeneratedLayout(
+                        _wizard.copyWith(duplicateDirection: v),
+                      ),
                     ),
                   ),
                 ),
@@ -333,8 +394,8 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
                     ),
                     style: const TextStyle(fontSize: _uniformFontSize),
                     onCommit: (v) => setState(
-                      () => _wizard = _wizard.copyWith(
-                        rows: int.tryParse(v) ?? 8,
+                      () => _wizard = _asGeneratedLayout(
+                        _wizard.copyWith(rows: int.tryParse(v) ?? 8),
                       ),
                     ),
                   ),
@@ -350,8 +411,8 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
                     ),
                     style: const TextStyle(fontSize: _uniformFontSize),
                     onCommit: (v) => setState(
-                      () => _wizard = _wizard.copyWith(
-                        columns: int.tryParse(v) ?? 12,
+                      () => _wizard = _asGeneratedLayout(
+                        _wizard.copyWith(columns: int.tryParse(v) ?? 12),
                       ),
                     ),
                   ),
@@ -367,8 +428,8 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
                     ),
                     style: const TextStyle(fontSize: _uniformFontSize),
                     onCommit: (v) => setState(
-                      () => _wizard = _wizard.copyWith(
-                        plateCount: int.tryParse(v) ?? 1,
+                      () => _wizard = _asGeneratedLayout(
+                        _wizard.copyWith(plateCount: int.tryParse(v) ?? 1),
                       ),
                     ),
                   ),

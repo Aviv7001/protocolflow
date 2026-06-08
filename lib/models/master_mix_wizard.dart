@@ -6,6 +6,7 @@ class MasterMixWizard {
   final String mixName;
   final double finalVolume;
   final VolumeUnit finalVolumeUnit;
+  final double extraVolumePercent;
   final String baseSolventName;
   final List<MasterMixReagentItem> reagents;
 
@@ -13,6 +14,7 @@ class MasterMixWizard {
     this.mixName = 'New Master Mix',
     this.finalVolume = 500,
     this.finalVolumeUnit = VolumeUnit.uL,
+    this.extraVolumePercent = 10,
     this.baseSolventName = 'Water',
     this.reagents = const [],
   });
@@ -22,6 +24,7 @@ class MasterMixWizard {
       'mixName': mixName,
       'finalVolume': finalVolume,
       'finalVolumeUnit': finalVolumeUnit.name,
+      'extraVolumePercent': extraVolumePercent,
       'baseSolventName': baseSolventName,
       'reagents': reagents.map((r) => r.toJson()).toList(),
     };
@@ -35,6 +38,7 @@ class MasterMixWizard {
         (e) => e.name == json['finalVolumeUnit'],
         orElse: () => VolumeUnit.uL,
       ),
+      extraVolumePercent: (json['extraVolumePercent'] ?? 10).toDouble(),
       baseSolventName: json['baseSolventName'] ?? 'Water',
       reagents: (json['reagents'] as List? ?? [])
           .map<MasterMixReagentItem>((r) => MasterMixReagentItem.fromJson(r))
@@ -46,6 +50,7 @@ class MasterMixWizard {
     String? mixName,
     double? finalVolume,
     VolumeUnit? finalVolumeUnit,
+    double? extraVolumePercent,
     String? baseSolventName,
     List<MasterMixReagentItem>? reagents,
   }) {
@@ -53,6 +58,7 @@ class MasterMixWizard {
       mixName: mixName ?? this.mixName,
       finalVolume: finalVolume ?? this.finalVolume,
       finalVolumeUnit: finalVolumeUnit ?? this.finalVolumeUnit,
+      extraVolumePercent: extraVolumePercent ?? this.extraVolumePercent,
       baseSolventName: baseSolventName ?? this.baseSolventName,
       reagents: reagents ?? this.reagents,
     );
@@ -64,6 +70,7 @@ class MasterMixWizard {
       mixName: mixName,
       finalVolume: finalVolume,
       finalVolumeUnit: finalVolumeUnit,
+      extraVolumePercent: extraVolumePercent,
       baseSolventName: baseSolventName,
       reagents: reagents.map((r) => r.toInput()).toList(),
     );
@@ -74,7 +81,7 @@ class MasterMixWizard {
       'Reagent name',
       'Stock conc',
       'final conc',
-      'final volume'
+      'final volume',
     ];
 
     final List<List<dynamic>> data = [];
@@ -89,21 +96,16 @@ class MasterMixWizard {
         ]);
       }
       // Add solvent row
-      data.add([
-        baseSolventName,
-        '-',
-        '-',
-        result.formattedBaseSolventVolume,
-      ]);
+      data.add([baseSolventName, '-', '-', result.formattedBaseSolventVolume]);
       // Add total row
-      data.add([
-        'Total',
-        '-',
-        '-',
-        result.formattedOptimizedFinalVolume,
-      ]);
+      data.add(['Total', '-', '-', result.formattedOptimizedFinalVolume]);
     } else {
-      data.add(['Error', result.errorMessage ?? 'Calculation failed', '-', '-']);
+      data.add([
+        'Error',
+        result.errorMessage ?? 'Calculation failed',
+        '-',
+        '-',
+      ]);
     }
 
     return ProtocolTable(
@@ -113,10 +115,11 @@ class MasterMixWizard {
       columnHeaders: headers,
       rowHeaders: List.generate(data.length, (i) => (i + 1).toString()),
       data: data,
-      cellColors: List.generate(data.length, (_) => List.generate(headers.length, (_) => '')),
-      metadata: {
-        'wizard_state': jsonEncode(toJson()),
-      },
+      cellColors: List.generate(
+        data.length,
+        (_) => List.generate(headers.length, (_) => ''),
+      ),
+      metadata: {'wizard_state': jsonEncode(toJson())},
     );
   }
 }
