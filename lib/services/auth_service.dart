@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -63,6 +64,9 @@ class AuthService {
   static const String _serverClientId = String.fromEnvironment(
     'GOOGLE_SERVER_CLIENT_ID',
   );
+  static const String _webClientId = String.fromEnvironment(
+    'GOOGLE_WEB_CLIENT_ID',
+  );
 
   final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
   final StreamController<AppUser?> _userController =
@@ -71,38 +75,67 @@ class AuthService {
   AppUser? _currentUser;
   GoogleSignInAccount? _currentAccount;
   bool _initialized = false;
+  Future<void>? _initializationFuture;
+  Object? _initializationError;
   StreamSubscription<GoogleSignInAuthenticationEvent>? _authSubscription;
 
   AppUser? get currentUser => _currentUser;
   Stream<AppUser?> get userChanges => _userController.stream;
   bool get supportsDirectAuthenticate => _googleSignIn.supportsAuthenticate();
   bool get hasAuthenticatedAccount => _currentAccount != null;
+  Object? get initializationError => _initializationError;
 
   Future<void> initialize() async {
     if (_initialized) return;
-    _initialized = true;
+    final currentInitialization = _initializationFuture;
+    if (currentInitialization != null) return currentInitialization;
 
-    await _loadCachedUser();
-    await _googleSignIn.initialize(
-      clientId: _serverClientId.isEmpty ? null : _serverClientId,
-      serverClientId: _serverClientId.isEmpty ? null : _serverClientId,
-    );
-    _authSubscription = _googleSignIn.authenticationEvents.listen(
-      _handleAuthenticationEvent,
-      onError: (_) => _setCurrentUser(null, persist: true),
-    );
+    _initializationFuture = _initialize();
+    return _initializationFuture;
+  }
 
-    final lightweightAuth = _googleSignIn.attemptLightweightAuthentication();
-    if (lightweightAuth != null) {
-      final account = await lightweightAuth;
-      if (account != null) {
-        _currentAccount = account;
-        await _setCurrentUser(
-          AppUser.fromGoogleAccount(account),
-          persist: true,
-        );
+  Future<void> _initialize() async {
+    try {
+      await _loadCachedUser();
+      await _googleSignIn.initialize(
+        clientId: _googleClientId,
+        serverClientId: kIsWeb ? null : _nullableEnv(_serverClientId),
+      );
+      _authSubscription = _googleSignIn.authenticationEvents.listen(
+        _handleAuthenticationEvent,
+        onError: (_) => _setCurrentUser(null, persist: true),
+      );
+
+      final lightweightAuth = _googleSignIn.attemptLightweightAuthentication();
+      if (lightweightAuth != null) {
+        final account = await lightweightAuth;
+        if (account != null) {
+          _currentAccount = account;
+          await _setCurrentUser(
+            AppUser.fromGoogleAccount(account),
+            persist: true,
+          );
+        }
       }
+
+      _initialized = true;
+      _initializationError = null;
+    } catch (e) {
+      _initializationFuture = null;
+      _initializationError = e;
+      rethrow;
     }
+  }
+
+  String? get _googleClientId {
+    if (kIsWeb) {
+      return _nullableEnv(_webClientId) ?? _nullableEnv(_serverClientId);
+    }
+    return null;
+  }
+
+  String? _nullableEnv(String value) {
+    return value.isEmpty ? null : value;
   }
 
   Future<AppUser?> signIn() async {

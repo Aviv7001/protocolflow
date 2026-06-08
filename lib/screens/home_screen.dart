@@ -41,7 +41,15 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _initializeAuth() async {
-    await _authService.initialize();
+    try {
+      await _authService.initialize();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_googleSignInErrorMessage(e))));
+      }
+    }
     if (!mounted) return;
     setState(() => _signedInUser = _authService.currentUser);
     if (_signedInUser != null && _authService.hasAuthenticatedAccount) {
@@ -186,7 +194,14 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Sign in'),
-        content: SizedBox(width: 260, child: buildGoogleSignInButton()),
+        content: SizedBox(
+          width: 280,
+          child: _authService.initializationError == null
+              ? buildGoogleSignInButton()
+              : Text(
+                  _googleSignInErrorMessage(_authService.initializationError!),
+                ),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
@@ -284,6 +299,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   String _googleSignInErrorMessage(Object error) {
     final raw = error.toString();
+    if (raw.contains('ClientID not set') ||
+        raw.contains('google-signin-client_id')) {
+      return 'Google Sign-In web client ID is missing. Run with GOOGLE_WEB_CLIENT_ID or add google-signin-client_id to web/index.html.';
+    }
+    if (raw.contains('serverClientId is not supported on Web')) {
+      return 'Google Sign-In web setup is using a server client ID. Use GOOGLE_WEB_CLIENT_ID for the web OAuth client.';
+    }
     if (raw.contains('clientConfigurationError')) {
       return 'Google Sign-In needs an Android OAuth client. Add google-services.json or run with GOOGLE_SERVER_CLIENT_ID.';
     }
