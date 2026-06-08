@@ -300,7 +300,9 @@ class _HomeScreenState extends State<HomeScreen> {
   String _googleSignInErrorMessage(Object error) {
     final raw = error.toString();
     if (raw.contains('ClientID not set') ||
-        raw.contains('google-signin-client_id')) {
+        raw.contains('google-signin-client_id') ||
+        raw.contains('web client ID is missing') ||
+        raw.contains('Null check operator used on a null value')) {
       return 'Google Sign-In web client ID is missing. Run with GOOGLE_WEB_CLIENT_ID or add google-signin-client_id to web/index.html.';
     }
     if (raw.contains('serverClientId is not supported on Web')) {

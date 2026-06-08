@@ -97,6 +97,11 @@ class AuthService {
   Future<void> _initialize() async {
     try {
       await _loadCachedUser();
+      if (kIsWeb && _googleClientId == null) {
+        throw StateError(
+          'Google Sign-In web client ID is missing. Set GOOGLE_WEB_CLIENT_ID for web builds.',
+        );
+      }
       await _googleSignIn.initialize(
         clientId: _googleClientId,
         serverClientId: kIsWeb ? null : _nullableEnv(_serverClientId),

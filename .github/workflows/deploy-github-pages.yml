@@ -31,8 +31,20 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Check Google web client ID
+        env:
+          GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
+        run: |
+          if [ -z "$GOOGLE_WEB_CLIENT_ID" ]; then
+            echo "Missing GitHub secret GOOGLE_WEB_CLIENT_ID."
+            echo "Add the OAuth 2.0 Web application client ID in repository Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
       - name: Build web
-        run: flutter build web --release --base-href "/${{ github.event.repository.name }}/"
+        env:
+          GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
+        run: flutter build web --release --base-href "/${{ github.event.repository.name }}/" --dart-define=GOOGLE_WEB_CLIENT_ID="$GOOGLE_WEB_CLIENT_ID"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
