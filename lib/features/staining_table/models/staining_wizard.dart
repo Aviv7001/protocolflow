@@ -8,7 +8,7 @@ class StainingWizard {
   final String title;
   final List<StainChain> panel;
   final List<StainingSample> samples;
-  
+
   final bool includeUnstained;
   final bool includeSecondaryOnly;
   final bool includeFullStain;
@@ -34,13 +34,27 @@ class StainingWizard {
   }
 
   factory StainingWizard.fromJson(Map<String, dynamic> json) {
+    final includeUnstained = json['includeUnstained'] ?? true;
+    final includeSecondaryOnly = json['includeSecondaryOnly'] ?? true;
+    final includeFullStain = json['includeFullStain'] ?? true;
     return StainingWizard(
       title: json['title'] ?? 'Staining Table',
-      panel: (json['panel'] as List? ?? []).map<StainChain>((c) => StainChain.fromJson(c)).toList(),
-      samples: (json['samples'] as List? ?? []).map<StainingSample>((s) => StainingSample.fromJson(s)).toList(),
-      includeUnstained: json['includeUnstained'] ?? true,
-      includeSecondaryOnly: json['includeSecondaryOnly'] ?? true,
-      includeFullStain: json['includeFullStain'] ?? true,
+      panel: (json['panel'] as List? ?? [])
+          .map<StainChain>((c) => StainChain.fromJson(c))
+          .toList(),
+      samples: (json['samples'] as List? ?? [])
+          .map<StainingSample>(
+            (s) => StainingSample.fromJson(
+              s,
+              defaultIncludeUnstained: includeUnstained,
+              defaultIncludeSecondaryOnly: includeSecondaryOnly,
+              defaultIncludeFullStain: includeFullStain,
+            ),
+          )
+          .toList(),
+      includeUnstained: includeUnstained,
+      includeSecondaryOnly: includeSecondaryOnly,
+      includeFullStain: includeFullStain,
     );
   }
 
@@ -64,29 +78,32 @@ class StainingWizard {
 
   ProtocolTable generateTable() {
     final service = StainingTableGeneratorService();
-    final result = service.generateTable(
-      this,
-      includeUnstainedControl: includeUnstained,
-      includeSecondaryOnlyControl: includeSecondaryOnly,
-      includeFullStainRow: includeFullStain,
-    );
+    final result = service.generateTable(this);
 
-    final List<String> headers = ['Tube/sample name', 'Total stains', ...result.stainColumns];
-    
+    final List<String> headers = [
+      'Tube/sample name',
+      'Total stains',
+      ...result.stainColumns,
+    ];
+
     // Regular Rows
     final List<List<dynamic>> data = result.rows.map<List<dynamic>>((row) {
       return <dynamic>[
         row.rowName,
         row.totalStainsText,
-        ...result.stainColumns.map<String>((col) => row.stainMap[col] == true ? '+' : '-')
+        ...result.stainColumns.map<String>(
+          (col) => row.stainMap[col] == true ? '+' : '-',
+        ),
       ];
     }).toList();
 
     final List<List<String>> cellColors = result.rows.map<List<String>>((row) {
       return <String>[
-        '', 
-        '', 
-        ...result.stainColumns.map<String>((col) => row.stainMap[col] == true ? '#4CAF50' : '#EF5350')
+        '',
+        '',
+        ...result.stainColumns.map<String>(
+          (col) => row.stainMap[col] == true ? '#4CAF50' : '#EF5350',
+        ),
       ];
     }).toList();
 
@@ -95,9 +112,13 @@ class StainingWizard {
       data.add(<dynamic>[
         metaRow.rowName,
         '',
-        ...result.stainColumns.map<String>((col) => metaRow.metadataValues[col] ?? '')
+        ...result.stainColumns.map<String>(
+          (col) => metaRow.metadataValues[col] ?? '',
+        ),
       ]);
-      cellColors.add(List<String>.generate(headers.length, (_) => '#F5F5F5')); // Light grey for meta rows
+      cellColors.add(
+        List<String>.generate(headers.length, (_) => '#F5F5F5'),
+      ); // Light grey for meta rows
     }
 
     return ProtocolTable(
@@ -108,9 +129,7 @@ class StainingWizard {
       rowHeaders: List.generate(data.length, (i) => (i + 1).toString()),
       data: data,
       cellColors: cellColors,
-      metadata: {
-        'wizard_state': jsonEncode(toJson()),
-      },
+      metadata: {'wizard_state': jsonEncode(toJson())},
     );
   }
 }

@@ -108,12 +108,7 @@ class _StainingTableManagerScreenState
 
   @override
   Widget build(BuildContext context) {
-    final result = _generator.generateTable(
-      _wizard,
-      includeUnstainedControl: _wizard.includeUnstained,
-      includeSecondaryOnlyControl: _wizard.includeSecondaryOnly,
-      includeFullStainRow: _wizard.includeFullStain,
-    );
+    final result = _generator.generateTable(_wizard);
 
     return UnsavedChangesPopScope(
       canPop: _canActuallyPop,
@@ -134,8 +129,6 @@ class _StainingTableManagerScreenState
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildOptionsCard(),
-              const SizedBox(height: 24),
               Text(
                 'Panel Configuration',
                 style: Theme.of(context).textTheme.titleLarge,
@@ -241,49 +234,6 @@ class _StainingTableManagerScreenState
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildOptionsCard() {
-    return Card(
-      elevation: 0,
-      color: Theme.of(
-        context,
-      ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Wrap(
-          spacing: 24,
-          runSpacing: 8,
-          children: [
-            _buildToggle(
-              'Unstained',
-              _wizard.includeUnstained,
-              (v) => setState(
-                () => _wizard = _wizard.copyWith(includeUnstained: v),
-              ),
-            ),
-            _buildToggle(
-              'Last link only',
-              _wizard.includeSecondaryOnly,
-              (v) => setState(
-                () => _wizard = _wizard.copyWith(includeSecondaryOnly: v),
-              ),
-            ),
-            _buildToggle(
-              'Full Stain',
-              _wizard.includeFullStain,
-              (v) => setState(
-                () => _wizard = _wizard.copyWith(includeFullStain: v),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -597,6 +547,45 @@ class _StainingTableManagerScreenState
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Wrap(
+                  spacing: 16,
+                  runSpacing: 4,
+                  children: [
+                    _buildToggle(
+                      'Unstained',
+                      sample.includeUnstained,
+                      (v) => _updateSample(
+                        sampleIndex,
+                        sample.copyWith(includeUnstained: v),
+                      ),
+                    ),
+                    _buildToggle(
+                      'Single stain',
+                      sample.includeSingleStain,
+                      (v) => _updateSample(
+                        sampleIndex,
+                        sample.copyWith(includeSingleStain: v),
+                      ),
+                    ),
+                    _buildToggle(
+                      'Last link only',
+                      sample.includeSecondaryOnly,
+                      (v) => _updateSample(
+                        sampleIndex,
+                        sample.copyWith(includeSecondaryOnly: v),
+                      ),
+                    ),
+                    _buildToggle(
+                      'Full Stain',
+                      sample.includeFullStain,
+                      (v) => _updateSample(
+                        sampleIndex,
+                        sample.copyWith(includeFullStain: v),
+                      ),
+                    ),
+                  ],
+                ),
+                const Divider(height: 24),
                 const Text(
                   'Select Chains:',
                   style: TextStyle(

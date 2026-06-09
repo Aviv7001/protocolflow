@@ -7,6 +7,7 @@ class StainingTableGeneratorService {
   StainingTableResult generateTable(
     StainingWizard wizard, {
     bool includeUnstainedControl = true,
+    bool includeSingleStainRows = true,
     bool includeSecondaryOnlyControl = true,
     bool includeFullStainRow = true,
   }) {
@@ -32,20 +33,29 @@ class StainingTableGeneratorService {
           .toList();
 
       // 1. Unstained control: No stains at all
-      if (includeUnstainedControl) {
-        rows.add(_createRow(
-          '${sample.sampleName} - unstained',
-          [],
-          columns,
-        ));
+      if (sample.includeUnstained && includeUnstainedControl) {
+        rows.add(_createRow('${sample.sampleName} - unstained', [], columns));
       }
 
       if (selectedChains.isEmpty) continue;
 
-      // 2. Last link only (Smart Control):
+      // 2. Single stain: each selected chain is stained by itself.
+      if (sample.includeSingleStain && includeSingleStainRows) {
+        for (final chain in selectedChains) {
+          rows.add(
+            _createRow(
+              '${sample.sampleName} - ${_chainDisplayName(chain)} single stain',
+              chain.components,
+              columns,
+            ),
+          );
+        }
+      }
+
+      // 3. Last link only (Smart Control):
       // For every unique reporter/last link that is part of a LINKED chain:
       // Include that last link + all other independent stains (chains not using that reporter).
-      if (includeSecondaryOnlyControl) {
+      if (sample.includeSecondaryOnly && includeSecondaryOnlyControl) {
         final Map<String, List<StainChain>> groupedByLastLink = {};
         for (var c in selectedChains) {
           final last = c.components.last.name;
@@ -59,7 +69,7 @@ class StainingTableGeneratorService {
           // Only generate "Last link only" if at least one chain in the group is linked (length > 1)
           if (chainsInGroup.any((c) => c.secondary != null)) {
             final List<StainComponent> rowComponents = [];
-            
+
             // Add the last link component itself (representing the common reporter)
             rowComponents.add(chainsInGroup.first.components.last);
 
@@ -70,34 +80,53 @@ class StainingTableGeneratorService {
               }
             }
 
-            rows.add(_createRow(
-              '${sample.sampleName} - $lastLinkName only',
-              rowComponents,
-              columns,
-            ));
+            rows.add(
+              _createRow(
+                '${sample.sampleName} - $lastLinkName only',
+                rowComponents,
+                columns,
+              ),
+            );
           }
         }
       }
 
-      // 3. Full stain: All stains together, but split if they share the same last link
-      if (includeFullStainRow) {
+      // 4. Full stain: All stains together, but split if they share the same last link
+      if (sample.includeFullStain && includeFullStainRow) {
         final fullStainCombos = _generateFullStainCombinations(selectedChains);
         for (int i = 0; i < fullStainCombos.length; i++) {
           final suffix = fullStainCombos.length > 1 ? ' (Combo ${i + 1})' : '';
-          rows.add(_createRow(
-            '${sample.sampleName} - full stain$suffix',
-            fullStainCombos[i],
-            columns,
-          ));
+          rows.add(
+            _createRow(
+              '${sample.sampleName} - full stain$suffix',
+              fullStainCombos[i],
+              columns,
+            ),
+          );
         }
       }
     }
 
     // Generate Metadata Rows (Ex, Em, Laser/Channel)
     final List<StainingTableRow> metadataRows = [
-      _createMetadataRow('Ex (nm)', columns, wizard.panel, (c) => c.excitation?.toString() ?? ''),
-      _createMetadataRow('Em (nm)', columns, wizard.panel, (c) => c.emission?.toString() ?? ''),
-      _createMetadataRow('Laser/Channel', columns, wizard.panel, (c) => c.channel ?? ''),
+      _createMetadataRow(
+        'Ex (nm)',
+        columns,
+        wizard.panel,
+        (c) => c.excitation?.toString() ?? '',
+      ),
+      _createMetadataRow(
+        'Em (nm)',
+        columns,
+        wizard.panel,
+        (c) => c.emission?.toString() ?? '',
+      ),
+      _createMetadataRow(
+        'Laser/Channel',
+        columns,
+        wizard.panel,
+        (c) => c.channel ?? '',
+      ),
     ];
 
     return StainingTableResult(
@@ -107,9 +136,17 @@ class StainingTableGeneratorService {
     );
   }
 
+  String _chainDisplayName(StainChain chain) {
+    final name = chain.chainName.trim();
+    if (name.isNotEmpty) return name;
+    return chain.primary.name;
+  }
+
   /// Groups selected chains by their last link to create compatible "Full Stain" combinations.
   /// If multiple chains share the same last link, they will be in different rows.
-  List<List<StainComponent>> _generateFullStainCombinations(List<StainChain> selectedChains) {
+  List<List<StainComponent>> _generateFullStainCombinations(
+    List<StainChain> selectedChains,
+  ) {
     if (selectedChains.isEmpty) return [];
 
     // Map: Last Link Name -> List of Chains sharing it
@@ -121,7 +158,7 @@ class StainingTableGeneratorService {
 
     // We need to pick exactly one chain from each group to form a "combination"
     List<List<StainChain>> combinations = [[]];
-    
+
     for (var group in groups.values) {
       List<List<StainChain>> nextCombinations = [];
       for (var existingCombo in combinations) {
@@ -132,7 +169,9 @@ class StainingTableGeneratorService {
       combinations = nextCombinations;
     }
 
-    return combinations.map((combo) => combo.expand((c) => c.components).toList()).toList();
+    return combinations
+        .map((combo) => combo.expand((c) => c.components).toList())
+        .toList();
   }
 
   StainingTableRow _createRow(
@@ -160,15 +199,12 @@ class StainingTableGeneratorService {
   ) {
     final Map<String, String> metaMap = {};
     for (var col in allColumns) {
-      final chain = panel.cast<StainChain?>().firstWhere(
-        (c) {
-          if (c == null) return false;
-          final comps = c.components;
-          return comps.isNotEmpty && comps.last.name == col;
-        },
-        orElse: () => null,
-      );
-      
+      final chain = panel.cast<StainChain?>().firstWhere((c) {
+        if (c == null) return false;
+        final comps = c.components;
+        return comps.isNotEmpty && comps.last.name == col;
+      }, orElse: () => null);
+
       metaMap[col] = chain != null ? picker(chain) : '';
     }
 

@@ -15,12 +15,7 @@ class StainingResultTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final result = generator.generateTable(
-      wizard,
-      includeUnstainedControl: wizard.includeUnstained,
-      includeSecondaryOnlyControl: wizard.includeSecondaryOnly,
-      includeFullStainRow: wizard.includeFullStain,
-    );
+    final result = generator.generateTable(wizard);
 
     if (result.rows.isEmpty) {
       return const Center(child: Text('No staining data to display.'));
