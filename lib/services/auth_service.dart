@@ -78,6 +78,7 @@ class AuthService {
   Future<void>? _initializationFuture;
   Object? _initializationError;
   StreamSubscription<GoogleSignInAuthenticationEvent>? _authSubscription;
+  bool _explicitSignOutInProgress = false;
 
   AppUser? get currentUser => _currentUser;
   Stream<AppUser?> get userChanges => _userController.stream;
@@ -108,7 +109,7 @@ class AuthService {
       );
       _authSubscription = _googleSignIn.authenticationEvents.listen(
         _handleAuthenticationEvent,
-        onError: (_) => _setCurrentUser(null, persist: true),
+        onError: (_) => _currentAccount = null,
       );
 
       final lightweightAuth = _googleSignIn.attemptLightweightAuthentication();
@@ -174,9 +175,14 @@ class AuthService {
 
   Future<void> signOut() async {
     await initialize();
-    await _googleSignIn.signOut();
-    _currentAccount = null;
-    await _setCurrentUser(null, persist: true);
+    _explicitSignOutInProgress = true;
+    try {
+      await _googleSignIn.signOut();
+      _currentAccount = null;
+      await _setCurrentUser(null, persist: true);
+    } finally {
+      _explicitSignOutInProgress = false;
+    }
   }
 
   Future<void> _loadCachedUser() async {
@@ -203,7 +209,9 @@ class AuthService {
         );
       case GoogleSignInAuthenticationEventSignOut():
         _currentAccount = null;
-        await _setCurrentUser(null, persist: true);
+        if (_explicitSignOutInProgress) {
+          await _setCurrentUser(null, persist: true);
+        }
     }
   }
 
