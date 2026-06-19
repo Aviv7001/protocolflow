@@ -114,6 +114,13 @@ class _HomeScreenState extends State<HomeScreen> {
     await _loadTasks();
   }
 
+  Future<void> _refreshRunningProtocols() async {
+    await loadPersistentProtocols();
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
   void _showAddTaskDialog() {
     final titleController = TextEditingController();
     final descController = TextEditingController();
@@ -448,7 +455,17 @@ class _HomeScreenState extends State<HomeScreen> {
                       padding: EdgeInsets.symmetric(vertical: 24),
                       child: Divider(indent: 24, endIndent: 24, thickness: 1),
                     ),
-                    _buildSectionTitle('Running Protocols'),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        _buildSectionTitle('Running Protocols'),
+                        IconButton(
+                          tooltip: 'Refresh running protocols',
+                          onPressed: _refreshRunningProtocols,
+                          icon: const Icon(Icons.refresh),
+                        ),
+                      ],
+                    ),
                     if (activeProtocol != null || runningProtocols.isNotEmpty)
                       Column(
                         children: [

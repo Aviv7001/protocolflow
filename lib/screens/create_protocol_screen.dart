@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../models/protocol.dart';
 import '../models/material.dart';
+import '../models/protocol_additional_data.dart';
 import '../models/protocol_step.dart';
 import '../models/protocol_table.dart';
 import '../models/master_mix_wizard.dart';
@@ -11,8 +13,10 @@ import '../features/reagent_mix/services/reagent_mix_calculator_service.dart';
 import '../widgets/protocol_table_widget.dart';
 import '../services/auth_service.dart';
 import '../services/drive_sync_service.dart';
+import '../services/picked_image_store.dart';
 import '../services/storage_service.dart';
 import '../utils/protocol_id.dart';
+import '../widgets/local_image.dart';
 import 'table_selection_screen.dart';
 
 class CreateProtocolScreen extends StatefulWidget {
@@ -45,6 +49,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
   final List<String> _files = [];
   final List<ProtocolStep> _steps = [];
   final List<ProtocolTable> _tables = [];
+  final List<ProtocolAdditionalData> _additionalData = [];
   bool _usePhases = false;
   late final bool _isInProgress;
   ProtocolStep? _stepClipboard;
@@ -66,6 +71,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
       _files.addAll(p.files);
       _steps.addAll(p.steps.map((s) => s.deepCopy()));
       _tables.addAll(p.tables.map((t) => t.deepCopy()));
+      _additionalData.addAll(p.additionalData.map((d) => d.deepCopy()));
       _usePhases = p.steps.any(
         (s) => s.phaseName != null && s.phaseName!.isNotEmpty,
       );
@@ -217,6 +223,187 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
           }
         }
       });
+    }
+  }
+
+  Future<void> _addAdditionalData() async {
+    final result = await _showAdditionalDataDialog();
+    if (result == null) return;
+    setState(() => _additionalData.add(result));
+  }
+
+  Future<void> _editAdditionalData(int index) async {
+    final result = await _showAdditionalDataDialog(
+      initial: _additionalData[index],
+    );
+    if (result == null) return;
+    setState(() => _additionalData[index] = result);
+  }
+
+  Future<ProtocolAdditionalData?> _showAdditionalDataDialog({
+    ProtocolAdditionalData? initial,
+  }) async {
+    final titleController = TextEditingController(text: initial?.title ?? '');
+    final descriptionController = TextEditingController(
+      text: initial?.description ?? '',
+    );
+    final linkController = TextEditingController(text: initial?.link ?? '');
+    final photoPaths = List<String>.from(initial?.photoPaths ?? []);
+    final picker = ImagePicker();
+
+    try {
+      return await showDialog<ProtocolAdditionalData>(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setDialogState) {
+            Future<void> addImages(Future<List<XFile>> pick) async {
+              final images = await pick;
+              if (images.isEmpty) return;
+              final stored = <String>[];
+              for (final image in images) {
+                stored.add(await PickedImageStore.persistPickedImage(image));
+              }
+              setDialogState(() => photoPaths.addAll(stored));
+            }
+
+            return AlertDialog(
+              title: Text(
+                initial == null
+                    ? 'Add Additional Data'
+                    : 'Edit Additional Data',
+              ),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextField(
+                        controller: titleController,
+                        decoration: const InputDecoration(labelText: 'Title'),
+                        autofocus: true,
+                      ),
+                      TextField(
+                        controller: descriptionController,
+                        decoration: const InputDecoration(
+                          labelText: 'Description / notes',
+                        ),
+                        maxLines: 3,
+                      ),
+                      TextField(
+                        controller: linkController,
+                        decoration: const InputDecoration(
+                          labelText: 'Link',
+                          hintText: 'https://...',
+                        ),
+                        keyboardType: TextInputType.url,
+                      ),
+                      const SizedBox(height: 16),
+                      if (photoPaths.isNotEmpty)
+                        GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 3,
+                                crossAxisSpacing: 8,
+                                mainAxisSpacing: 8,
+                                childAspectRatio: 3 / 4,
+                              ),
+                          itemCount: photoPaths.length,
+                          itemBuilder: (context, index) {
+                            return Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: buildLocalImage(photoPaths[index]),
+                                ),
+                                Positioned(
+                                  top: -10,
+                                  right: -10,
+                                  child: IconButton(
+                                    icon: const Icon(
+                                      Icons.cancel,
+                                      color: Colors.red,
+                                      size: 20,
+                                    ),
+                                    onPressed: () => setDialogState(
+                                      () => photoPaths.removeAt(index),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          TextButton.icon(
+                            onPressed: () async {
+                              final photo = await picker.pickImage(
+                                source: ImageSource.camera,
+                              );
+                              if (photo == null) return;
+                              await addImages(Future.value([photo]));
+                            },
+                            icon: const Icon(Icons.camera_alt),
+                            label: const Text('Camera'),
+                          ),
+                          TextButton.icon(
+                            onPressed: () => addImages(picker.pickMultiImage()),
+                            icon: const Icon(Icons.photo_library),
+                            label: const Text('Gallery'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    final title = titleController.text.trim();
+                    final description = descriptionController.text.trim();
+                    final link = linkController.text.trim();
+                    if (title.isEmpty &&
+                        description.isEmpty &&
+                        link.isEmpty &&
+                        photoPaths.isEmpty) {
+                      Navigator.pop(context);
+                      return;
+                    }
+                    Navigator.pop(
+                      context,
+                      ProtocolAdditionalData(
+                        id:
+                            initial?.id ??
+                            'data_${DateTime.now().microsecondsSinceEpoch}',
+                        title: title.isEmpty ? 'Additional Data' : title,
+                        description: description,
+                        link: link,
+                        photoPaths: List<String>.from(photoPaths),
+                      ),
+                    );
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+    } finally {
+      titleController.dispose();
+      descriptionController.dispose();
+      linkController.dispose();
     }
   }
 
@@ -448,6 +635,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
         files: List.from(_files),
         steps: _steps.map((s) => s.deepCopy()).toList(),
         tables: _tables.map((t) => t.deepCopy()).toList(),
+        additionalData: _additionalData.map((d) => d.deepCopy()).toList(),
         isTemplate: isTemplate,
       );
 
@@ -708,6 +896,77 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
                     onPressed: _addNewTable,
                     icon: const Icon(Icons.add),
                     label: const Text('Add Table'),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                _buildSectionHeader('Additional Data'),
+                const SizedBox(height: 8),
+                if (_additionalData.isEmpty)
+                  const Center(
+                    child: Text(
+                      'No additional data added.',
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  )
+                else
+                  ..._additionalData.asMap().entries.map((entry) {
+                    final idx = entry.key;
+                    final data = entry.value;
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      child: ListTile(
+                        leading: Icon(
+                          data.photoPaths.isNotEmpty
+                              ? Icons.photo_library_outlined
+                              : Icons.link,
+                        ),
+                        title: Text(data.title),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (data.description.isNotEmpty)
+                              Text(
+                                data.description,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            if (data.link.isNotEmpty)
+                              Text(
+                                data.link,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(color: Colors.blue),
+                              ),
+                            if (data.photoPaths.isNotEmpty)
+                              Text('${data.photoPaths.length} photo(s)'),
+                          ],
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.edit_outlined),
+                              onPressed: () => _editAdditionalData(idx),
+                            ),
+                            IconButton(
+                              icon: const Icon(
+                                Icons.delete_outline,
+                                color: Colors.red,
+                              ),
+                              onPressed: () =>
+                                  setState(() => _additionalData.removeAt(idx)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }),
+                const SizedBox(height: 8),
+                Center(
+                  child: ElevatedButton.icon(
+                    onPressed: _addAdditionalData,
+                    icon: const Icon(Icons.add_link),
+                    label: const Text('Add Additional Data'),
                   ),
                 ),
 

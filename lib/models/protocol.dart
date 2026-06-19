@@ -1,4 +1,5 @@
 import 'material.dart';
+import 'protocol_additional_data.dart';
 import 'protocol_step.dart';
 import 'protocol_table.dart';
 import '../utils/protocol_id.dart';
@@ -40,6 +41,7 @@ class Protocol {
   final List<String> files;
   final List<ProtocolStep> steps;
   final List<ProtocolTable> tables;
+  final List<ProtocolAdditionalData> additionalData;
   final bool isTemplate;
 
   Protocol({
@@ -60,6 +62,7 @@ class Protocol {
     this.files = const [],
     required this.steps,
     this.tables = const [],
+    this.additionalData = const [],
     this.isTemplate = false,
   }) : createdAt = createdAt ?? DateTime.now(),
        updatedAt = updatedAt ?? DateTime.now();
@@ -87,6 +90,7 @@ class Protocol {
     List<String>? files,
     List<ProtocolStep>? steps,
     List<ProtocolTable>? tables,
+    List<ProtocolAdditionalData>? additionalData,
     bool? isTemplate,
   }) {
     return Protocol(
@@ -109,6 +113,9 @@ class Protocol {
       files: List<String>.from(files ?? this.files),
       steps: (steps ?? this.steps).map((s) => s.deepCopy()).toList(),
       tables: (tables ?? this.tables).map((t) => t.deepCopy()).toList(),
+      additionalData: (additionalData ?? this.additionalData)
+          .map((d) => d.deepCopy())
+          .toList(),
       isTemplate: isTemplate ?? this.isTemplate,
     );
   }
@@ -139,6 +146,7 @@ class Protocol {
       'files': files,
       'steps': steps.map((s) => s.toJson()).toList(),
       'tables': tables.map((t) => t.toJson()).toList(),
+      'additionalData': additionalData.map((d) => d.toJson()).toList(),
       'isTemplate': isTemplate,
     };
   }
@@ -169,6 +177,9 @@ class Protocol {
           .toList(),
       tables: (json['tables'] as List? ?? [])
           .map((t) => ProtocolTable.fromJson(t))
+          .toList(),
+      additionalData: (json['additionalData'] as List? ?? [])
+          .map((d) => ProtocolAdditionalData.fromJson(d))
           .toList(),
       isTemplate: json['isTemplate'] ?? false,
     );

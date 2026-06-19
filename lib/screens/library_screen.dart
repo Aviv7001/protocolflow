@@ -5,7 +5,6 @@ import '../data/completed_protocols_data.dart';
 import '../services/storage_service.dart';
 import '../services/export_service.dart';
 import '../services/import_service.dart';
-import '../data/mock_protocols.dart';
 import '../widgets/sync_status_chip.dart';
 import 'protocol_detail_screen.dart';
 import 'completed_protocol_detail_screen.dart';
@@ -46,13 +45,7 @@ class _LibraryScreenState extends State<LibraryScreen>
 
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
-    final loadedProtocols = await _storageService.loadProtocols();
-    if (loadedProtocols.isEmpty) {
-      _protocols = getMockProtocols();
-      await _storageService.saveProtocols(_protocols);
-    } else {
-      _protocols = loadedProtocols;
-    }
+    _protocols = await _storageService.loadProtocols();
     setState(() => _isLoading = false);
   }
 

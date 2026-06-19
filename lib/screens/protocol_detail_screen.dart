@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/protocol.dart';
 import '../models/active_protocol.dart';
+import '../models/protocol_additional_data.dart';
 import '../models/protocol_step.dart';
 import '../models/protocol_table.dart';
 import '../data/completed_protocols_data.dart';
 import '../services/storage_service.dart';
 import '../widgets/protocol_table_widget.dart';
+import '../widgets/local_image.dart';
 import '../widgets/sync_status_chip.dart';
 import '../services/pdf_service.dart';
 import '../services/export_service.dart';
@@ -738,7 +741,9 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
         .where((t) => !assignedTableIds.contains(t.id))
         .toList();
 
-    if (protocol.files.isEmpty && unassignedTables.isEmpty) {
+    if (protocol.files.isEmpty &&
+        unassignedTables.isEmpty &&
+        protocol.additionalData.isEmpty) {
       return const SizedBox.shrink();
     }
 
@@ -765,8 +770,84 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
           ),
           const SizedBox(height: 8),
           _buildTableGrid(unassignedTables),
+          const SizedBox(height: 16),
+        ],
+        if (protocol.additionalData.isNotEmpty) ...[
+          const Text(
+            'Additional Data:',
+            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
+          ),
+          const SizedBox(height: 8),
+          ...protocol.additionalData.map(_buildAdditionalDataCard),
         ],
       ],
+    );
+  }
+
+  Widget _buildAdditionalDataCard(ProtocolAdditionalData data) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              data.title,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            if (data.description.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(data.description),
+            ],
+            if (data.link.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              InkWell(
+                onTap: () {
+                  Clipboard.setData(ClipboardData(text: data.link));
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(const SnackBar(content: Text('Link copied')));
+                },
+                child: Row(
+                  children: [
+                    const Icon(Icons.link, size: 18, color: Colors.blue),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        data.link,
+                        style: const TextStyle(color: Colors.blue),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            if (data.photoPaths.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              _buildPhotoGrid(data.photoPaths),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPhotoGrid(List<String> photoPaths) {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: photoPaths.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        childAspectRatio: 3 / 4,
+      ),
+      itemBuilder: (context, index) => ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: buildLocalImage(photoPaths[index]),
+      ),
     );
   }
 

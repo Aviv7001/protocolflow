@@ -1,14 +1,17 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'package:protocolflow/models/active_protocol.dart';
 import 'package:protocolflow/models/protocol.dart';
+import 'package:protocolflow/models/protocol_additional_data.dart';
 import 'package:protocolflow/models/protocol_step.dart';
 import 'package:protocolflow/models/protocol_table.dart';
 import 'package:protocolflow/models/step_note.dart';
 import 'package:protocolflow/models/completed_protocol.dart';
 import 'package:protocolflow/data/completed_protocols_data.dart';
+import 'package:protocolflow/services/picked_image_store.dart';
 import 'package:protocolflow/widgets/action_timer_wrapper.dart';
 import 'package:protocolflow/widgets/local_image.dart';
 import 'package:protocolflow/widgets/protocol_table_widget.dart';
@@ -392,8 +395,12 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
                               source: ImageSource.camera,
                             );
                             if (photo != null) {
+                              final storedPath =
+                                  await PickedImageStore.persistPickedImage(
+                                    photo,
+                                  );
                               setDialogState(
-                                () => pickedImagePaths.add(photo.path),
+                                () => pickedImagePaths.add(storedPath),
                               );
                             }
                           },
@@ -405,10 +412,16 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
                             final List<XFile> images = await picker
                                 .pickMultiImage();
                             if (images.isNotEmpty) {
+                              final storedPaths = <String>[];
+                              for (final image in images) {
+                                storedPaths.add(
+                                  await PickedImageStore.persistPickedImage(
+                                    image,
+                                  ),
+                                );
+                              }
                               setDialogState(
-                                () => pickedImagePaths.addAll(
-                                  images.map((e) => e.path),
-                                ),
+                                () => pickedImagePaths.addAll(storedPaths),
                               );
                             }
                           },
@@ -746,6 +759,7 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
     final unassignedTables = protocol.tables
         .where((t) => !assignedTableIds.contains(t.id))
         .toList();
+    final additionalData = protocol.additionalData;
 
     showModalBottomSheet<void>(
       context: context,
@@ -770,7 +784,8 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
                     const SizedBox(height: 12),
                     if (protocol.files.isEmpty &&
                         currentStepTables.isEmpty &&
-                        unassignedTables.isEmpty)
+                        unassignedTables.isEmpty &&
+                        additionalData.isEmpty)
                       const Text('No files or detached tables found.')
                     else ...[
                       if (currentStepTables.isNotEmpty) ...[
@@ -807,6 +822,18 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
                         ),
                         const SizedBox(height: 8),
                         _buildTableGrid(unassignedTables),
+                        const SizedBox(height: 16),
+                      ],
+                      if (additionalData.isNotEmpty) ...[
+                        const Text(
+                          'Additional Data',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        ...additionalData.map(_buildAdditionalDataCard),
                       ],
                     ],
                   ],
@@ -832,6 +859,69 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
       ),
       itemBuilder: (context, index) =>
           ProtocolTableWidget(table: tables[index]),
+    );
+  }
+
+  Widget _buildAdditionalDataCard(ProtocolAdditionalData data) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              data.title,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            if (data.description.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(data.description),
+            ],
+            if (data.link.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              InkWell(
+                onTap: () {
+                  Clipboard.setData(ClipboardData(text: data.link));
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(const SnackBar(content: Text('Link copied')));
+                },
+                child: Row(
+                  children: [
+                    const Icon(Icons.link, size: 18, color: Colors.blue),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        data.link,
+                        style: const TextStyle(color: Colors.blue),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            if (data.photoPaths.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: data.photoPaths.length,
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                  childAspectRatio: 3 / 4,
+                ),
+                itemBuilder: (context, index) => ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: buildLocalImage(data.photoPaths[index]),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 
