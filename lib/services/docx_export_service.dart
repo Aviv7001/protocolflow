@@ -11,6 +11,7 @@ import '../models/protocol_table.dart';
 import '../models/step_note.dart';
 import 'docx_image_loader.dart';
 import 'json_file_saver.dart';
+import 'protocol_export_filename.dart';
 
 class DocxExportService {
   static const String mimeType =
@@ -22,7 +23,7 @@ class DocxExportService {
     final bytes = await buildDocument(protocol);
     await saveBinaryFile(
       bytes,
-      '${_safeFileName(protocol.title)}.docx',
+      ProtocolExportFilename.protocol(protocol, 'docx'),
       mimeType: mimeType,
     );
   }
@@ -35,7 +36,11 @@ class DocxExportService {
     );
     await saveBinaryFile(
       bytes,
-      '${_safeFileName(completed.protocol.title)}_completed.docx',
+      ProtocolExportFilename.completed(
+        completed.protocol,
+        completed.completedAt,
+        'docx',
+      ),
       mimeType: mimeType,
     );
   }
@@ -602,11 +607,6 @@ class DocxExportService {
     String two(int value) => value.toString().padLeft(2, '0');
     return '${date.year}-${two(date.month)}-${two(date.day)} '
         '${two(date.hour)}:${two(date.minute)}';
-  }
-
-  String _safeFileName(String value) {
-    final safe = value.trim().replaceAll(RegExp(r'[<>:"/\\|?*]+'), '_');
-    return safe.isEmpty ? 'ProtocolFlow_protocol' : safe;
   }
 
   String _escape(String value) => const HtmlEscape().convert(value);

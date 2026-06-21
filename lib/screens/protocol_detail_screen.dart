@@ -13,6 +13,7 @@ import '../widgets/sync_status_chip.dart';
 import '../services/docx_export_service.dart';
 import '../services/pdf_service.dart';
 import '../services/export_service.dart';
+import '../theme/app_colors.dart';
 import 'run_protocol_screen.dart';
 import 'create_protocol_screen.dart';
 
@@ -68,7 +69,7 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
                 scaffoldNavigator.pop(); // Go back to list
               }
             },
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
             child: const Text('Delete'),
           ),
         ],
@@ -288,14 +289,14 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.purple.shade50,
+                      color: AppColors.primaryContainer,
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.purple.shade200),
+                      border: Border.all(color: AppColors.primary),
                     ),
                     child: Text(
                       'TEMPLATE',
                       style: TextStyle(
-                        color: Colors.purple.shade700,
+                        color: AppColors.onPrimaryContainer,
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
                       ),
@@ -443,7 +444,7 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: isPhaseDone
                   ? BoxDecoration(
-                      color: Colors.green.withValues(alpha: 0.1),
+                      color: AppColors.success.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(4),
                     )
                   : null,
@@ -457,14 +458,14 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 18,
-                          color: Colors.blue,
+                          color: AppColors.primary,
                         ),
                       ),
                       if (isPhaseDone) ...[
                         const SizedBox(width: 8),
                         const Icon(
                           Icons.check_circle,
-                          color: Colors.green,
+                          color: AppColors.success,
                           size: 18,
                         ),
                       ],
@@ -478,7 +479,7 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
                             icon: const Icon(
                               Icons.edit,
                               size: 20,
-                              color: Colors.blue,
+                              color: AppColors.primary,
                             ),
                             onPressed: () =>
                                 _editProtocol(context, targetPhase: phase),
@@ -524,14 +525,10 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 16.0),
             child: Center(
-              child: ElevatedButton.icon(
+              child: OutlinedButton.icon(
                 onPressed: () => _editProtocol(context, isAddingPhase: true),
                 icon: const Icon(Icons.add_circle_outline),
                 label: const Text('Add New Phase'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue.shade50,
-                  foregroundColor: Colors.blue,
-                ),
               ),
             ),
           ),
@@ -571,14 +568,14 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 18,
-                        color: Colors.blue,
+                        color: AppColors.primary,
                       ),
                     ),
                     if (isDayDone) ...[
                       const SizedBox(width: 8),
                       const Icon(
                         Icons.check_circle,
-                        color: Colors.green,
+                        color: AppColors.success,
                         size: 18,
                       ),
                     ],
@@ -592,7 +589,7 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
                           icon: const Icon(
                             Icons.edit,
                             size: 20,
-                            color: Colors.blue,
+                            color: AppColors.primary,
                           ),
                           onPressed: () => _editProtocol(context),
                           tooltip: 'Edit Protocol',
@@ -636,14 +633,10 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 16.0),
             child: Center(
-              child: ElevatedButton.icon(
+              child: OutlinedButton.icon(
                 onPressed: () => _editProtocol(context, isAddingPhase: true),
                 icon: const Icon(Icons.add_circle_outline),
                 label: const Text('Add New Phase'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue.shade50,
-                  foregroundColor: Colors.blue,
-                ),
               ),
             ),
           ),
@@ -659,7 +652,7 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8),
-      color: isDone ? Colors.green.withValues(alpha: 0.05) : null,
+      color: isDone ? AppColors.success.withValues(alpha: 0.08) : null,
       child: Padding(
         padding: const EdgeInsets.all(12.0),
         child: Column(
@@ -673,18 +666,18 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
-                      color: isDone ? Colors.green.shade700 : null,
+                      color: isDone ? AppColors.success : null,
                     ),
                   ),
                 ),
                 if (isDone)
-                  const Icon(Icons.check, color: Colors.green, size: 16),
+                  const Icon(Icons.check, color: AppColors.success, size: 16),
               ],
             ),
             const SizedBox(height: 4),
             Text(
               step.instructions,
-              style: TextStyle(color: isDone ? Colors.grey : null),
+              style: TextStyle(color: isDone ? AppColors.textSecondary : null),
             ),
             if (step.actionItems.isNotEmpty) ...[
               const SizedBox(height: 8),

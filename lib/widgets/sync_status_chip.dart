@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/protocol.dart';
+import '../theme/app_colors.dart';
 
 class SyncStatusChip extends StatelessWidget {
   final ProtocolSyncStatus status;
@@ -45,31 +46,31 @@ class SyncStatusChip extends StatelessWidget {
         return _SyncStatusConfig(
           label: 'Synced',
           icon: Icons.cloud_done_outlined,
-          color: Colors.green.shade700,
+          color: AppColors.success,
         );
       case ProtocolSyncStatus.modified:
         return _SyncStatusConfig(
           label: 'Local changes',
           icon: Icons.cloud_upload_outlined,
-          color: Colors.orange.shade800,
+          color: AppColors.warning,
         );
       case ProtocolSyncStatus.conflict:
         return _SyncStatusConfig(
           label: 'Conflict copy',
           icon: Icons.copy_outlined,
-          color: Colors.purple.shade700,
+          color: AppColors.aiPrimary,
         );
       case ProtocolSyncStatus.error:
         return _SyncStatusConfig(
           label: 'Sync error',
           icon: Icons.cloud_off_outlined,
-          color: Colors.red.shade700,
+          color: AppColors.error,
         );
       case ProtocolSyncStatus.localOnly:
         return _SyncStatusConfig(
           label: 'Local only',
           icon: Icons.cloud_off_outlined,
-          color: Colors.grey.shade700,
+          color: AppColors.textSecondary,
         );
     }
   }

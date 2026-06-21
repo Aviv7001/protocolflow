@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../theme/app_colors.dart';
+
 class ActionTimerWrapper extends StatefulWidget {
   final Widget child;
   final int totalSeconds;
@@ -140,11 +142,11 @@ class _ActionTimerWrapperState extends State<ActionTimerWrapper> {
 
     Color progressColor;
     if (_displaySeconds == 0) {
-      progressColor = Colors.green.withValues(alpha: 0.2);
+      progressColor = AppColors.success.withValues(alpha: 0.2);
     } else if (_displaySeconds < 30) {
-      progressColor = Colors.orange.withValues(alpha: 0.2);
+      progressColor = AppColors.warning.withValues(alpha: 0.2);
     } else {
-      progressColor = Colors.blue.withValues(alpha: 0.2);
+      progressColor = AppColors.info.withValues(alpha: 0.2);
     }
 
     return Stack(
@@ -182,7 +184,9 @@ class _ActionTimerWrapperState extends State<ActionTimerWrapper> {
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.bold,
-            color: _displaySeconds == 0 ? Colors.green : Colors.black54,
+            color: _displaySeconds == 0
+                ? AppColors.success
+                : AppColors.textSecondary,
           ),
         ),
         IconButton(
@@ -191,14 +195,18 @@ class _ActionTimerWrapperState extends State<ActionTimerWrapper> {
           padding: const EdgeInsets.all(4),
           icon: Icon(
             _isRunning ? Icons.pause_circle : Icons.play_circle,
-            color: _isRunning ? Colors.blue : Colors.grey,
+            color: _isRunning ? AppColors.info : AppColors.textDisabled,
           ),
         ),
         IconButton(
           onPressed: _resetTimer,
           constraints: const BoxConstraints(),
           padding: const EdgeInsets.all(4),
-          icon: const Icon(Icons.refresh, size: 20, color: Colors.grey),
+          icon: const Icon(
+            Icons.refresh,
+            size: 20,
+            color: AppColors.textSecondary,
+          ),
           tooltip: 'Reset',
         ),
       ],

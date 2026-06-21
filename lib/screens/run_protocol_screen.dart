@@ -12,6 +12,7 @@ import 'package:protocolflow/models/step_note.dart';
 import 'package:protocolflow/models/completed_protocol.dart';
 import 'package:protocolflow/data/completed_protocols_data.dart';
 import 'package:protocolflow/services/picked_image_store.dart';
+import 'package:protocolflow/theme/app_colors.dart';
 import 'package:protocolflow/widgets/action_timer_wrapper.dart';
 import 'package:protocolflow/widgets/local_image.dart';
 import 'package:protocolflow/widgets/protocol_table_widget.dart';
@@ -314,7 +315,7 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
                 navigator.pop(); // Exit run screen
               }
             },
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
             child: const Text('Yes, Cancel'),
           ),
         ],
@@ -996,7 +997,10 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
             if (daySubtitle != null)
               Text(
                 daySubtitle,
-                style: const TextStyle(fontSize: 12, color: Colors.blue),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppColors.onPrimary.withValues(alpha: 0.8),
+                ),
               ),
           ],
         ),
@@ -1007,12 +1011,12 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
               style: const TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 16,
-                color: Colors.blue,
+                color: AppColors.onPrimary,
               ),
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.cancel_outlined, color: Colors.red),
+            icon: const Icon(Icons.cancel_outlined),
             onPressed: _cancelProtocol,
             tooltip: 'Cancel Protocol',
           ),
@@ -1232,10 +1236,10 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
                       SnackBar(
                         content: Text('Action "$actionText" finished!'),
                         duration: const Duration(seconds: 3),
-                        backgroundColor: Colors.green,
+                        backgroundColor: AppColors.success,
                         action: SnackBarAction(
                           label: 'OK',
-                          textColor: Colors.white,
+                          textColor: AppColors.onPrimary,
                           onPressed: () {},
                         ),
                       ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/protocol_table.dart';
+import '../theme/app_colors.dart';
 import 'table_export_actions.dart';
 
 class GenericResultTable extends StatelessWidget {
@@ -16,15 +17,13 @@ class GenericResultTable extends StatelessWidget {
       includeRowHeaders: true,
       child: Card(
         clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: BorderSide(color: Colors.grey.shade300),
-        ),
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: DataTable(
             columnSpacing: 20,
-            headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
+            headingRowColor: const WidgetStatePropertyAll(
+              AppColors.surfaceContainer,
+            ),
             columns: [
               const DataColumn(
                 label: Text(
@@ -39,7 +38,7 @@ class GenericResultTable extends StatelessWidget {
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 11,
-                      color: Colors.blue,
+                      color: AppColors.primary,
                     ),
                   ),
                 ),
@@ -56,7 +55,7 @@ class GenericResultTable extends StatelessWidget {
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 11,
-                        color: Colors.blue,
+                        color: AppColors.primary,
                       ),
                     ),
                   ),

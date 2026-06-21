@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/staining_wizard.dart';
 import '../services/staining_table_generator_service.dart';
 import '../../../widgets/table_export_actions.dart';
+import '../../../theme/app_colors.dart';
 
 class StainingResultTable extends StatelessWidget {
   final StainingWizard wizard;
@@ -25,18 +26,16 @@ class StainingResultTable extends StatelessWidget {
       table: wizard.generateTable(),
       child: Card(
         clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: BorderSide(color: Colors.grey.shade300),
-        ),
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: DataTable(
             columnSpacing: 24,
-            headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
+            headingRowColor: const WidgetStatePropertyAll(
+              AppColors.surfaceContainer,
+            ),
             headingTextStyle: const TextStyle(
               fontWeight: FontWeight.bold,
-              color: Colors.black,
+              color: AppColors.textPrimary,
             ),
             dataRowMinHeight: 48,
             dataRowMaxHeight: 48,
@@ -60,7 +59,7 @@ class StainingResultTable extends StatelessWidget {
                         row.totalStainsText,
                         style: TextStyle(
                           fontSize: 11,
-                          color: Colors.grey.shade700,
+                          color: AppColors.textSecondary,
                         ),
                       ),
                     ),
@@ -74,14 +73,14 @@ class StainingResultTable extends StatelessWidget {
                             alignment: Alignment.center,
                             decoration: BoxDecoration(
                               color: isPositive
-                                  ? Colors.green.shade500
-                                  : Colors.red.shade400,
+                                  ? AppColors.success
+                                  : AppColors.error,
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
                               isPositive ? '+' : '-',
                               style: const TextStyle(
-                                color: Colors.white,
+                                color: AppColors.onPrimary,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 14,
                               ),
@@ -96,7 +95,9 @@ class StainingResultTable extends StatelessWidget {
               // Metadata Rows
               ...result.metadataRows.map(
                 (row) => DataRow(
-                  color: WidgetStateProperty.all(Colors.grey.shade50),
+                  color: const WidgetStatePropertyAll(
+                    AppColors.scaffoldBackground,
+                  ),
                   cells: [
                     DataCell(
                       Text(
@@ -118,7 +119,7 @@ class StainingResultTable extends StatelessWidget {
                             style: const TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
-                              color: Colors.blueGrey,
+                              color: AppColors.textSecondary,
                             ),
                           ),
                         ),

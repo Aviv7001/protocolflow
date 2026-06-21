@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_colors.dart';
+
 class UnsavedChangesPopScope extends StatefulWidget {
   final bool canPop;
   final Widget child;
@@ -39,8 +41,8 @@ class _UnsavedChangesPopScopeState extends State<UnsavedChangesPopScope> {
               ElevatedButton(
                 onPressed: () => Navigator.pop(context, true),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
-                  foregroundColor: Colors.white,
+                  backgroundColor: AppColors.error,
+                  foregroundColor: AppColors.onPrimary,
                 ),
                 child: const Text('Discard'),
               ),

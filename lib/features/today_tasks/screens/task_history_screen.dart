@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../../../theme/app_colors.dart';
 import '../../../models/task.dart';
 import '../services/task_service.dart';
 
@@ -62,12 +64,15 @@ class _TaskHistoryScreenState extends State<TaskHistoryScreen> {
                     vertical: 8,
                   ),
                   child: ListTile(
-                    leading: const Icon(Icons.check_circle, color: Colors.grey),
+                    leading: const Icon(
+                      Icons.check_circle,
+                      color: AppColors.success,
+                    ),
                     title: Text(
                       task.title,
                       style: const TextStyle(
                         decoration: TextDecoration.lineThrough,
-                        color: Colors.grey,
+                        color: AppColors.textSecondary,
                       ),
                     ),
                     subtitle: Column(
@@ -78,7 +83,7 @@ class _TaskHistoryScreenState extends State<TaskHistoryScreen> {
                           'Completed: $dateStr',
                           style: const TextStyle(
                             fontSize: 12,
-                            color: Colors.grey,
+                            color: AppColors.textSecondary,
                           ),
                         ),
                       ],
@@ -110,7 +115,7 @@ class _TaskHistoryScreenState extends State<TaskHistoryScreen> {
               if (!mounted) return;
               setState(() => _historyTasks = []);
             },
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
             child: const Text('Clear'),
           ),
         ],

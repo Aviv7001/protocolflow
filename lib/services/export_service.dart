@@ -3,6 +3,7 @@ import '../models/protocol.dart';
 import '../models/completed_protocol.dart';
 import 'storage_service.dart';
 import 'json_file_saver.dart';
+import 'protocol_export_filename.dart';
 
 class ExportService {
   final StorageService _storageService = StorageService();
@@ -26,15 +27,24 @@ class ExportService {
     final jsonString = const JsonEncoder.withIndent(
       '  ',
     ).convert(completed.toJson());
-    await _saveFile(jsonString, '${completed.protocol.id}.json');
+    await _saveFile(
+      jsonString,
+      ProtocolExportFilename.completed(
+        completed.protocol,
+        completed.completedAt,
+        'json',
+      ),
+    );
   }
 
   Future<void> exportSingleTemplate(Protocol protocol) async {
     final jsonString = const JsonEncoder.withIndent(
       '  ',
     ).convert(protocol.toJson());
-    // Drive sync should use the same stable protocol ID as the JSON filename.
-    await _saveFile(jsonString, '${protocol.id}.json');
+    await _saveFile(
+      jsonString,
+      ProtocolExportFilename.protocol(protocol, 'json'),
+    );
   }
 
   Future<void> exportAllData() async {

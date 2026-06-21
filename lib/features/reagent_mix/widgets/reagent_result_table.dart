@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../models/reagent_mix_wizard.dart';
 import '../../../widgets/table_export_actions.dart';
+import '../../../theme/app_colors.dart';
 
 class ReagentResultTable extends StatelessWidget {
   final ReagentMixWizard wizard;
@@ -17,15 +18,13 @@ class ReagentResultTable extends StatelessWidget {
       table: table,
       child: Card(
         clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: BorderSide(color: Colors.grey.shade300),
-        ),
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: DataTable(
             columnSpacing: 20,
-            headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
+            headingRowColor: const WidgetStatePropertyAll(
+              AppColors.surfaceContainer,
+            ),
             columns: table.columnHeaders
                 .map(
                   (h) => DataColumn(

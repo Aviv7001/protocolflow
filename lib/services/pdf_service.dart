@@ -10,6 +10,7 @@ import 'package:protocolflow/models/protocol_table.dart';
 import 'package:protocolflow/models/protocol_step.dart';
 import 'package:protocolflow/models/protocol.dart';
 import 'package:protocolflow/models/plate_wizard.dart';
+import 'package:protocolflow/services/protocol_export_filename.dart';
 
 class PdfService {
   static Future<void> exportToPdf(CompletedProtocol completed) async {
@@ -20,9 +21,13 @@ class PdfService {
     );
   }
 
-  static Future<void> exportProtocolToPdf(Protocol protocol, {List<StepNote> notes = const [], DateTime? completedAt}) async {
+  static Future<void> exportProtocolToPdf(
+    Protocol protocol, {
+    List<StepNote> notes = const [],
+    DateTime? completedAt,
+  }) async {
     final pdf = pw.Document();
-    
+
     final font = await PdfGoogleFonts.arimoRegular();
     final boldFont = await PdfGoogleFonts.arimoBold();
     final italicFont = await PdfGoogleFonts.arimoItalic();
@@ -48,16 +53,34 @@ class PdfService {
                   child: pw.Row(
                     mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                     children: <pw.Widget>[
-                      pw.Text(completedAt != null ? 'Protocol Run Report' : 'Protocol Template', style: pw.TextStyle(fontSize: 18, color: PdfColors.grey700)),
+                      pw.Text(
+                        completedAt != null
+                            ? 'Protocol Run Report'
+                            : 'Protocol Template',
+                        style: pw.TextStyle(
+                          fontSize: 18,
+                          color: PdfColors.grey700,
+                        ),
+                      ),
                       if (completedAt != null)
-                        pw.Text(completedAt.toString().split('.')[0], style: const pw.TextStyle(fontSize: 12)),
+                        pw.Text(
+                          completedAt.toString().split('.')[0],
+                          style: const pw.TextStyle(fontSize: 12),
+                        ),
                     ],
                   ),
                 ),
                 pw.SizedBox(height: 10),
-                _rtlText(protocol.title, style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold), isFullWidth: true),
+                _rtlText(
+                  protocol.title,
+                  style: pw.TextStyle(
+                    fontSize: 24,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                  isFullWidth: true,
+                ),
                 pw.SizedBox(height: 20),
-                
+
                 _pwSection('Objective', protocol.objective),
                 _pwSection('Description', protocol.description),
 
@@ -66,28 +89,62 @@ class PdfService {
                   pw.Text('No materials listed.')
                 else
                   pw.Table(
-                    border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
+                    border: pw.TableBorder.all(
+                      color: PdfColors.grey300,
+                      width: 0.5,
+                    ),
                     children: <pw.TableRow>[
                       pw.TableRow(
-                        decoration: const pw.BoxDecoration(color: PdfColors.grey100),
+                        decoration: const pw.BoxDecoration(
+                          color: PdfColors.grey100,
+                        ),
                         children: <pw.Widget>[
-                          ...['Name', 'Quantity', 'Catalog #', 'Manufacturer', 'Location', 'Stock Conc.'].map((h) => pw.Padding(
-                            padding: const pw.EdgeInsets.all(4),
-                            child: pw.Text(h, style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9)),
-                          )),
+                          ...[
+                            'Name',
+                            'Quantity',
+                            'Catalog #',
+                            'Manufacturer',
+                            'Location',
+                            'Stock Conc.',
+                          ].map(
+                            (h) => pw.Padding(
+                              padding: const pw.EdgeInsets.all(4),
+                              child: pw.Text(
+                                h,
+                                style: pw.TextStyle(
+                                  fontWeight: pw.FontWeight.bold,
+                                  fontSize: 9,
+                                ),
+                              ),
+                            ),
+                          ),
                         ],
                       ),
-                      ...protocol.materials.map((m) => pw.TableRow(
-                        children: <pw.Widget>[
-                          ...[m.name, m.quantity, m.catalogNumber, m.manufacturer, m.location, m.stockConcentration].map((cell) => pw.Padding(
-                            padding: const pw.EdgeInsets.all(4),
-                            child: pw.Text(cell, style: const pw.TextStyle(fontSize: 8)),
-                          )),
-                        ],
-                      )),
+                      ...protocol.materials.map(
+                        (m) => pw.TableRow(
+                          children: <pw.Widget>[
+                            ...[
+                              m.name,
+                              m.quantity,
+                              m.catalogNumber,
+                              m.manufacturer,
+                              m.location,
+                              m.stockConcentration,
+                            ].map(
+                              (cell) => pw.Padding(
+                                padding: const pw.EdgeInsets.all(4),
+                                child: pw.Text(
+                                  cell,
+                                  style: const pw.TextStyle(fontSize: 8),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
-                
+
                 ..._pwNotesForStep(notes, 'materials'),
 
                 pw.SizedBox(height: 20),
@@ -109,12 +166,18 @@ class PdfService {
 
     await Printing.layoutPdf(
       onLayout: (PdfPageFormat format) async => pdf.save(),
-      name: '${protocol.title.replaceAll(' ', '_')}${completedAt != null ? '_${completedAt.millisecondsSinceEpoch}' : ''}.pdf',
+      name: completedAt == null
+          ? ProtocolExportFilename.protocol(protocol, 'pdf')
+          : ProtocolExportFilename.completed(protocol, completedAt, 'pdf'),
       format: PdfPageFormat.a4,
     );
   }
 
-  static pw.Widget _rtlBullet(String text, {double fontSize = 12, bool isFullWidth = true}) {
+  static pw.Widget _rtlBullet(
+    String text, {
+    double fontSize = 12,
+    bool isFullWidth = true,
+  }) {
     return pw.Row(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: <pw.Widget>[
@@ -128,18 +191,28 @@ class PdfService {
           ),
         ),
         pw.Expanded(
-          child: _rtlText(text, style: pw.TextStyle(fontSize: fontSize), isFullWidth: isFullWidth),
+          child: _rtlText(
+            text,
+            style: pw.TextStyle(fontSize: fontSize),
+            isFullWidth: isFullWidth,
+          ),
         ),
       ],
     );
   }
 
-  static List<pw.Widget> _buildPdfSteps(Protocol protocol, List<StepNote> notes) {
+  static List<pw.Widget> _buildPdfSteps(
+    Protocol protocol,
+    List<StepNote> notes,
+  ) {
     final List<pw.Widget> widgets = <pw.Widget>[];
-    final List<ProtocolStep> sortedSteps = List<ProtocolStep>.from(protocol.steps)
-      ..sort((a, b) => a.day.compareTo(b.day));
+    final List<ProtocolStep> sortedSteps = List<ProtocolStep>.from(
+      protocol.steps,
+    )..sort((a, b) => a.day.compareTo(b.day));
 
-    final bool hasPhases = sortedSteps.any((s) => s.phaseName != null && s.phaseName!.isNotEmpty);
+    final bool hasPhases = sortedSteps.any(
+      (s) => s.phaseName != null && s.phaseName!.isNotEmpty,
+    );
 
     if (hasPhases) {
       final Map<String, List<ProtocolStep>> phases = {};
@@ -155,10 +228,19 @@ class PdfService {
 
       int globalIdx = 0;
       for (var phase in phaseOrder) {
-        widgets.add(pw.Padding(
-          padding: const pw.EdgeInsets.symmetric(vertical: 8),
-          child: pw.Text(phase, style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 16, color: PdfColors.blue)),
-        ));
+        widgets.add(
+          pw.Padding(
+            padding: const pw.EdgeInsets.symmetric(vertical: 8),
+            child: pw.Text(
+              phase,
+              style: pw.TextStyle(
+                fontWeight: pw.FontWeight.bold,
+                fontSize: 16,
+                color: PdfColors.blue,
+              ),
+            ),
+          ),
+        );
         for (var step in phases[phase]!) {
           widgets.add(_buildStepWidget(step, globalIdx++, protocol, notes));
         }
@@ -172,10 +254,19 @@ class PdfService {
 
       int globalIdx = 0;
       for (var day in sortedDays) {
-        widgets.add(pw.Padding(
-          padding: const pw.EdgeInsets.symmetric(vertical: 8),
-          child: pw.Text('Day $day', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 16, color: PdfColors.blue)),
-        ));
+        widgets.add(
+          pw.Padding(
+            padding: const pw.EdgeInsets.symmetric(vertical: 8),
+            child: pw.Text(
+              'Day $day',
+              style: pw.TextStyle(
+                fontWeight: pw.FontWeight.bold,
+                fontSize: 16,
+                color: PdfColors.blue,
+              ),
+            ),
+          ),
+        );
         for (var step in days[day]!) {
           widgets.add(_buildStepWidget(step, globalIdx++, protocol, notes));
         }
@@ -184,7 +275,12 @@ class PdfService {
     return widgets;
   }
 
-  static pw.Widget _buildStepWidget(ProtocolStep step, int index, Protocol protocol, List<StepNote> notes) {
+  static pw.Widget _buildStepWidget(
+    ProtocolStep step,
+    int index,
+    Protocol protocol,
+    List<StepNote> notes,
+  ) {
     final stepNotes = notes.where((n) => n.stepId == step.id).toList();
 
     return pw.Column(
@@ -192,22 +288,33 @@ class PdfService {
       children: <pw.Widget>[
         pw.Padding(
           padding: const pw.EdgeInsets.symmetric(vertical: 4),
-          child: _rtlText('Step ${index + 1}: ${step.title}',
-              style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold), isFullWidth: true),
+          child: _rtlText(
+            'Step ${index + 1}: ${step.title}',
+            style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+            isFullWidth: true,
+          ),
         ),
-        _rtlText(step.instructions, style: const pw.TextStyle(fontSize: 12), isFullWidth: true),
+        _rtlText(
+          step.instructions,
+          style: const pw.TextStyle(fontSize: 12),
+          isFullWidth: true,
+        ),
         if (step.timerInSeconds != null)
           pw.Padding(
             padding: const pw.EdgeInsets.only(top: 2),
-            child: pw.Text('Timer: ${_formatSeconds(step.timerInSeconds!)}',
-                style: pw.TextStyle(fontSize: 11, fontStyle: pw.FontStyle.italic)),
+            child: pw.Text(
+              'Timer: ${_formatSeconds(step.timerInSeconds!)}',
+              style: pw.TextStyle(fontSize: 11, fontStyle: pw.FontStyle.italic),
+            ),
           ),
         if (step.materials.isNotEmpty)
           pw.Padding(
             padding: const pw.EdgeInsets.only(top: 2),
             child: _rtlText(
-                'Step Materials: ${step.materials.map((m) => "${m.name} (${m.quantity})").join(", ")}',
-                style: const pw.TextStyle(fontSize: 11), isFullWidth: true),
+              'Step Materials: ${step.materials.map((m) => "${m.name} (${m.quantity})").join(", ")}',
+              style: const pw.TextStyle(fontSize: 11),
+              isFullWidth: true,
+            ),
           ),
         if (step.actionItems.isNotEmpty)
           pw.Column(
@@ -221,7 +328,11 @@ class PdfService {
                 if (timer != null) {
                   timerStr = ' (${_formatSeconds(timer)})';
                 }
-                return _rtlBullet('$item$timerStr', fontSize: 11, isFullWidth: false);
+                return _rtlBullet(
+                  '$item$timerStr',
+                  fontSize: 11,
+                  isFullWidth: false,
+                );
               }),
             ],
           ),
@@ -233,7 +344,8 @@ class PdfService {
             children: step.tableIds.map((id) {
               final table = protocol.tables.firstWhere(
                 (t) => t.id == id,
-                orElse: () => ProtocolTable(id: 'err', title: 'Table Not Found'),
+                orElse: () =>
+                    ProtocolTable(id: 'err', title: 'Table Not Found'),
               );
               if (table.id == 'err') return pw.SizedBox.shrink();
               return _pwTable(table);
@@ -242,9 +354,14 @@ class PdfService {
         ],
         if (stepNotes.isNotEmpty) ...<pw.Widget>[
           pw.SizedBox(height: 5),
-          pw.Text('Notes:',
-              style: pw.TextStyle(
-                  fontSize: 11, fontWeight: pw.FontWeight.bold, color: PdfColors.blueGrey800)),
+          pw.Text(
+            'Notes:',
+            style: pw.TextStyle(
+              fontSize: 11,
+              fontWeight: pw.FontWeight.bold,
+              color: PdfColors.blueGrey800,
+            ),
+          ),
           ..._pwNotes(stepNotes),
         ],
         pw.Divider(thickness: 0.5, color: PdfColors.grey300),
@@ -262,17 +379,17 @@ class PdfService {
     }
   }
 
-  static pw.Widget _rtlText(String text, {pw.TextStyle? style, bool isFullWidth = true}) {
+  static pw.Widget _rtlText(
+    String text, {
+    pw.TextStyle? style,
+    bool isFullWidth = true,
+  }) {
     return pw.Directionality(
       textDirection: pw.TextDirection.rtl,
       child: pw.Container(
         width: isFullWidth ? double.infinity : null,
         alignment: pw.Alignment.centerLeft,
-        child: pw.Text(
-          text,
-          style: style,
-          textAlign: pw.TextAlign.left,
-        ),
+        child: pw.Text(text, style: style, textAlign: pw.TextAlign.left),
       ),
     );
   }
@@ -281,9 +398,16 @@ class PdfService {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: <pw.Widget>[
-        pw.Text(title, style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+        pw.Text(
+          title,
+          style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+        ),
         pw.SizedBox(height: 4),
-        _rtlText(content, style: const pw.TextStyle(fontSize: 12), isFullWidth: true),
+        _rtlText(
+          content,
+          style: const pw.TextStyle(fontSize: 12),
+          isFullWidth: true,
+        ),
         pw.SizedBox(height: 16),
       ],
     );
@@ -320,10 +444,15 @@ class PdfService {
                     top: 4,
                     left: 4,
                     child: pw.Container(
-                      padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                      padding: const pw.EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 1,
+                      ),
                       decoration: const pw.BoxDecoration(
                         color: PdfColors.blue,
-                        borderRadius: pw.BorderRadius.all(pw.Radius.circular(4)),
+                        borderRadius: pw.BorderRadius.all(
+                          pw.Radius.circular(4),
+                        ),
                       ),
                       child: pw.Text(
                         '${i + 1}.${j + 1}',
@@ -348,11 +477,7 @@ class PdfService {
       widgets.add(
         pw.Padding(
           padding: const pw.EdgeInsets.only(top: 8, bottom: 8),
-          child: pw.Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: photoWidgets,
-          ),
+          child: pw.Wrap(spacing: 10, runSpacing: 10, children: photoWidgets),
         ),
       );
     }
@@ -384,8 +509,14 @@ class PdfService {
                 ),
                 pw.SizedBox(width: 5),
                 pw.Expanded(
-                  child: _rtlText(note.note,
-                      style: pw.TextStyle(fontSize: 11, fontStyle: pw.FontStyle.italic), isFullWidth: true),
+                  child: _rtlText(
+                    note.note,
+                    style: pw.TextStyle(
+                      fontSize: 11,
+                      fontStyle: pw.FontStyle.italic,
+                    ),
+                    isFullWidth: true,
+                  ),
                 ),
               ],
             ),
@@ -423,7 +554,14 @@ class PdfService {
                 topRight: pw.Radius.circular(8),
               ),
             ),
-            child: pw.Text(table.title, style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9, color: PdfColors.blue900)),
+            child: pw.Text(
+              table.title,
+              style: pw.TextStyle(
+                fontWeight: pw.FontWeight.bold,
+                fontSize: 9,
+                color: PdfColors.blue900,
+              ),
+            ),
           ),
           pw.Padding(
             padding: const pw.EdgeInsets.all(4),
@@ -435,37 +573,60 @@ class PdfService {
                   children: <pw.Widget>[
                     if (table.rowHeaders.isNotEmpty)
                       pw.Padding(
-                          padding: const pw.EdgeInsets.all(3),
-                          child: pw.Text('',
-                              style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8))),
+                        padding: const pw.EdgeInsets.all(3),
+                        child: pw.Text(
+                          '',
+                          style: pw.TextStyle(
+                            fontWeight: pw.FontWeight.bold,
+                            fontSize: 8,
+                          ),
+                        ),
+                      ),
                     ...table.columnHeaders.map(
                       (h) => pw.Padding(
                         padding: const pw.EdgeInsets.all(3),
-                        child: pw.Text(h,
-                            style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8)),
+                        child: pw.Text(
+                          h,
+                          style: pw.TextStyle(
+                            fontWeight: pw.FontWeight.bold,
+                            fontSize: 8,
+                          ),
+                        ),
                       ),
                     ),
                   ],
                 ),
                 ...List<pw.TableRow>.generate(table.data.length, (rowIndex) {
-                  final rowColors =
-                      rowIndex < table.cellColors.length ? table.cellColors[rowIndex] : <String>[];
+                  final rowColors = rowIndex < table.cellColors.length
+                      ? table.cellColors[rowIndex]
+                      : <String>[];
                   return pw.TableRow(
                     children: <pw.Widget>[
                       if (table.rowHeaders.isNotEmpty)
                         pw.Padding(
                           padding: const pw.EdgeInsets.all(3),
-                          child: pw.Text(table.rowHeaders[rowIndex],
-                              style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8)),
+                          child: pw.Text(
+                            table.rowHeaders[rowIndex],
+                            style: pw.TextStyle(
+                              fontWeight: pw.FontWeight.bold,
+                              fontSize: 8,
+                            ),
+                          ),
                         ),
-                      ...List<pw.Widget>.generate(table.data[rowIndex].length, (colIndex) {
+                      ...List<pw.Widget>.generate(table.data[rowIndex].length, (
+                        colIndex,
+                      ) {
                         final cell = table.data[rowIndex][colIndex];
-                        final colorHex = colIndex < rowColors.length ? rowColors[colIndex] : '';
+                        final colorHex = colIndex < rowColors.length
+                            ? rowColors[colIndex]
+                            : '';
                         PdfColor? bgColor;
                         if (colorHex.isNotEmpty) {
                           try {
                             final hex = colorHex.replaceFirst('#', '');
-                            bgColor = PdfColor.fromInt(int.parse('FF$hex', radix: 16));
+                            bgColor = PdfColor.fromInt(
+                              int.parse('FF$hex', radix: 16),
+                            );
                           } catch (_) {}
                         }
 
@@ -476,7 +637,10 @@ class PdfService {
                         return pw.Container(
                           color: bgColor,
                           padding: const pw.EdgeInsets.all(3),
-                          child: pw.Text(text, style: const pw.TextStyle(fontSize: 8)),
+                          child: pw.Text(
+                            text,
+                            style: const pw.TextStyle(fontSize: 8),
+                          ),
                         );
                       }),
                     ],
@@ -496,7 +660,7 @@ class PdfService {
       try {
         final wizard = PlateLayoutWizard.fromJson(jsonDecode(wizardState));
         final tables = wizard.generateTables();
-        
+
         if (tables.length > 1) {
           return pw.Wrap(
             spacing: 10,
@@ -539,7 +703,14 @@ class PdfService {
                 topRight: pw.Radius.circular(8),
               ),
             ),
-            child: pw.Text(table.title, style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9, color: PdfColors.green900)),
+            child: pw.Text(
+              table.title,
+              style: pw.TextStyle(
+                fontWeight: pw.FontWeight.bold,
+                fontSize: 9,
+                color: PdfColors.green900,
+              ),
+            ),
           ),
           pw.Padding(
             padding: const pw.EdgeInsets.fromLTRB(8, 8, 8, 12),
@@ -549,10 +720,21 @@ class PdfService {
                 pw.Row(
                   children: [
                     pw.SizedBox(width: 12),
-                    ...List.generate(cols, (i) => pw.Container(
-                      width: wellSize + 1,
-                      child: pw.Center(child: pw.Text('${i + 1}', style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey600))),
-                    )),
+                    ...List.generate(
+                      cols,
+                      (i) => pw.Container(
+                        width: wellSize + 1,
+                        child: pw.Center(
+                          child: pw.Text(
+                            '${i + 1}',
+                            style: const pw.TextStyle(
+                              fontSize: 7,
+                              color: PdfColors.grey600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
                 pw.SizedBox(height: 4),
@@ -561,7 +743,13 @@ class PdfService {
                     children: [
                       pw.Container(
                         width: 12,
-                        child: pw.Text(String.fromCharCode(65 + rIdx), style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey600)),
+                        child: pw.Text(
+                          String.fromCharCode(65 + rIdx),
+                          style: const pw.TextStyle(
+                            fontSize: 7,
+                            color: PdfColors.grey600,
+                          ),
+                        ),
                       ),
                       ...List.generate(cols, (cIdx) {
                         final content = table.data[rIdx][cIdx].toString();
@@ -570,7 +758,9 @@ class PdfService {
                         if (colorHex.isNotEmpty) {
                           try {
                             final hex = colorHex.replaceFirst('#', '');
-                            bgColor = PdfColor.fromInt(int.parse('FF$hex', radix: 16));
+                            bgColor = PdfColor.fromInt(
+                              int.parse('FF$hex', radix: 16),
+                            );
                           } catch (_) {}
                         }
 
@@ -586,21 +776,50 @@ class PdfService {
                           decoration: pw.BoxDecoration(
                             color: bgColor,
                             shape: pw.BoxShape.circle,
-                            border: pw.Border.all(color: PdfColors.grey300, width: 0.5),
+                            border: pw.Border.all(
+                              color: PdfColors.grey300,
+                              width: 0.5,
+                            ),
                           ),
-                          child: content.isEmpty ? null : pw.Column(
-                            mainAxisAlignment: pw.MainAxisAlignment.center,
-                            children: [
-                              if (cond.isNotEmpty)
-                                pw.Text(cond, style: pw.TextStyle(fontSize: 3.5, fontWeight: pw.FontWeight.bold), maxLines: 1),
-                              pw.Padding(
-                                padding: const pw.EdgeInsets.symmetric(horizontal: 1),
-                                child: pw.Text(name, style: pw.TextStyle(fontSize: 4, fontWeight: pw.FontWeight.bold), maxLines: 1, textAlign: pw.TextAlign.center),
-                              ),
-                              if (dil.isNotEmpty)
-                                pw.Text(dil, style: const pw.TextStyle(fontSize: 3.5), maxLines: 1),
-                            ],
-                          ),
+                          child: content.isEmpty
+                              ? null
+                              : pw.Column(
+                                  mainAxisAlignment:
+                                      pw.MainAxisAlignment.center,
+                                  children: [
+                                    if (cond.isNotEmpty)
+                                      pw.Text(
+                                        cond,
+                                        style: pw.TextStyle(
+                                          fontSize: 3.5,
+                                          fontWeight: pw.FontWeight.bold,
+                                        ),
+                                        maxLines: 1,
+                                      ),
+                                    pw.Padding(
+                                      padding: const pw.EdgeInsets.symmetric(
+                                        horizontal: 1,
+                                      ),
+                                      child: pw.Text(
+                                        name,
+                                        style: pw.TextStyle(
+                                          fontSize: 4,
+                                          fontWeight: pw.FontWeight.bold,
+                                        ),
+                                        maxLines: 1,
+                                        textAlign: pw.TextAlign.center,
+                                      ),
+                                    ),
+                                    if (dil.isNotEmpty)
+                                      pw.Text(
+                                        dil,
+                                        style: const pw.TextStyle(
+                                          fontSize: 3.5,
+                                        ),
+                                        maxLines: 1,
+                                      ),
+                                  ],
+                                ),
                         );
                       }),
                     ],
@@ -616,9 +835,13 @@ class PdfService {
 
   static List<pw.Widget> _pwSupplementarySection(Protocol protocol) {
     final assignedTableIds = protocol.steps.expand((s) => s.tableIds).toSet();
-    final unassignedTables = protocol.tables.where((t) => !assignedTableIds.contains(t.id)).toList();
+    final unassignedTables = protocol.tables
+        .where((t) => !assignedTableIds.contains(t.id))
+        .toList();
 
-    if (protocol.files.isEmpty && unassignedTables.isEmpty) return <pw.Widget>[];
+    if (protocol.files.isEmpty && unassignedTables.isEmpty) {
+      return <pw.Widget>[];
+    }
 
     return <pw.Widget>[
       pw.SizedBox(height: 20),
@@ -626,18 +849,34 @@ class PdfService {
       if (protocol.files.isNotEmpty) ...<pw.Widget>[
         pw.Padding(
           padding: const pw.EdgeInsets.only(bottom: 4),
-          child: pw.Text('Attached Files:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12, color: PdfColors.grey700)),
+          child: pw.Text(
+            'Attached Files:',
+            style: pw.TextStyle(
+              fontWeight: pw.FontWeight.bold,
+              fontSize: 12,
+              color: PdfColors.grey700,
+            ),
+          ),
         ),
-        ...protocol.files.map((file) => pw.Padding(
-          padding: const pw.EdgeInsets.only(left: 8, bottom: 2),
-          child: pw.Text('- $file', style: const pw.TextStyle(fontSize: 11)),
-        )),
+        ...protocol.files.map(
+          (file) => pw.Padding(
+            padding: const pw.EdgeInsets.only(left: 8, bottom: 2),
+            child: pw.Text('- $file', style: const pw.TextStyle(fontSize: 11)),
+          ),
+        ),
         pw.SizedBox(height: 12),
       ],
       if (unassignedTables.isNotEmpty) ...<pw.Widget>[
         pw.Padding(
           padding: const pw.EdgeInsets.only(bottom: 8),
-          child: pw.Text('Reference Tables:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12, color: PdfColors.grey700)),
+          child: pw.Text(
+            'Reference Tables:',
+            style: pw.TextStyle(
+              fontWeight: pw.FontWeight.bold,
+              fontSize: 12,
+              color: PdfColors.grey700,
+            ),
+          ),
         ),
         pw.Wrap(
           spacing: 10,

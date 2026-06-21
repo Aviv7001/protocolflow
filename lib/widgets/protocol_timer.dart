@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 
+import '../theme/app_colors.dart';
+
 class ProtocolTimer extends StatefulWidget {
   final int initialSeconds;
   final VoidCallback? onFinished;
@@ -98,8 +100,10 @@ class _ProtocolTimerState extends State<ProtocolTimer> {
         ? _remainingSeconds / widget.initialSeconds
         : 0;
 
-    Color progressColor = _remainingSeconds < 30 ? Colors.orange : Colors.blue;
-    if (_remainingSeconds == 0) progressColor = Colors.red;
+    Color progressColor = _remainingSeconds < 30
+        ? AppColors.warning
+        : AppColors.info;
+    if (_remainingSeconds == 0) progressColor = AppColors.error;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -113,7 +117,7 @@ class _ProtocolTimerState extends State<ProtocolTimer> {
               CircularProgressIndicator(
                 value: progress,
                 strokeWidth: 8,
-                backgroundColor: Colors.grey.shade200,
+                backgroundColor: AppColors.surfaceContainer,
                 valueColor: AlwaysStoppedAnimation<Color>(progressColor),
               ),
               Center(

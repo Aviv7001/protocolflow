@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/master_mix_calculator_service.dart';
 import '../../../models/master_mix_wizard.dart';
 import '../../../widgets/table_export_actions.dart';
+import '../../../theme/app_colors.dart';
 
 class MasterMixResultTable extends StatelessWidget {
   final MasterMixWizard wizard;
@@ -30,13 +31,14 @@ class MasterMixResultTable extends StatelessWidget {
       return Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.red.shade50,
-          borderRadius: BorderRadius.circular(8),
+          color: AppColors.error.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.error),
         ),
         child: Text(
           res.errorMessage ?? 'Error in calculation',
           style: const TextStyle(
-            color: Colors.red,
+            color: AppColors.error,
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -51,7 +53,7 @@ class MasterMixResultTable extends StatelessWidget {
           Text('Output Table', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 12),
           Table(
-            border: TableBorder.all(color: Colors.grey.shade300),
+            border: TableBorder.all(color: AppColors.outlineVariant),
             columnWidths: const {
               0: FlexColumnWidth(2),
               1: FlexColumnWidth(1.5),
@@ -60,7 +62,9 @@ class MasterMixResultTable extends StatelessWidget {
             },
             children: [
               TableRow(
-                decoration: BoxDecoration(color: Colors.grey.shade100),
+                decoration: const BoxDecoration(
+                  color: AppColors.surfaceContainer,
+                ),
                 children: [
                   _cellPadding(
                     const Text(
@@ -123,7 +127,7 @@ class MasterMixResultTable extends StatelessWidget {
                         r.formattedReagentVolume,
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
-                          color: Colors.blue,
+                          color: AppColors.primary,
                           fontSize: 12,
                         ),
                       ),
@@ -153,7 +157,9 @@ class MasterMixResultTable extends StatelessWidget {
                 ],
               ),
               TableRow(
-                decoration: BoxDecoration(color: Colors.blue.shade50),
+                decoration: const BoxDecoration(
+                  color: AppColors.primaryContainer,
+                ),
                 children: [
                   _cellPadding(
                     const Text(
@@ -198,12 +204,12 @@ class MasterMixResultTable extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 4),
       child: Row(
         children: [
-          const Icon(Icons.warning_amber, size: 14, color: Colors.orange),
+          const Icon(Icons.warning_amber, size: 14, color: AppColors.warning),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               text,
-              style: const TextStyle(fontSize: 11, color: Colors.orange),
+              style: const TextStyle(fontSize: 11, color: AppColors.warning),
             ),
           ),
         ],

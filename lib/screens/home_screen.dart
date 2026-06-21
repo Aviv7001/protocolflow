@@ -7,6 +7,7 @@ import '../data/completed_protocols_data.dart';
 import '../features/today_tasks/services/task_service.dart';
 import '../services/auth_service.dart';
 import '../services/drive_sync_service.dart';
+import '../theme/app_colors.dart';
 import '../widgets/google_sign_in_button.dart';
 import 'run_protocol_screen.dart';
 import 'protocol_detail_screen.dart';
@@ -274,7 +275,10 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 16),
             SelectableText(
               'Google ID: ${user.googleUserId}',
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.textSecondary,
+              ),
             ),
           ],
         ),
@@ -366,43 +370,23 @@ class _HomeScreenState extends State<HomeScreen> {
         child: CustomScrollView(
           slivers: [
             SliverAppBar(
-              expandedHeight: 90.0,
-              floating: false,
               pinned: true,
-              flexibleSpace: FlexibleSpaceBar(
-                centerTitle: true,
-                expandedTitleScale: 1.0,
-                background: Container(
-                  color: Theme.of(context).primaryColor,
-                  padding: const EdgeInsets.only(
-                    top: 12.0,
-                    bottom: 0.0,
-                    left: 48.0,
-                    right: 48.0,
-                  ),
-                  child: Image.asset(
-                    'assets/App_icons/PF_logo_flat_2.png',
-                    fit: BoxFit.contain,
-                    filterQuality: FilterQuality.high,
-                    isAntiAlias: true,
-                  ),
-                ),
+              centerTitle: true,
+              title: const Text('ProtocolFlow'),
+              leading: IconButton(
+                tooltip: 'User profile',
+                icon: _isSigningIn
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppColors.onPrimary,
+                        ),
+                      )
+                    : _buildUserAvatar(_signedInUser, size: 30),
+                onPressed: _isSigningIn ? null : _handleProfilePressed,
               ),
-              actions: [
-                IconButton(
-                  icon: _isSigningIn
-                      ? const SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : _buildUserAvatar(_signedInUser, size: 30),
-                  onPressed: _isSigningIn ? null : _handleProfilePressed,
-                ),
-              ],
             ),
             SliverToBoxAdapter(
               child: Padding(
@@ -428,7 +412,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         padding: EdgeInsets.symmetric(vertical: 8.0),
                         child: Text(
                           'No tasks for today.',
-                          style: TextStyle(color: Colors.grey),
+                          style: TextStyle(color: AppColors.textSecondary),
                         ),
                       )
                     else
@@ -575,7 +559,7 @@ class _HomeScreenState extends State<HomeScreen> {
       return CircleAvatar(
         radius: size / 2,
         backgroundImage: NetworkImage(photoUrl),
-        backgroundColor: Colors.white,
+        backgroundColor: AppColors.surface,
       );
     }
 
@@ -585,8 +569,8 @@ class _HomeScreenState extends State<HomeScreen> {
         : '';
     return CircleAvatar(
       radius: size / 2,
-      backgroundColor: Colors.white,
-      foregroundColor: Colors.blue,
+      backgroundColor: AppColors.surface,
+      foregroundColor: AppColors.primary,
       child: initial.isEmpty
           ? Icon(Icons.account_circle, size: size)
           : Text(initial, style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -614,7 +598,7 @@ class _HomeScreenState extends State<HomeScreen> {
             fontSize: 14,
             fontWeight: FontWeight.bold,
             decoration: task.isDone ? TextDecoration.lineThrough : null,
-            color: task.isDone ? Colors.grey : null,
+            color: task.isDone ? AppColors.textDisabled : null,
           ),
         ),
         subtitle: task.description.isNotEmpty
@@ -623,7 +607,7 @@ class _HomeScreenState extends State<HomeScreen> {
         trailing: IconButton(
           icon: const Icon(
             Icons.remove_circle_outline,
-            color: Colors.red,
+            color: AppColors.error,
             size: 18,
           ),
           onPressed: () => _removeTask(task),
@@ -647,7 +631,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     return Card(
-      color: Colors.blue.shade50,
+      color: AppColors.primaryContainer,
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -669,15 +653,15 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 Text(
                   _formatDuration(_elapsedTime),
-                  style: const TextStyle(
-                    color: Colors.blue,
+                  style: TextStyle(
+                    color: AppColors.info,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 8),
-            Text(status, style: const TextStyle(color: Colors.blue)),
+            Text(status, style: TextStyle(color: AppColors.info)),
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
@@ -697,7 +681,7 @@ class _HomeScreenState extends State<HomeScreen> {
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
         dense: true,
-        leading: const Icon(Icons.history, color: Colors.blue),
+        leading: Icon(Icons.history, color: AppColors.info),
         title: Text(
           p.protocol.title,
           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
@@ -719,17 +703,18 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildActionButton(IconData icon, String label, VoidCallback onTap) {
+    final colorScheme = Theme.of(context).colorScheme;
     return InkWell(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 20),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: colorScheme.surface,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey.shade300),
+          border: Border.all(color: colorScheme.outlineVariant),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
+              color: colorScheme.shadow.withValues(alpha: 0.05),
               blurRadius: 4,
               offset: const Offset(0, 2),
             ),
@@ -737,7 +722,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         child: Column(
           children: [
-            Icon(icon, size: 32, color: Colors.blue),
+            Icon(icon, size: 32, color: colorScheme.primary),
             const SizedBox(height: 8),
             Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
           ],

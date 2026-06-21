@@ -5,6 +5,7 @@ import '../data/completed_protocols_data.dart';
 import '../services/storage_service.dart';
 import '../services/export_service.dart';
 import '../services/import_service.dart';
+import '../theme/app_colors.dart';
 import '../widgets/sync_status_chip.dart';
 import 'protocol_detail_screen.dart';
 import 'completed_protocol_detail_screen.dart';
@@ -117,25 +118,38 @@ class _LibraryScreenState extends State<LibraryScreen>
             ],
           ),
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          isScrollable: false,
-          indicatorSize: TabBarIndicatorSize.tab,
-          labelPadding: const EdgeInsets.symmetric(horizontal: 2),
-          labelStyle: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-          ),
-          unselectedLabelStyle: const TextStyle(fontSize: 12),
-          tabs: const [
-            Tab(text: 'Templates', icon: Icon(Icons.copy_all, size: 20)),
-            Tab(text: 'Protocols', icon: Icon(Icons.description, size: 20)),
-            Tab(
-              text: 'Running',
-              icon: Icon(Icons.play_circle_outline, size: 20),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(72),
+          child: ColoredBox(
+            color: AppColors.scaffoldBackground,
+            child: TabBar(
+              controller: _tabController,
+              isScrollable: false,
+              indicatorSize: TabBarIndicatorSize.tab,
+              indicatorColor: AppColors.primary,
+              dividerColor: AppColors.outlineVariant,
+              labelColor: AppColors.primary,
+              unselectedLabelColor: AppColors.primary,
+              labelPadding: const EdgeInsets.symmetric(horizontal: 2),
+              labelStyle: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+              unselectedLabelStyle: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+              tabs: const [
+                Tab(text: 'Templates', icon: Icon(Icons.copy_all, size: 20)),
+                Tab(text: 'Protocols', icon: Icon(Icons.description, size: 20)),
+                Tab(
+                  text: 'Running',
+                  icon: Icon(Icons.play_circle_outline, size: 20),
+                ),
+                Tab(text: 'History', icon: Icon(Icons.history, size: 20)),
+              ],
             ),
-            Tab(text: 'History', icon: Icon(Icons.history, size: 20)),
-          ],
+          ),
         ),
       ),
       body: SafeArea(
@@ -268,11 +282,11 @@ class _LibraryScreenState extends State<LibraryScreen>
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      color: Colors.blue.shade50,
+      color: AppColors.primaryContainer,
       child: ListTile(
         leading: const Icon(
           Icons.play_circle_fill,
-          color: Colors.blue,
+          color: AppColors.info,
           size: 40,
         ),
         title: Text(
@@ -282,7 +296,7 @@ class _LibraryScreenState extends State<LibraryScreen>
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(status, style: const TextStyle(color: Colors.blue)),
+            Text(status, style: const TextStyle(color: AppColors.info)),
             Text(
               'Started: ${activeProtocol!.startedAt.toString().split('.')[0]}',
               style: const TextStyle(fontSize: 11),
@@ -293,7 +307,7 @@ class _LibraryScreenState extends State<LibraryScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             IconButton(
-              icon: const Icon(Icons.delete_outline, color: Colors.red),
+              icon: const Icon(Icons.delete_outline, color: AppColors.error),
               tooltip: 'Terminate progress',
               onPressed: () => _confirmRemoveRunningProtocol(activeProtocol!),
             ),
@@ -325,7 +339,7 @@ class _LibraryScreenState extends State<LibraryScreen>
             CircularProgressIndicator(
               value: progress,
               strokeWidth: 3,
-              backgroundColor: Colors.grey.shade200,
+              backgroundColor: AppColors.surfaceContainer,
             ),
             Text(
               '${(progress * 100).toInt()}%',
@@ -342,7 +356,7 @@ class _LibraryScreenState extends State<LibraryScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             IconButton(
-              icon: const Icon(Icons.delete_outline, color: Colors.red),
+              icon: const Icon(Icons.delete_outline, color: AppColors.error),
               tooltip: 'Remove progress',
               onPressed: () => _confirmRemoveRunningProtocol(runningState),
             ),
@@ -393,7 +407,7 @@ class _LibraryScreenState extends State<LibraryScreen>
               if (!mounted) return;
               setState(() {});
             },
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
             child: Text(isActive ? 'Terminate' : 'Remove'),
           ),
         ],
@@ -414,7 +428,7 @@ class _LibraryScreenState extends State<LibraryScreen>
         final dateStr = '${date.year}-${date.month}-${date.day}';
 
         return ListTile(
-          leading: const Icon(Icons.check_circle, color: Colors.green),
+          leading: const Icon(Icons.check_circle, color: AppColors.success),
           title: Text(completed.protocol.title),
           subtitle: Text('Completed on: $dateStr'),
           trailing: const Icon(Icons.chevron_right),

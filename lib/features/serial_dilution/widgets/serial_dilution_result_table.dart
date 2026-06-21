@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/serial_dilution_input.dart';
 import '../services/serial_dilution_calculator_service.dart';
 import '../../../widgets/table_export_actions.dart';
+import '../../../theme/app_colors.dart';
 
 class SerialDilutionResultTable extends StatelessWidget {
   final SerialDilutionInput input;
@@ -22,13 +23,14 @@ class SerialDilutionResultTable extends StatelessWidget {
       return Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.red.shade50,
-          borderRadius: BorderRadius.circular(8),
+          color: AppColors.error.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.error),
         ),
         child: Text(
           result.errorMessage ?? 'Error in calculation',
           style: const TextStyle(
-            color: Colors.red,
+            color: AppColors.error,
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -44,15 +46,13 @@ class SerialDilutionResultTable extends StatelessWidget {
           const SizedBox(height: 12),
           Card(
             clipBehavior: Clip.antiAlias,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-              side: BorderSide(color: Colors.grey.shade300),
-            ),
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: DataTable(
                 columnSpacing: 20,
-                headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
+                headingRowColor: const WidgetStatePropertyAll(
+                  AppColors.surfaceContainer,
+                ),
                 columns: const [
                   DataColumn(label: _HeaderCell('Dilution')),
                   DataColumn(label: _HeaderCell('Concentration')),
@@ -65,7 +65,9 @@ class SerialDilutionResultTable extends StatelessWidget {
                     .map(
                       (row) => DataRow(
                         color: row.isZeroConcentrationRow
-                            ? WidgetStateProperty.all(Colors.blue.shade50)
+                            ? const WidgetStatePropertyAll(
+                                AppColors.primaryContainer,
+                              )
                             : null,
                         cells: [
                           DataCell(
@@ -92,7 +94,7 @@ class SerialDilutionResultTable extends StatelessWidget {
                               style: const TextStyle(
                                 fontSize: 10,
                                 fontWeight: FontWeight.bold,
-                                color: Colors.blue,
+                                color: AppColors.primary,
                               ),
                             ),
                           ),
@@ -143,12 +145,12 @@ class SerialDilutionResultTable extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 4),
       child: Row(
         children: [
-          const Icon(Icons.warning_amber, size: 14, color: Colors.orange),
+          const Icon(Icons.warning_amber, size: 14, color: AppColors.warning),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               text,
-              style: const TextStyle(fontSize: 11, color: Colors.orange),
+              style: const TextStyle(fontSize: 11, color: AppColors.warning),
             ),
           ),
         ],
@@ -182,7 +184,10 @@ class _SummaryItem extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 10, color: AppColors.textSecondary),
+        ),
         Text(
           value,
           style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),

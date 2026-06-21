@@ -11,6 +11,7 @@ import 'package:protocolflow/data/completed_protocols_data.dart';
 import 'package:protocolflow/services/docx_export_service.dart';
 import 'package:protocolflow/services/pdf_service.dart';
 import 'package:protocolflow/services/export_service.dart';
+import 'package:protocolflow/theme/app_colors.dart';
 
 class CompletedProtocolDetailScreen extends StatelessWidget {
   final CompletedProtocol completedProtocol;
@@ -44,7 +45,7 @@ class CompletedProtocolDetailScreen extends StatelessWidget {
                 Navigator.pop(context); // Go back to list
               }
             },
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
             child: const Text('Delete'),
           ),
         ],
@@ -249,7 +250,7 @@ class CompletedProtocolDetailScreen extends StatelessWidget {
               style: const TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 18,
-                color: Colors.blue,
+                color: AppColors.primary,
               ),
             ),
           ),
@@ -280,7 +281,7 @@ class CompletedProtocolDetailScreen extends StatelessWidget {
               style: const TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 18,
-                color: Colors.blue,
+                color: AppColors.primary,
               ),
             ),
           ),
@@ -354,7 +355,7 @@ class CompletedProtocolDetailScreen extends StatelessWidget {
                 'Notes:',
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
-                  color: Colors.blueGrey,
+                  color: AppColors.textSecondary,
                 ),
               ),
               ..._buildNotesSection(stepNotes),
@@ -388,7 +389,10 @@ class CompletedProtocolDetailScreen extends StatelessWidget {
         if (protocol.files.isNotEmpty) ...[
           const Text(
             'Attached Files:',
-            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: AppColors.textSecondary,
+            ),
           ),
           ...protocol.files.map(
             (file) => ListTile(
@@ -402,7 +406,10 @@ class CompletedProtocolDetailScreen extends StatelessWidget {
         if (unassignedTables.isNotEmpty) ...[
           const Text(
             'Reference Tables:',
-            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: AppColors.textSecondary,
+            ),
           ),
           ...unassignedTables.map((table) => ProtocolTableWidget(table: table)),
           const SizedBox(height: 16),
@@ -410,7 +417,10 @@ class CompletedProtocolDetailScreen extends StatelessWidget {
         if (protocol.additionalData.isNotEmpty) ...[
           const Text(
             'Additional Data:',
-            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: AppColors.textSecondary,
+            ),
           ),
           ...protocol.additionalData.map(
             (data) => _buildAdditionalDataCard(context, data),
@@ -450,12 +460,12 @@ class CompletedProtocolDetailScreen extends StatelessWidget {
                 },
                 child: Row(
                   children: [
-                    const Icon(Icons.link, size: 18, color: Colors.blue),
+                    const Icon(Icons.link, size: 18, color: AppColors.info),
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
                         data.link,
-                        style: const TextStyle(color: Colors.blue),
+                        style: const TextStyle(color: AppColors.info),
                       ),
                     ),
                   ],
@@ -558,13 +568,13 @@ class CompletedProtocolDetailScreen extends StatelessWidget {
                         vertical: 2,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.blue.withValues(alpha: 0.8),
+                        color: AppColors.textPrimary.withValues(alpha: 0.8),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
                         '$noteIdx.$photoInNoteIdx',
                         style: const TextStyle(
-                          color: Colors.white,
+                          color: AppColors.surface,
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
                         ),
@@ -588,14 +598,14 @@ class CompletedProtocolDetailScreen extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
-                  color: Colors.blue.withValues(alpha: 0.8),
+                  color: AppColors.textPrimary.withValues(alpha: 0.8),
                   shape: BoxShape.circle,
                 ),
                 constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
                 child: Text(
                   '$index',
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: AppColors.surface,
                     fontSize: 10,
                     fontWeight: FontWeight.bold,
                   ),
