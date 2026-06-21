@@ -10,6 +10,7 @@ import '../services/storage_service.dart';
 import '../widgets/protocol_table_widget.dart';
 import '../widgets/local_image.dart';
 import '../widgets/sync_status_chip.dart';
+import '../services/docx_export_service.dart';
 import '../services/pdf_service.dart';
 import '../services/export_service.dart';
 import 'run_protocol_screen.dart';
@@ -123,6 +124,14 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
               onTap: () {
                 Navigator.pop(context);
                 PdfService.exportProtocolToPdf(protocol);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.description_outlined),
+              title: const Text('Export as Word (DOCX)'),
+              onTap: () {
+                Navigator.pop(context);
+                const DocxExportService().exportProtocol(protocol);
               },
             ),
             ListTile(

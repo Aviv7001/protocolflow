@@ -8,6 +8,7 @@ import 'package:protocolflow/models/protocol_table.dart';
 import 'package:protocolflow/widgets/local_image.dart';
 import 'package:protocolflow/widgets/protocol_table_widget.dart';
 import 'package:protocolflow/data/completed_protocols_data.dart';
+import 'package:protocolflow/services/docx_export_service.dart';
 import 'package:protocolflow/services/pdf_service.dart';
 import 'package:protocolflow/services/export_service.dart';
 
@@ -64,6 +65,16 @@ class CompletedProtocolDetailScreen extends StatelessWidget {
               onTap: () {
                 Navigator.pop(context);
                 PdfService.exportToPdf(completedProtocol);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.description_outlined),
+              title: const Text('Export as Word (DOCX)'),
+              onTap: () {
+                Navigator.pop(context);
+                const DocxExportService().exportCompletedProtocol(
+                  completedProtocol,
+                );
               },
             ),
             ListTile(
