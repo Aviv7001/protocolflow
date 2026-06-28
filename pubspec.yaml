@@ -54,23 +54,23 @@ dev_dependencies:
 flutter_launcher_icons:
   android: "launcher_icon"
   ios: true
-  image_path: "assets/App_icons/PF_logo_DNA_square_light.png"
+  image_path: "assets/App_icons/PF_logo_pipette_square_light.png"
   adaptive_icon_background: "#F7F9FA"
-  adaptive_icon_foreground: "assets/App_icons/PF_logo_DNA_adaptive_foreground.png"
+  adaptive_icon_foreground: "assets/App_icons/PF_logo_pipette_adaptive_foreground.png"
   adaptive_icon_foreground_inset: 0
   remove_alpha_ios: true
   web:
     generate: true
-    image_path: "assets/App_icons/PF_logo_DNA_square_light.png"
+    image_path: "assets/App_icons/PF_logo_pipette_square_light.png"
     background_color: "#F7F9FA"
     theme_color: "#156F7A"
   windows:
     generate: true
-    image_path: "assets/App_icons/PF_logo_DNA_square_light.png"
+    image_path: "assets/App_icons/PF_logo_pipette_square_light.png"
     icon_size: 256
   macos:
     generate: true
-    image_path: "assets/App_icons/PF_logo_DNA_square_light.png"
+    image_path: "assets/App_icons/PF_logo_pipette_square_light.png"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -113,3 +113,4 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
