@@ -171,7 +171,16 @@ class SerialDilutionCalculatorService {
         optimizedFinalVolumeUl * (startingBase / stockBase);
     final startingSolventVolumeUl =
         optimizedFinalVolumeUl - startingTransferVolumeUl;
-    final startingWarnings = _volumeWarnings(startingTransferVolumeUl);
+    final startingWarnings = _volumeWarnings(
+      startingTransferVolumeUl,
+      optimizedFinalVolumeUl,
+    );
+    final startingSuggestions = _transferSuggestions(
+      stockBase,
+      startingBase,
+      input.stockConcentrationUnit,
+      optimizedFinalVolumeUl,
+    );
     warnings.addAll(startingWarnings.map((w) => 'D0: $w'));
     rows.add(
       SerialDilutionRow(
@@ -191,6 +200,7 @@ class SerialDilutionCalculatorService {
         finalVolumeUl: optimizedFinalVolumeUl,
         formattedFinalVolume: _formatVolume(optimizedFinalVolumeUl),
         warnings: startingWarnings,
+        suggestions: startingSuggestions,
       ),
     );
 
@@ -202,7 +212,19 @@ class SerialDilutionCalculatorService {
           : concentrationBase / stockBase;
       final transferVolumeUl = optimizedFinalVolumeUl * ratio;
       final solventVolumeUl = optimizedFinalVolumeUl - transferVolumeUl;
-      final rowWarnings = _volumeWarnings(transferVolumeUl);
+      final rowWarnings = _volumeWarnings(
+        transferVolumeUl,
+        optimizedFinalVolumeUl,
+      );
+      final sourceBase = input.dilutionMode == DilutionMode.forward
+          ? startingBase / pow(input.dilutionFactor, i - 1).toDouble()
+          : stockBase;
+      final rowSuggestions = _transferSuggestions(
+        sourceBase,
+        concentrationBase,
+        input.stockConcentrationUnit,
+        optimizedFinalVolumeUl,
+      );
       warnings.addAll(rowWarnings.map((w) => 'D$i: $w'));
 
       rows.add(
@@ -225,6 +247,7 @@ class SerialDilutionCalculatorService {
           finalVolumeUl: optimizedFinalVolumeUl,
           formattedFinalVolume: _formatVolume(optimizedFinalVolumeUl),
           warnings: rowWarnings,
+          suggestions: rowSuggestions,
         ),
       );
     }
@@ -295,14 +318,41 @@ class SerialDilutionCalculatorService {
     return (log(stockBase / targetBase) / log(dilutionFactor)).ceil();
   }
 
-  List<String> _volumeWarnings(double transferVolumeUl) {
+  List<String> _volumeWarnings(double transferVolumeUl, double totalVolumeUl) {
+    final warnings = <String>[];
     if (transferVolumeUl < minPipettableVolumeUl) {
-      return ['Transfer volume below minimum pipettable volume.'];
+      warnings.add('Transfer volume below minimum pipettable volume.');
     }
     if (transferVolumeUl < 1) {
-      return ['Transfer volume below recommended pipetting range.'];
+      warnings.add('Transfer volume below recommended pipetting range.');
     }
-    return const [];
+    if (LabCalculation.isBelowPracticalTransferFraction(
+      transferUl: transferVolumeUl,
+      totalUl: totalVolumeUl,
+    )) {
+      warnings.add(
+        LabCalculation.practicalTransferWarning(
+          transferUl: transferVolumeUl,
+          totalUl: totalVolumeUl,
+        ),
+      );
+    }
+    return warnings;
+  }
+
+  List<IntermediateDilutionSuggestion> _transferSuggestions(
+    double sourceBase,
+    double targetBase,
+    ConcentrationUnit displayUnit,
+    double totalVolumeUl,
+  ) {
+    final suggestion = LabCalculation.intermediateDilutionSuggestion(
+      stockConcentrationBase: sourceBase,
+      targetConcentrationBase: targetBase,
+      targetDisplayUnit: displayUnit,
+      totalVolumeUl: totalVolumeUl,
+    );
+    return suggestion == null ? const [] : [suggestion];
   }
 
   double _optimizeFinalVolume(double requestedUl, double smallestRatio) {

@@ -214,7 +214,7 @@ class _SavedTablePickerScreenState extends State<SavedTablePickerScreen> {
         return 'Staining table';
       case TableType.reagentMix:
       case TableType.reagentMatrix:
-        return 'Reagent mix';
+        return 'C1V1 = C2V2';
       case TableType.serialDilution:
         return 'Serial dilution';
       case TableType.plateLayout:

@@ -1,3 +1,5 @@
+import '../../lab_math/lab_calculation.dart';
+
 class SerialDilutionRow {
   final String dilutionName;
   final double concentrationBaseUnit;
@@ -11,6 +13,7 @@ class SerialDilutionRow {
   final String formattedFinalVolume;
   final bool isZeroConcentrationRow;
   final List<String> warnings;
+  final List<IntermediateDilutionSuggestion> suggestions;
 
   SerialDilutionRow({
     required this.dilutionName,
@@ -25,5 +28,6 @@ class SerialDilutionRow {
     required this.formattedFinalVolume,
     this.isZeroConcentrationRow = false,
     this.warnings = const [],
+    this.suggestions = const [],
   });
 }

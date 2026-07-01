@@ -7,8 +7,10 @@ import '../data/completed_protocols_data.dart';
 import '../features/today_tasks/services/task_service.dart';
 import '../services/auth_service.dart';
 import '../services/drive_sync_service.dart';
+import '../services/storage_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/google_sign_in_button.dart';
+import 'library_screen.dart';
 import 'run_protocol_screen.dart';
 import 'protocol_detail_screen.dart';
 
@@ -21,9 +23,14 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final TaskService _taskService = TaskService();
+  final StorageService _storageService = StorageService();
   final AuthService _authService = AuthService.instance;
   List<Task> _todayTasks = [];
+  int _templateCount = 0;
+  int _protocolCount = 0;
+  int _savedTableCount = 0;
   bool _isLoadingTasks = true;
+  bool _isLoadingOverview = true;
   bool _isSigningIn = false;
   bool _isSyncing = false;
   bool _hasAttemptedStartupSync = false;
@@ -38,6 +45,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _startTimer();
     _loadTasks();
+    _loadOverview();
     _initializeAuth();
   }
 
@@ -80,6 +88,19 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _loadOverview() async {
+    final protocols = await _storageService.loadProtocols();
+    final savedTables = await _storageService.loadSavedTables();
+    if (!mounted) return;
+
+    setState(() {
+      _templateCount = protocols.where((p) => p.isTemplate).length;
+      _protocolCount = protocols.where((p) => !p.isTemplate).length;
+      _savedTableCount = savedTables.length;
+      _isLoadingOverview = false;
+    });
+  }
+
   Future<void> _addTask(String title, String description) async {
     final newTask = Task(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -117,6 +138,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _refreshRunningProtocols() async {
     await loadPersistentProtocols();
+    await _loadOverview();
     if (mounted) {
       setState(() {});
     }
@@ -481,58 +503,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       padding: EdgeInsets.symmetric(vertical: 24),
                       child: Divider(indent: 24, endIndent: 24, thickness: 1),
                     ),
-                    _buildSectionTitle('Quick Actions'),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _buildActionButton(
-                            Icons.add_box,
-                            'Create',
-                            () => Navigator.pushNamed(
-                              context,
-                              '/create',
-                            ).then((_) => setState(() {})),
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: _buildActionButton(
-                            Icons.library_books,
-                            'Protocols',
-                            () => Navigator.pushNamed(
-                              context,
-                              '/library',
-                            ).then((_) => setState(() {})),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _buildActionButton(
-                            Icons.science,
-                            'Lab Tools',
-                            () => Navigator.pushNamed(
-                              context,
-                              '/lab_tools',
-                            ).then((_) => setState(() {})),
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: _buildActionButton(
-                            Icons.table_chart,
-                            'Saved Tables',
-                            () => Navigator.pushNamed(
-                              context,
-                              '/saved_tables',
-                            ).then((_) => setState(() {})),
-                          ),
-                        ),
-                      ],
-                    ),
+                    _buildSectionTitle('Overview'),
+                    _buildOverviewGrid(),
                   ],
                 ),
               ),
@@ -551,6 +523,123 @@ class _HomeScreenState extends State<HomeScreen> {
         style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
       ),
     );
+  }
+
+  Widget _buildOverviewGrid() {
+    final runningCount = _runningProtocolCount;
+    final items = [
+      _OverviewItem(
+        icon: Icons.copy_all,
+        label: 'Templates',
+        value: _templateCount,
+        onTap: () => _openLibraryTab(0),
+      ),
+      _OverviewItem(
+        icon: Icons.article_outlined,
+        label: 'Protocols',
+        value: _protocolCount,
+        onTap: () => _openLibraryTab(1),
+      ),
+      _OverviewItem(
+        icon: Icons.play_circle_outline,
+        label: 'Running',
+        value: runningCount,
+        onTap: () => _openLibraryTab(2),
+      ),
+      _OverviewItem(
+        icon: Icons.check_circle_outline,
+        label: 'Completed',
+        value: completedProtocols.length,
+        onTap: () => _openLibraryTab(3),
+      ),
+      _OverviewItem(
+        icon: Icons.table_chart,
+        label: 'Saved Tables',
+        value: _savedTableCount,
+        onTap: () => Navigator.pushNamed(context, '/saved_tables').then((_) {
+          _loadOverview();
+        }),
+      ),
+    ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final crossAxisCount = constraints.maxWidth >= 720
+            ? 5
+            : constraints.maxWidth >= 420
+            ? 3
+            : 2;
+        const spacing = 8.0;
+        final itemWidth =
+            (constraints.maxWidth - (spacing * (crossAxisCount - 1))) /
+            crossAxisCount;
+
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: items
+              .map(
+                (item) =>
+                    SizedBox(width: itemWidth, child: _buildOverviewCard(item)),
+              )
+              .toList(),
+        );
+      },
+    );
+  }
+
+  Widget _buildOverviewCard(_OverviewItem item) {
+    return Card(
+      margin: EdgeInsets.zero,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: item.onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(item.icon, color: AppColors.primary),
+              const SizedBox(height: 12),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                child: Text(
+                  _isLoadingOverview ? '-' : item.value.toString(),
+                  key: ValueKey(
+                    '${item.label}_${item.value}_$_isLoadingOverview',
+                  ),
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                item.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: AppColors.textSecondary),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  int get _runningProtocolCount {
+    final activeId = activeProtocol?.protocol.id;
+    final inactiveRunning = runningProtocols.where(
+      (p) => activeId == null || p.protocol.id != activeId,
+    );
+    return (activeProtocol == null ? 0 : 1) + inactiveRunning.length;
+  }
+
+  void _openLibraryTab(int index) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => LibraryScreen(initialTabIndex: index),
+      ),
+    ).then((_) => _refreshRunningProtocols());
   }
 
   Widget _buildUserAvatar(AppUser? user, {required double size}) {
@@ -701,33 +790,18 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+}
 
-  Widget _buildActionButton(IconData icon, String label, VoidCallback onTap) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 20),
-        decoration: BoxDecoration(
-          color: colorScheme.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: colorScheme.outlineVariant),
-          boxShadow: [
-            BoxShadow(
-              color: colorScheme.shadow.withValues(alpha: 0.05),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Column(
-          children: [
-            Icon(icon, size: 32, color: colorScheme.primary),
-            const SizedBox(height: 8),
-            Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
-          ],
-        ),
-      ),
-    );
-  }
+class _OverviewItem {
+  const _OverviewItem({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final int value;
+  final VoidCallback onTap;
 }

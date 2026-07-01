@@ -12,6 +12,7 @@ class ProtocolStep {
   final Map<int, int> actionTimers;
   final List<String> attachedFiles;
   final List<String> tableIds;
+  final List<String> notes;
 
   ProtocolStep({
     required this.id,
@@ -25,6 +26,7 @@ class ProtocolStep {
     this.actionTimers = const {},
     this.attachedFiles = const [],
     this.tableIds = const [],
+    this.notes = const [],
   });
 
   ProtocolStep copyWith({
@@ -39,6 +41,7 @@ class ProtocolStep {
     Map<int, int>? actionTimers,
     List<String>? attachedFiles,
     List<String>? tableIds,
+    List<String>? notes,
   }) {
     return ProtocolStep(
       id: id ?? this.id,
@@ -54,6 +57,7 @@ class ProtocolStep {
       actionTimers: Map<int, int>.from(actionTimers ?? this.actionTimers),
       attachedFiles: List<String>.from(attachedFiles ?? this.attachedFiles),
       tableIds: List<String>.from(tableIds ?? this.tableIds),
+      notes: List<String>.from(notes ?? this.notes),
     );
   }
 
@@ -74,6 +78,7 @@ class ProtocolStep {
       'actionTimers': actionTimers.map((k, v) => MapEntry(k.toString(), v)),
       'attachedFiles': attachedFiles,
       'tableIds': tableIds,
+      'notes': notes,
     };
   }
 
@@ -96,6 +101,7 @@ class ProtocolStep {
       ),
       attachedFiles: List<String>.from(json['attachedFiles'] ?? []),
       tableIds: List<String>.from(json['tableIds'] ?? []),
+      notes: List<String>.from(json['notes'] ?? []),
     );
   }
 }

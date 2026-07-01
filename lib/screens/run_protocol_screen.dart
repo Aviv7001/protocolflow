@@ -15,6 +15,8 @@ import 'package:protocolflow/services/picked_image_store.dart';
 import 'package:protocolflow/theme/app_colors.dart';
 import 'package:protocolflow/widgets/action_timer_wrapper.dart';
 import 'package:protocolflow/widgets/local_image.dart';
+import 'package:protocolflow/widgets/protocol_step_notes_table.dart';
+import 'package:protocolflow/widgets/protocol_table_preview.dart';
 import 'package:protocolflow/widgets/protocol_table_widget.dart';
 import 'package:protocolflow/screens/library_screen.dart';
 
@@ -484,7 +486,7 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
       children: [
         const Divider(height: 32),
         Text(
-          'Notes for this step:',
+          'User Notes for this step:',
           style: Theme.of(context).textTheme.titleSmall,
         ),
         const SizedBox(height: 8),
@@ -1130,132 +1132,149 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
 
   Widget _buildStepExecution() {
     final step = currentStep!;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    final linkedTables = _linkedTablesForStep(step);
+    return ListView(
       children: [
         Text(step.title, style: Theme.of(context).textTheme.headlineSmall),
         const SizedBox(height: 8),
         Text(step.instructions),
         const SizedBox(height: 16),
-        Text('Actions', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        Expanded(
-          child: ListView.builder(
-            itemCount: step.actionItems.length,
-            itemBuilder: (context, index) {
-              final actionText = step.actionItems[index];
-              final int? actionTimer = step.actionTimers[index];
-
-              Widget cardContent = ListTile(
-                leading: CircleAvatar(
-                  radius: 14,
-                  child: Text(
-                    '${index + 1}',
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                ),
-                title: Text(actionText),
-              );
-
-              if (actionTimer != null) {
-                final timerKey = '${step.id}_$index';
-                cardContent = ActionTimerWrapper(
-                  totalSeconds: actionTimer,
-                  startTime: activeProtocol?.timerStartTimes[timerKey],
-                  remainingSeconds: activeProtocol?.pausedSeconds[timerKey],
-                  onStart: (startTime) {
-                    setState(() {
-                      final newStarts = Map<String, DateTime>.from(
-                        activeProtocol?.timerStartTimes ?? {},
-                      );
-                      final newPaused = Map<String, int>.from(
-                        activeProtocol?.pausedSeconds ?? {},
-                      );
-                      newStarts[timerKey] = startTime;
-                      // When starting, if it was paused, we stay at that value,
-                      // if not, it will be initial.
-                      // ActionTimerWrapper handles the math.
-                      activeProtocol = activeProtocol?.copyWith(
-                        timerStartTimes: newStarts,
-                        pausedSeconds: newPaused,
-                      );
-                    });
-                    _updateActiveProtocol();
-                  },
-                  onStop: (remaining) {
-                    setState(() {
-                      final newStarts = Map<String, DateTime>.from(
-                        activeProtocol?.timerStartTimes ?? {},
-                      );
-                      final newPaused = Map<String, int>.from(
-                        activeProtocol?.pausedSeconds ?? {},
-                      );
-                      newStarts.remove(timerKey);
-                      newPaused[timerKey] = remaining;
-                      activeProtocol = activeProtocol?.copyWith(
-                        timerStartTimes: newStarts,
-                        pausedSeconds: newPaused,
-                      );
-                    });
-                    _updateActiveProtocol();
-                  },
-                  onReset: () {
-                    setState(() {
-                      final newStarts = Map<String, DateTime>.from(
-                        activeProtocol?.timerStartTimes ?? {},
-                      );
-                      final newPaused = Map<String, int>.from(
-                        activeProtocol?.pausedSeconds ?? {},
-                      );
-                      newStarts.remove(timerKey);
-                      newPaused.remove(timerKey);
-                      activeProtocol = activeProtocol?.copyWith(
-                        timerStartTimes: newStarts,
-                        pausedSeconds: newPaused,
-                      );
-                    });
-                    _updateActiveProtocol();
-                  },
-                  onFinished: () {
-                    setState(() {
-                      final newStarts = Map<String, DateTime>.from(
-                        activeProtocol?.timerStartTimes ?? {},
-                      );
-                      final newPaused = Map<String, int>.from(
-                        activeProtocol?.pausedSeconds ?? {},
-                      );
-                      newStarts.remove(timerKey);
-                      newPaused[timerKey] = 0;
-                      activeProtocol = activeProtocol?.copyWith(
-                        timerStartTimes: newStarts,
-                        pausedSeconds: newPaused,
-                      );
-                    });
-                    _updateActiveProtocol();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Action "$actionText" finished!'),
-                        duration: const Duration(seconds: 3),
-                        backgroundColor: AppColors.success,
-                        action: SnackBarAction(
-                          label: 'OK',
-                          textColor: AppColors.onPrimary,
-                          onPressed: () {},
-                        ),
-                      ),
-                    );
-                  },
-                  child: cardContent,
-                );
-              }
-
-              return Card(clipBehavior: Clip.antiAlias, child: cardContent);
-            },
-          ),
-        ),
+        if (step.actionItems.isNotEmpty) ...[
+          Text('Actions', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          ...step.actionItems.asMap().entries.map((entry) {
+            return _buildActionCard(step, entry.key, entry.value);
+          }),
+        ],
+        if (step.notes.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          ProtocolStepNotesTable(notes: step.notes),
+        ],
+        if (linkedTables.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          Text('Linked Tables', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          LinkedProtocolTablesSection(tables: linkedTables),
+        ],
         _buildNotesList(),
       ],
     );
+  }
+
+  Widget _buildActionCard(ProtocolStep step, int index, String actionText) {
+    final int? actionTimer = step.actionTimers[index];
+
+    Widget cardContent = ListTile(
+      leading: CircleAvatar(
+        radius: 14,
+        child: Text('${index + 1}', style: const TextStyle(fontSize: 12)),
+      ),
+      title: Text(actionText),
+    );
+
+    if (actionTimer != null) {
+      final timerKey = '${step.id}_$index';
+      cardContent = ActionTimerWrapper(
+        totalSeconds: actionTimer,
+        startTime: activeProtocol?.timerStartTimes[timerKey],
+        remainingSeconds: activeProtocol?.pausedSeconds[timerKey],
+        onStart: (startTime) {
+          setState(() {
+            final newStarts = Map<String, DateTime>.from(
+              activeProtocol?.timerStartTimes ?? {},
+            );
+            final newPaused = Map<String, int>.from(
+              activeProtocol?.pausedSeconds ?? {},
+            );
+            newStarts[timerKey] = startTime;
+            activeProtocol = activeProtocol?.copyWith(
+              timerStartTimes: newStarts,
+              pausedSeconds: newPaused,
+            );
+          });
+          _updateActiveProtocol();
+        },
+        onStop: (remaining) {
+          setState(() {
+            final newStarts = Map<String, DateTime>.from(
+              activeProtocol?.timerStartTimes ?? {},
+            );
+            final newPaused = Map<String, int>.from(
+              activeProtocol?.pausedSeconds ?? {},
+            );
+            newStarts.remove(timerKey);
+            newPaused[timerKey] = remaining;
+            activeProtocol = activeProtocol?.copyWith(
+              timerStartTimes: newStarts,
+              pausedSeconds: newPaused,
+            );
+          });
+          _updateActiveProtocol();
+        },
+        onReset: () {
+          setState(() {
+            final newStarts = Map<String, DateTime>.from(
+              activeProtocol?.timerStartTimes ?? {},
+            );
+            final newPaused = Map<String, int>.from(
+              activeProtocol?.pausedSeconds ?? {},
+            );
+            newStarts.remove(timerKey);
+            newPaused.remove(timerKey);
+            activeProtocol = activeProtocol?.copyWith(
+              timerStartTimes: newStarts,
+              pausedSeconds: newPaused,
+            );
+          });
+          _updateActiveProtocol();
+        },
+        onFinished: () {
+          setState(() {
+            final newStarts = Map<String, DateTime>.from(
+              activeProtocol?.timerStartTimes ?? {},
+            );
+            final newPaused = Map<String, int>.from(
+              activeProtocol?.pausedSeconds ?? {},
+            );
+            newStarts.remove(timerKey);
+            newPaused[timerKey] = 0;
+            activeProtocol = activeProtocol?.copyWith(
+              timerStartTimes: newStarts,
+              pausedSeconds: newPaused,
+            );
+          });
+          _updateActiveProtocol();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Action "$actionText" finished!'),
+              duration: const Duration(seconds: 3),
+              backgroundColor: AppColors.success,
+              action: SnackBarAction(
+                label: 'OK',
+                textColor: AppColors.onPrimary,
+                onPressed: () {},
+              ),
+            ),
+          );
+        },
+        child: cardContent,
+      );
+    }
+
+    return Card(clipBehavior: Clip.antiAlias, child: cardContent);
+  }
+
+  List<ProtocolTable> _linkedTablesForStep(ProtocolStep step) {
+    final linkedTables = <ProtocolTable>[];
+    for (final id in step.tableIds) {
+      for (final table in protocol.tables) {
+        if (table.id == id) {
+          linkedTables.add(table);
+          break;
+        }
+      }
+    }
+    return linkedTables;
   }
 }
 

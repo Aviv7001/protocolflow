@@ -69,8 +69,8 @@ class TableSelectionScreen extends StatelessWidget {
                   ),
                   _buildTypeCard(
                     context,
-                    'Reagent Mix',
-                    'Dilution Manager',
+                    'C1V1 = C2V2',
+                    'Reagent Dilution',
                     Icons.science,
                     Colors.teal,
                     onTap: () => _openReagentMix(context),

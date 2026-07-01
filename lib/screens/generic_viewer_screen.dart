@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../widgets/generic_result_table.dart';
 import '../models/protocol_table.dart';
+import '../widgets/save_table_action.dart';
 import 'table_data_editor_screen.dart';
 
 class GenericViewerScreen extends StatefulWidget {
@@ -55,6 +56,7 @@ class _GenericViewerScreenState extends State<GenericViewerScreen> {
       appBar: AppBar(
         title: Text(_table.title.isEmpty ? 'Table Viewer' : _table.title),
         actions: [
+          SaveTableAction(table: _table),
           if (!widget.isReadOnly)
             IconButton(
               icon: const Icon(Icons.edit),
@@ -65,9 +67,7 @@ class _GenericViewerScreenState extends State<GenericViewerScreen> {
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
-        child: GenericResultTable(
-          table: _table,
-        ),
+        child: GenericResultTable(table: _table),
       ),
     );
   }

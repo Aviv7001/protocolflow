@@ -60,6 +60,7 @@ class SerialDilutionResultTable extends StatelessWidget {
                   DataColumn(label: _HeaderCell('Transfer')),
                   DataColumn(label: _HeaderCell('Solvent')),
                   DataColumn(label: _HeaderCell('Final')),
+                  DataColumn(label: _HeaderCell('Suggestion')),
                 ],
                 rows: result.rows
                     .map(
@@ -110,6 +111,17 @@ class SerialDilutionResultTable extends StatelessWidget {
                               style: const TextStyle(fontSize: 10),
                             ),
                           ),
+                          DataCell(
+                            Text(
+                              row.suggestions.isEmpty
+                                  ? ''
+                                  : row.suggestions.first.message,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                color: AppColors.info,
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     )
@@ -131,9 +143,15 @@ class SerialDilutionResultTable extends StatelessWidget {
               ),
             ],
           ),
-          if (result.warnings.isNotEmpty) ...[
+          if (result.warnings.isNotEmpty ||
+              result.rows.any((row) => row.suggestions.isNotEmpty)) ...[
             const SizedBox(height: 16),
             ...result.warnings.map((w) => _warningItem(w)),
+            ...result.rows.expand(
+              (row) => row.suggestions.map(
+                (s) => _suggestionItem('${row.dilutionName}: ${s.message}'),
+              ),
+            ),
           ],
         ],
       ),
@@ -151,6 +169,24 @@ class SerialDilutionResultTable extends StatelessWidget {
             child: Text(
               text,
               style: const TextStyle(fontSize: 11, color: AppColors.warning),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _suggestionItem(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        children: [
+          const Icon(Icons.tips_and_updates, size: 14, color: AppColors.info),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(fontSize: 11, color: AppColors.info),
             ),
           ),
         ],

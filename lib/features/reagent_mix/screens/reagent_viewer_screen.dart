@@ -3,6 +3,7 @@ import '../widgets/reagent_result_table.dart';
 import '../../../models/reagent_mix_wizard.dart';
 import '../../../screens/reagent_manager_screen.dart';
 import '../../../models/protocol_table.dart';
+import '../../../widgets/save_table_action.dart';
 
 class ReagentViewerScreen extends StatefulWidget {
   final ReagentMixWizard wizard;
@@ -54,8 +55,11 @@ class _ReagentViewerScreenState extends State<ReagentViewerScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(_wizard.title.isEmpty ? 'Reagent Mix' : _wizard.title),
+        title: Text(
+          _wizard.title.isEmpty ? 'C1V1 = C2V2 Dilution' : _wizard.title,
+        ),
         actions: [
+          SaveTableAction(table: _wizard.generateTable()),
           if (!widget.isReadOnly)
             IconButton(
               icon: const Icon(Icons.edit),
@@ -66,9 +70,7 @@ class _ReagentViewerScreenState extends State<ReagentViewerScreen> {
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
-        child: ReagentResultTable(
-          wizard: _wizard,
-        ),
+        child: ReagentResultTable(wizard: _wizard),
       ),
     );
   }

@@ -10,7 +10,10 @@ import '../models/master_mix_wizard.dart';
 import '../models/reagent_mix_wizard.dart';
 import '../features/master_mix/services/master_mix_calculator_service.dart';
 import '../features/reagent_mix/services/reagent_mix_calculator_service.dart';
+import '../theme/app_colors.dart';
 import '../widgets/protocol_table_widget.dart';
+import '../widgets/protocol_table_preview.dart';
+import '../widgets/protocol_step_notes_table.dart';
 import '../services/auth_service.dart';
 import '../services/drive_sync_service.dart';
 import '../services/picked_image_store.dart';
@@ -504,9 +507,13 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
               extraVolumePercent: wizard.extraVolumePercent,
               molecularWeight: r.molecularWeight,
             );
-            final result = service.calculateMix(input);
+            final result =
+                r.preparationType == ReagentPreparationType.solidSuspension
+                ? service.calculateSuspension(input)
+                : service.calculateMix(input);
             if (result.success) {
-              if (r.name.isNotEmpty) {
+              if (r.name.isNotEmpty &&
+                  r.preparationType != ReagentPreparationType.solidSuspension) {
                 totalVolumesUl[r.name] =
                     (totalVolumesUl[r.name] ?? 0) + result.reagentVolumeUl;
                 stockConcentrations[r.name] =
@@ -599,6 +606,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
 
   Future<void> _saveProtocol({bool isTemplate = false}) async {
     FocusManager.instance.primaryFocus?.unfocus();
+    _syncAllActionsFromInstructions();
 
     if (_formKey.currentState!.validate()) {
       bool isUpdating =
@@ -1258,134 +1266,197 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
                 if (!isLocked) _buildStepActions(index, step),
               ],
             ),
-            TextFormField(
-              initialValue: step.instructions,
-              readOnly: isLocked,
-              decoration: const InputDecoration(
-                hintText: 'Instructions...',
-                border: InputBorder.none,
+            Focus(
+              onFocusChange: (hasFocus) {
+                if (!hasFocus && !isLocked) {
+                  _syncActionsFromInstructions(index);
+                }
+              },
+              child: TextFormField(
+                key: ValueKey('instructions_${step.id}_${step.instructions}'),
+                initialValue: step.instructions,
+                readOnly: isLocked,
+                decoration: const InputDecoration(
+                  hintText:
+                      'Instructions...\nStart action lines with - and protocol note lines with *.',
+                  border: InputBorder.none,
+                ),
+                maxLines: null,
+                style: TextStyle(
+                  fontSize: _uniformFontSize,
+                  color: isLocked ? Colors.grey : null,
+                ),
+                onChanged: (v) =>
+                    _steps[index] = _steps[index].copyWith(instructions: v),
               ),
-              maxLines: null,
+            ),
+            const Divider(),
+            Text(
+              'Actions',
               style: TextStyle(
+                fontWeight: FontWeight.bold,
                 fontSize: _uniformFontSize,
                 color: isLocked ? Colors.grey : null,
               ),
-              onChanged: (v) =>
-                  _steps[index] = _steps[index].copyWith(instructions: v),
             ),
-            const Divider(),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Actions',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: _uniformFontSize,
-                    color: isLocked ? Colors.grey : null,
-                  ),
+            const SizedBox(height: 4),
+            if (step.actionItems.isEmpty)
+              const Text(
+                'No actions yet. Start a description line with - and a space, then leave the field.',
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: _uniformFontSize - 2,
                 ),
-                if (!isLocked)
-                  IconButton(
-                    icon: const Icon(Icons.add, size: 18, color: Colors.green),
-                    onPressed: () {
-                      setState(() {
-                        final currentStep = _steps[index];
-                        final newActions = List<String>.from(
-                          currentStep.actionItems,
-                        )..add('');
-                        _steps[index] = currentStep.copyWith(
-                          actionItems: newActions,
-                        );
-                      });
-                    },
-                  ),
-              ],
-            ),
-            ...step.actionItems.asMap().entries.map((aEntry) {
-              final aIdx = aEntry.key;
-              final timer = step.actionTimers[aIdx] ?? 0;
+              )
+            else
+              ...step.actionItems.asMap().entries.map((aEntry) {
+                final actionIndex = aEntry.key;
+                final action = aEntry.value;
+                final timer = step.actionTimers[actionIndex] ?? 0;
 
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 8.0),
-                child: Row(
-                  children: [
-                    const Text(
-                      '• ',
-                      style: TextStyle(
-                        color: Colors.grey,
-                        fontSize: _uniformFontSize,
-                      ),
+                return Card(
+                  margin: const EdgeInsets.only(top: 8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 6,
                     ),
-                    Expanded(
-                      flex: 4,
-                      child: TextFormField(
-                        initialValue: step.actionItems[aIdx],
-                        readOnly: isLocked,
-                        decoration: const InputDecoration(
-                          hintText: 'Action',
-                          isDense: true,
-                          border: InputBorder.none,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        CircleAvatar(
+                          radius: 11,
+                          child: Text(
+                            '${actionIndex + 1}',
+                            style: const TextStyle(fontSize: 11),
+                          ),
                         ),
-                        style: TextStyle(
-                          fontSize: _uniformFontSize,
-                          color: isLocked ? Colors.grey : null,
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            action,
+                            style: TextStyle(
+                              fontSize: _uniformFontSize,
+                              color: isLocked ? Colors.grey : null,
+                            ),
+                          ),
                         ),
-                        onChanged: (v) {
-                          final newActions = List<String>.from(
-                            _steps[index].actionItems,
-                          );
-                          newActions[aIdx] = v;
-                          _steps[index] = _steps[index].copyWith(
-                            actionItems: newActions,
-                          );
-                        },
-                      ),
-                    ),
-                    IgnorePointer(
-                      ignoring: isLocked,
-                      child: _ActionTimerInput(
-                        totalSeconds: timer,
-                        onChanged: (newTotal) =>
-                            _updateActionTimer(index, aIdx, newTotal),
-                      ),
-                    ),
-                    if (!isLocked)
-                      IconButton(
-                        icon: const Icon(
-                          Icons.remove_circle_outline,
-                          size: 18,
-                          color: Colors.red,
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            final newActions = List<String>.from(
-                              _steps[index].actionItems,
-                            )..removeAt(aIdx);
-                            final newTimers = Map<int, int>.from(
-                              _steps[index].actionTimers,
-                            )..remove(aIdx);
-                            // Re-index timers
-                            final Map<int, int> fixedTimers = {};
-                            newTimers.forEach((k, v) {
-                              if (k < aIdx) {
-                                fixedTimers[k] = v;
+                        if (timer > 0)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 8),
+                            child: Chip(
+                              avatar: const Icon(
+                                Icons.timer_outlined,
+                                size: 16,
+                              ),
+                              label: Text(_formatTimer(timer)),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          ),
+                        if (!isLocked)
+                          PopupMenuButton<String>(
+                            tooltip: 'Action options',
+                            icon: const Icon(Icons.more_vert),
+                            onSelected: (value) {
+                              switch (value) {
+                                case 'timer':
+                                  _showActionTimerDialog(
+                                    index,
+                                    actionIndex,
+                                    timer,
+                                  );
+                                  break;
+                                case 'moveUp':
+                                  _moveAction(index, actionIndex, -1);
+                                  break;
+                                case 'moveDown':
+                                  _moveAction(index, actionIndex, 1);
+                                  break;
+                                case 'delete':
+                                  _deleteAction(index, actionIndex);
+                                  break;
                               }
-                              if (k > aIdx) {
-                                fixedTimers[k - 1] = v;
-                              }
-                            });
-                            _steps[index] = _steps[index].copyWith(
-                              actionItems: newActions,
-                              actionTimers: fixedTimers,
-                            );
-                          });
-                        },
-                      ),
-                  ],
+                            },
+                            itemBuilder: (context) => [
+                              PopupMenuItem(
+                                value: 'timer',
+                                child: ListTile(
+                                  leading: Icon(
+                                    timer > 0
+                                        ? Icons.timer_outlined
+                                        : Icons.timer_off_outlined,
+                                  ),
+                                  title: Text(
+                                    timer > 0 ? 'Edit Timer' : 'Set Timer',
+                                  ),
+                                  contentPadding: EdgeInsets.zero,
+                                ),
+                              ),
+                              PopupMenuItem(
+                                value: 'moveUp',
+                                enabled: actionIndex > 0,
+                                child: const ListTile(
+                                  leading: Icon(Icons.keyboard_arrow_up),
+                                  title: Text('Move Up'),
+                                  contentPadding: EdgeInsets.zero,
+                                ),
+                              ),
+                              PopupMenuItem(
+                                value: 'moveDown',
+                                enabled:
+                                    actionIndex < step.actionItems.length - 1,
+                                child: const ListTile(
+                                  leading: Icon(Icons.keyboard_arrow_down),
+                                  title: Text('Move Down'),
+                                  contentPadding: EdgeInsets.zero,
+                                ),
+                              ),
+                              const PopupMenuDivider(),
+                              const PopupMenuItem(
+                                value: 'delete',
+                                child: ListTile(
+                                  leading: Icon(
+                                    Icons.delete_outline,
+                                    color: AppColors.error,
+                                  ),
+                                  title: Text('Delete Action'),
+                                  contentPadding: EdgeInsets.zero,
+                                ),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+            const SizedBox(height: 8),
+            Text(
+              'Protocol Step Notes',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: _uniformFontSize,
+                color: isLocked ? Colors.grey : null,
+              ),
+            ),
+            const SizedBox(height: 4),
+            if (step.notes.isEmpty)
+              const Text(
+                'No protocol notes yet. Start a description line with * and a space, then leave the field.',
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: _uniformFontSize - 2,
                 ),
-              );
-            }),
+              )
+            else
+              ProtocolStepNotesTable(
+                notes: step.notes,
+                isLocked: isLocked,
+                onMove: (noteIndex, direction) =>
+                    _moveProtocolStepNote(index, noteIndex, direction),
+                onDelete: (noteIndex) =>
+                    _deleteProtocolStepNote(index, noteIndex),
+              ),
             if (_tables.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text(
@@ -1396,51 +1467,77 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
                   color: isLocked ? Colors.grey : null,
                 ),
               ),
+              const SizedBox(height: 8),
+              if (step.tableIds.isEmpty)
+                const Text(
+                  'No tables linked to this step.',
+                  style: TextStyle(
+                    fontSize: _uniformFontSize - 2,
+                    color: AppColors.textSecondary,
+                  ),
+                )
+              else
+                LinkedProtocolTablesSection(
+                  tables: _linkedTablesForStep(step),
+                  isReadOnly: isLocked,
+                  onSave: isLocked
+                      ? null
+                      : (updated) {
+                          setState(() {
+                            final idx = _tables.indexWhere(
+                              (t) => t.id == updated.id,
+                            );
+                            if (idx != -1) _tables[idx] = updated;
+                          });
+                        },
+                  showOrderControls: !isLocked,
+                  onMoveUp: (tableIndex) =>
+                      _moveLinkedTable(index, tableIndex, -1),
+                  onMoveDown: (tableIndex) =>
+                      _moveLinkedTable(index, tableIndex, 1),
+                  onUnlink: isLocked
+                      ? null
+                      : (table) => _unlinkTableFromStep(index, table.id),
+                ),
+              const SizedBox(height: 8),
               Wrap(
                 spacing: 4,
                 runSpacing: 4,
-                children: _tables.map((t) {
-                  final isSelected = step.tableIds.contains(t.id);
-                  final tableColor = _tableColor(t);
-                  return FilterChip(
-                    label: Text(
-                      t.title.isEmpty ? 'Untitled Table' : t.title,
-                      style: TextStyle(
-                        fontSize: _uniformFontSize - 2,
-                        color: isSelected ? tableColor.shadeTextColor() : null,
-                      ),
-                    ),
-                    avatar: Icon(
-                      _tableTypeIcon(t.type),
-                      size: 16,
-                      color: isSelected
-                          ? tableColor.shadeTextColor()
-                          : tableColor,
-                    ),
-                    selected: isSelected,
-                    selectedColor: tableColor.withValues(alpha: 0.16),
-                    checkmarkColor: tableColor,
-                    side: BorderSide(color: tableColor.withValues(alpha: 0.5)),
-                    onSelected: isLocked
-                        ? null
-                        : (val) {
-                            setState(() {
-                              final currentStep = _steps[index];
-                              final newTableIds = List<String>.from(
-                                currentStep.tableIds,
-                              );
-                              if (val) {
-                                newTableIds.add(t.id);
-                              } else {
-                                newTableIds.remove(t.id);
-                              }
-                              _steps[index] = currentStep.copyWith(
-                                tableIds: newTableIds,
-                              );
-                            });
-                          },
-                  );
-                }).toList(),
+                children: _tables
+                    .where((t) => !step.tableIds.contains(t.id))
+                    .map((t) {
+                      final tableColor = _tableColor(t);
+                      return ActionChip(
+                        avatar: Icon(
+                          _tableTypeIcon(t.type),
+                          size: 16,
+                          color: tableColor,
+                        ),
+                        label: Text(
+                          t.title.isEmpty ? 'Untitled Table' : t.title,
+                          style: const TextStyle(
+                            fontSize: _uniformFontSize - 2,
+                          ),
+                        ),
+                        side: BorderSide(
+                          color: tableColor.withValues(alpha: 0.5),
+                        ),
+                        onPressed: isLocked
+                            ? null
+                            : () {
+                                setState(() {
+                                  final currentStep = _steps[index];
+                                  final newTableIds = List<String>.from(
+                                    currentStep.tableIds,
+                                  )..add(t.id);
+                                  _steps[index] = currentStep.copyWith(
+                                    tableIds: newTableIds,
+                                  );
+                                });
+                              },
+                      );
+                    })
+                    .toList(),
               ),
             ],
           ],
@@ -1551,6 +1648,270 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
     }
   }
 
+  void _syncAllActionsFromInstructions() {
+    for (var i = 0; i < _steps.length; i++) {
+      if (widget.lockedStepIds?.contains(_steps[i].id) ?? false) continue;
+      _syncActionsFromInstructions(i, rebuild: false);
+    }
+  }
+
+  void _syncActionsFromInstructions(int stepIndex, {bool rebuild = true}) {
+    final step = _steps[stepIndex];
+    final parsed = _extractActionsAndNotesFromInstructions(step.instructions);
+    if (parsed.actions.isEmpty &&
+        parsed.notes.isEmpty &&
+        parsed.instructions == step.instructions.trim()) {
+      return;
+    }
+
+    final newActions = [...step.actionItems, ...parsed.actions];
+    final newNotes = [...step.notes, ...parsed.notes];
+    final parsedTimers = _preserveTimers(
+      oldActions: step.actionItems,
+      oldTimers: step.actionTimers,
+      newActions: newActions,
+    );
+
+    if (_listEquals(step.actionItems, newActions) &&
+        _listEquals(step.notes, newNotes) &&
+        step.instructions == parsed.instructions &&
+        _mapEquals(step.actionTimers, parsedTimers)) {
+      return;
+    }
+
+    void update() {
+      _steps[stepIndex] = step.copyWith(
+        instructions: parsed.instructions,
+        actionItems: newActions,
+        actionTimers: parsedTimers,
+        notes: newNotes,
+      );
+    }
+
+    if (rebuild) {
+      setState(update);
+    } else {
+      update();
+    }
+  }
+
+  ({List<String> actions, List<String> notes, String instructions})
+  _extractActionsAndNotesFromInstructions(String instructions) {
+    final actions = <String>[];
+    final notes = <String>[];
+    final current = <String>[];
+    final keptInstructionLines = <String>[];
+    _StepIntakeKind currentKind = _StepIntakeKind.none;
+
+    void flushCurrent() {
+      final text = current.join('\n').trim();
+      if (text.isNotEmpty) {
+        switch (currentKind) {
+          case _StepIntakeKind.action:
+            actions.add(text);
+            break;
+          case _StepIntakeKind.note:
+            notes.add(text);
+            break;
+          case _StepIntakeKind.none:
+            break;
+        }
+      }
+      current.clear();
+    }
+
+    for (final line in instructions.split(RegExp(r'\r?\n'))) {
+      final trimmedLeft = line.trimLeft();
+      if (RegExp(r'^-\s+').hasMatch(trimmedLeft)) {
+        flushCurrent();
+        currentKind = _StepIntakeKind.action;
+        current.add(trimmedLeft.substring(1).trim());
+      } else if (RegExp(r'^\*\s+').hasMatch(trimmedLeft)) {
+        flushCurrent();
+        currentKind = _StepIntakeKind.note;
+        current.add(trimmedLeft.substring(1).trim());
+      } else if (RegExp(r'^[-*]\S').hasMatch(trimmedLeft)) {
+        flushCurrent();
+        currentKind = _StepIntakeKind.none;
+        keptInstructionLines.add(line);
+      } else if (currentKind != _StepIntakeKind.none) {
+        current.add(line.trim());
+      } else {
+        keptInstructionLines.add(line);
+      }
+    }
+    flushCurrent();
+
+    return (
+      actions: actions,
+      notes: notes,
+      instructions: keptInstructionLines.join('\n').trim(),
+    );
+  }
+
+  Map<int, int> _preserveTimers({
+    required List<String> oldActions,
+    required Map<int, int> oldTimers,
+    required List<String> newActions,
+  }) {
+    final timers = <int, int>{};
+    final usedOldIndexes = <int>{};
+
+    for (var newIndex = 0; newIndex < newActions.length; newIndex++) {
+      for (var oldIndex = 0; oldIndex < oldActions.length; oldIndex++) {
+        if (usedOldIndexes.contains(oldIndex)) continue;
+        if (oldActions[oldIndex] != newActions[newIndex]) continue;
+
+        final timer = oldTimers[oldIndex];
+        if (timer != null && timer > 0) timers[newIndex] = timer;
+        usedOldIndexes.add(oldIndex);
+        break;
+      }
+    }
+
+    return timers;
+  }
+
+  bool _listEquals(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  bool _mapEquals(Map<int, int> a, Map<int, int> b) {
+    if (a.length != b.length) return false;
+    for (final entry in a.entries) {
+      if (b[entry.key] != entry.value) return false;
+    }
+    return true;
+  }
+
+  void _moveAction(int stepIndex, int actionIndex, int delta) {
+    final newIndex = actionIndex + delta;
+    final step = _steps[stepIndex];
+    if (newIndex < 0 || newIndex >= step.actionItems.length) return;
+
+    setState(() {
+      final actions = List<String>.from(step.actionItems);
+      final action = actions.removeAt(actionIndex);
+      actions.insert(newIndex, action);
+
+      final timers = Map<int, int>.from(step.actionTimers);
+      final movedTimer = timers.remove(actionIndex);
+      final swappedTimer = timers.remove(newIndex);
+      if (movedTimer != null) timers[newIndex] = movedTimer;
+      if (swappedTimer != null) timers[actionIndex] = swappedTimer;
+
+      _steps[stepIndex] = step.copyWith(
+        actionItems: actions,
+        actionTimers: timers,
+      );
+    });
+  }
+
+  void _deleteAction(int stepIndex, int actionIndex) {
+    final step = _steps[stepIndex];
+    setState(() {
+      final actions = List<String>.from(step.actionItems)
+        ..removeAt(actionIndex);
+      final oldTimers = Map<int, int>.from(step.actionTimers)
+        ..remove(actionIndex);
+      final timers = <int, int>{};
+      for (final entry in oldTimers.entries) {
+        timers[entry.key > actionIndex ? entry.key - 1 : entry.key] =
+            entry.value;
+      }
+
+      _steps[stepIndex] = step.copyWith(
+        actionItems: actions,
+        actionTimers: timers,
+      );
+    });
+  }
+
+  void _moveProtocolStepNote(int stepIndex, int noteIndex, int delta) {
+    final newIndex = noteIndex + delta;
+    final step = _steps[stepIndex];
+    if (newIndex < 0 || newIndex >= step.notes.length) return;
+
+    setState(() {
+      final notes = List<String>.from(step.notes);
+      final note = notes.removeAt(noteIndex);
+      notes.insert(newIndex, note);
+      _steps[stepIndex] = step.copyWith(notes: notes);
+    });
+  }
+
+  void _deleteProtocolStepNote(int stepIndex, int noteIndex) {
+    final step = _steps[stepIndex];
+    setState(() {
+      final notes = List<String>.from(step.notes)..removeAt(noteIndex);
+      _steps[stepIndex] = step.copyWith(notes: notes);
+    });
+  }
+
+  Future<void> _showActionTimerDialog(
+    int stepIndex,
+    int actionIndex,
+    int initialTimer,
+  ) async {
+    var selectedTimer = initialTimer;
+    final result = await showDialog<int>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Set Action Timer'),
+        content: StatefulBuilder(
+          builder: (context, setDialogState) {
+            return _ActionTimerInput(
+              totalSeconds: selectedTimer,
+              onChanged: (newTotal) =>
+                  setDialogState(() => selectedTimer = newTotal),
+            );
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, 0),
+            child: const Text('Clear'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, selectedTimer),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == null) return;
+    _updateActionTimer(stepIndex, actionIndex, result);
+  }
+
+  String _formatTimer(int totalSeconds) {
+    if (totalSeconds >= 3600) {
+      final hours = totalSeconds / 3600;
+      return '${_formatTimerNumber(hours)} h';
+    }
+    if (totalSeconds >= 60) {
+      final minutes = totalSeconds / 60;
+      return '${_formatTimerNumber(minutes)} min';
+    }
+    return '$totalSeconds sec';
+  }
+
+  String _formatTimerNumber(double value) {
+    if (value == value.roundToDouble()) return value.toInt().toString();
+    return value
+        .toStringAsFixed(2)
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
+  }
+
   void _updateActionTimer(int stepIdx, int actionIdx, int totalSeconds) {
     setState(() {
       final step = _steps[stepIdx];
@@ -1563,7 +1924,42 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
       _steps[stepIdx] = step.copyWith(actionTimers: newTimers);
     });
   }
+
+  List<ProtocolTable> _linkedTablesForStep(ProtocolStep step) {
+    final linkedTables = <ProtocolTable>[];
+    for (final id in step.tableIds) {
+      for (final table in _tables) {
+        if (table.id == id) {
+          linkedTables.add(table);
+          break;
+        }
+      }
+    }
+    return linkedTables;
+  }
+
+  void _moveLinkedTable(int stepIndex, int tableIndex, int delta) {
+    final newIndex = tableIndex + delta;
+    final ids = List<String>.from(_steps[stepIndex].tableIds);
+    if (newIndex < 0 || newIndex >= ids.length) return;
+
+    setState(() {
+      final id = ids.removeAt(tableIndex);
+      ids.insert(newIndex, id);
+      _steps[stepIndex] = _steps[stepIndex].copyWith(tableIds: ids);
+    });
+  }
+
+  void _unlinkTableFromStep(int stepIndex, String tableId) {
+    setState(() {
+      final ids = List<String>.from(_steps[stepIndex].tableIds)
+        ..remove(tableId);
+      _steps[stepIndex] = _steps[stepIndex].copyWith(tableIds: ids);
+    });
+  }
 }
+
+enum _StepIntakeKind { none, action, note }
 
 class _ActionTimerInput extends StatefulWidget {
   final int totalSeconds;
@@ -1792,11 +2188,5 @@ class _MaterialCellState extends State<_MaterialCell> {
       style: const TextStyle(fontSize: 12),
       onChanged: widget.onChanged,
     );
-  }
-}
-
-extension _ReadableTableColor on Color {
-  Color shadeTextColor() {
-    return computeLuminance() > 0.45 ? Colors.black87 : Colors.white;
   }
 }

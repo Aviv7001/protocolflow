@@ -177,6 +177,7 @@ class SerialDilutionInput {
       'Transfer Volume',
       'Solvent Volume',
       'Final Volume',
+      'Suggestion',
     ];
 
     final data = result.success
@@ -189,6 +190,7 @@ class SerialDilutionInput {
                   row.formattedTransferVolume,
                   row.formattedSolventVolume,
                   row.formattedFinalVolume,
+                  row.suggestions.isEmpty ? '' : row.suggestions.first.message,
                 ],
               )
               .toList()
@@ -196,6 +198,7 @@ class SerialDilutionInput {
             [
               'Error',
               result.errorMessage ?? 'Calculation failed',
+              '',
               '',
               '',
               '',

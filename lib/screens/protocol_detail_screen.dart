@@ -14,6 +14,8 @@ import '../services/docx_export_service.dart';
 import '../services/pdf_service.dart';
 import '../services/export_service.dart';
 import '../theme/app_colors.dart';
+import '../widgets/protocol_step_notes_table.dart';
+import '../widgets/protocol_table_preview.dart';
 import 'run_protocol_screen.dart';
 import 'create_protocol_screen.dart';
 
@@ -703,26 +705,31 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
                 );
               }),
             ],
+            if (step.notes.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              ProtocolStepNotesTable(notes: step.notes),
+            ],
             if (step.tableIds.isNotEmpty) ...[
               const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: step.tableIds.map((id) {
-                  final table = protocol.tables.firstWhere(
-                    (t) => t.id == id,
-                    orElse: () =>
-                        ProtocolTable(id: 'err', title: 'Table Not Found'),
-                  );
-                  if (table.id == 'err') return const SizedBox.shrink();
-                  return ProtocolTableWidget(table: table);
-                }).toList(),
-              ),
+              LinkedProtocolTablesSection(tables: _linkedTablesForStep(step)),
             ],
           ],
         ),
       ),
     );
+  }
+
+  List<ProtocolTable> _linkedTablesForStep(ProtocolStep step) {
+    final linkedTables = <ProtocolTable>[];
+    for (final id in step.tableIds) {
+      for (final table in protocol.tables) {
+        if (table.id == id) {
+          linkedTables.add(table);
+          break;
+        }
+      }
+    }
+    return linkedTables;
   }
 
   Widget _buildSection(BuildContext context, String title, String content) {

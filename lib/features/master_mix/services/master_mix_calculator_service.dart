@@ -46,6 +46,7 @@ class MasterMixReagentResult {
   final String formattedStockConcentration;
   final String formattedFinalConcentration;
   final List<String> warnings;
+  final List<IntermediateDilutionSuggestion> suggestions;
   final double? reagentMassGrams;
 
   MasterMixReagentResult({
@@ -55,6 +56,7 @@ class MasterMixReagentResult {
     required this.formattedStockConcentration,
     required this.formattedFinalConcentration,
     this.warnings = const [],
+    this.suggestions = const [],
     this.reagentMassGrams,
   });
 }
@@ -270,6 +272,25 @@ class MasterMixCalculatorService {
         );
       }
 
+      final reagentSuggestions = <IntermediateDilutionSuggestion>[];
+      if (massGrams == null &&
+          LabCalculation.isBelowPracticalTransferFraction(
+            transferUl: volumeUl,
+            totalUl: bestTotalUl,
+          )) {
+        reagentWarnings.add(
+          LabCalculation.practicalTransferWarning(
+            transferUl: volumeUl,
+            totalUl: bestTotalUl,
+          ),
+        );
+        final suggestion = _intermediateSuggestionForReagent(
+          param.input,
+          bestTotalUl,
+        );
+        if (suggestion != null) reagentSuggestions.add(suggestion);
+      }
+
       reagentResults.add(
         MasterMixReagentResult(
           reagentName: param.input.reagentName,
@@ -281,6 +302,7 @@ class MasterMixCalculatorService {
           formattedFinalConcentration:
               '${param.input.finalConcentration} ${_unitLabel(param.input.finalConcentrationUnit)}',
           warnings: reagentWarnings,
+          suggestions: reagentSuggestions,
         ),
       );
     }
@@ -371,6 +393,64 @@ class MasterMixCalculatorService {
               mw;
 
     return finalMolar / stockMolar;
+  }
+
+  IntermediateDilutionSuggestion? _intermediateSuggestionForReagent(
+    MasterMixReagentInput reagent,
+    double totalVolumeUl,
+  ) {
+    final stockFamily = LabCalculation.familyOf(reagent.stockConcentrationUnit);
+    final finalFamily = LabCalculation.familyOf(reagent.finalConcentrationUnit);
+    final mw = reagent.molecularWeight;
+    final isMolarMassPair =
+        (stockFamily == ConcentrationFamily.molar &&
+            finalFamily == ConcentrationFamily.massVolume) ||
+        (stockFamily == ConcentrationFamily.massVolume &&
+            finalFamily == ConcentrationFamily.molar);
+
+    double stockBase;
+    double finalBase;
+    if (isMolarMassPair) {
+      if (mw == null || mw <= 0) return null;
+      stockBase = stockFamily == ConcentrationFamily.molar
+          ? LabCalculation.concentrationToBase(
+              reagent.stockConcentration,
+              reagent.stockConcentrationUnit,
+            )
+          : LabCalculation.concentrationToBase(
+                  reagent.stockConcentration,
+                  reagent.stockConcentrationUnit,
+                ) /
+                mw;
+      finalBase = finalFamily == ConcentrationFamily.molar
+          ? LabCalculation.concentrationToBase(
+              reagent.finalConcentration,
+              reagent.finalConcentrationUnit,
+            )
+          : LabCalculation.concentrationToBase(
+                  reagent.finalConcentration,
+                  reagent.finalConcentrationUnit,
+                ) /
+                mw;
+    } else {
+      stockBase = LabCalculation.concentrationToBase(
+        reagent.stockConcentration,
+        reagent.stockConcentrationUnit,
+        molecularWeight: mw,
+      );
+      finalBase = LabCalculation.concentrationToBase(
+        reagent.finalConcentration,
+        reagent.finalConcentrationUnit,
+        molecularWeight: mw,
+      );
+    }
+
+    return LabCalculation.intermediateDilutionSuggestion(
+      stockConcentrationBase: stockBase,
+      targetConcentrationBase: finalBase,
+      targetDisplayUnit: reagent.finalConcentrationUnit,
+      totalVolumeUl: totalVolumeUl,
+    );
   }
 
   double? _calculateMassGrams(

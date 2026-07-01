@@ -239,6 +239,12 @@ class DocxExportService {
             : ' (${_formatDuration(timer)})';
         body.write(_bullet('$action$suffix'));
       }
+      if (step.notes.isNotEmpty) {
+        body.write(_paragraph('Protocol Step Notes:'));
+        for (final note in step.notes) {
+          body.write(_bullet(note));
+        }
+      }
       for (final tableId in step.tableIds) {
         final table = protocol.tables.cast<ProtocolTable?>().firstWhere(
           (candidate) => candidate?.id == tableId,

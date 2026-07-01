@@ -4,6 +4,7 @@ import '../services/master_mix_calculator_service.dart';
 import '../../../models/master_mix_wizard.dart';
 import 'master_mix_manager_screen.dart';
 import '../../../models/protocol_table.dart';
+import '../../../widgets/save_table_action.dart';
 
 class MasterMixViewerScreen extends StatefulWidget {
   final MasterMixWizard wizard;
@@ -58,6 +59,7 @@ class _MasterMixViewerScreenState extends State<MasterMixViewerScreen> {
       appBar: AppBar(
         title: Text(_wizard.mixName),
         actions: [
+          SaveTableAction(table: _wizard.generateTable()),
           if (!widget.isReadOnly)
             IconButton(
               icon: const Icon(Icons.edit),
@@ -68,10 +70,7 @@ class _MasterMixViewerScreenState extends State<MasterMixViewerScreen> {
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
-        child: MasterMixResultTable(
-          wizard: _wizard,
-          calculator: _calculator,
-        ),
+        child: MasterMixResultTable(wizard: _wizard, calculator: _calculator),
       ),
     );
   }

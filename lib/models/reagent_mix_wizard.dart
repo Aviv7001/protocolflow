@@ -1,6 +1,9 @@
 import 'dart:convert';
 import 'protocol_table.dart';
+import '../features/lab_math/lab_calculation.dart';
 import '../features/reagent_mix/services/reagent_mix_calculator_service.dart';
+
+enum ReagentPreparationType { stockDilution, solidSuspension }
 
 class ReagentMixWizard {
   final String title;
@@ -8,7 +11,7 @@ class ReagentMixWizard {
   final double extraVolumePercent;
 
   ReagentMixWizard({
-    this.title = 'Reagent Mix',
+    this.title = 'C1V1 = C2V2 Dilution',
     this.reagents = const [],
     this.extraVolumePercent = 10,
   });
@@ -24,7 +27,7 @@ class ReagentMixWizard {
   factory ReagentMixWizard.fromJson(Map<String, dynamic> json) {
     final legacyOverfillFactor = (json['overfillFactor'] as num?)?.toDouble();
     return ReagentMixWizard(
-      title: json['title'] ?? 'Reagent Mix',
+      title: json['title'] ?? 'C1V1 = C2V2 Dilution',
       reagents: (json['reagents'] as List? ?? [])
           .map<ReagentItem>((r) => ReagentItem.fromJson(r))
           .toList(),
@@ -50,6 +53,7 @@ class ReagentMixWizard {
 
   ProtocolTable generateTable() {
     final List<String> headers = [
+      'Preparation',
       'Reagent',
       'Solvent',
       'C1',
@@ -59,6 +63,7 @@ class ReagentMixWizard {
       'V2 (Total)',
       'V1 (from Stock)',
       'Solvent Vol.',
+      'Suggestion',
     ];
 
     final service = ReagentMixCalculatorService();
@@ -77,10 +82,13 @@ class ReagentMixWizard {
         molecularWeight: r.molecularWeight,
       );
 
-      final result = service.calculateMix(input);
+      final result = r.preparationType == ReagentPreparationType.solidSuspension
+          ? service.calculateSuspension(input)
+          : service.calculateMix(input);
 
       if (!result.success) {
         return [
+          r.preparationType.label,
           r.name,
           r.solvent,
           'ERR',
@@ -90,6 +98,7 @@ class ReagentMixWizard {
           'ERROR',
           result.errorMessage ?? 'Calc failed',
           '',
+          '',
         ];
       }
 
@@ -97,20 +106,23 @@ class ReagentMixWizard {
         if (unit == ConcentrationUnit.ratio) {
           return '1:${val.toStringAsFixed(val == val.toInt() ? 0 : 1)}';
         }
-        if (unit == ConcentrationUnit.gMol) return '$val g/mol';
-        return '$val ${unit.name}';
+        return '$val ${LabCalculation.unitLabel(unit)}';
       }
 
       return [
+        r.preparationType.label,
         r.name,
         r.solvent,
-        formatConc(r.stockConc, r.stockUnit),
+        r.preparationType == ReagentPreparationType.solidSuspension
+            ? '-'
+            : formatConc(r.stockConc, r.stockUnit),
         formatConc(r.workingConc, r.workingUnit),
         '${r.volPerSample} ${r.volUnit.name}',
         r.numSamples.toString(),
         result.formattedTotalVolume,
         result.formattedReagentVolume,
         result.formattedSolventVolume,
+        result.suggestions.isEmpty ? '' : result.suggestions.first.message,
       ];
     }).toList();
 
@@ -131,6 +143,7 @@ class ReagentMixWizard {
 }
 
 class ReagentItem {
+  final ReagentPreparationType preparationType;
   final String name;
   final String solvent;
   final double stockConc;
@@ -143,6 +156,7 @@ class ReagentItem {
   final double? molecularWeight;
 
   ReagentItem({
+    this.preparationType = ReagentPreparationType.stockDilution,
     this.name = '',
     this.solvent = '',
     this.stockConc = 0,
@@ -158,6 +172,7 @@ class ReagentItem {
   Map<String, dynamic> toJson() {
     return {
       'name': name,
+      'preparationType': preparationType.name,
       'solvent': solvent,
       'stockConc': stockConc,
       'stockUnit': stockUnit.name,
@@ -172,6 +187,10 @@ class ReagentItem {
 
   factory ReagentItem.fromJson(Map<String, dynamic> json) {
     return ReagentItem(
+      preparationType: ReagentPreparationType.values.firstWhere(
+        (e) => e.name == json['preparationType'],
+        orElse: () => ReagentPreparationType.stockDilution,
+      ),
       name: json['name'] ?? '',
       solvent: json['solvent'] ?? '',
       stockConc: (json['stockConc'] ?? 0).toDouble(),
@@ -195,6 +214,7 @@ class ReagentItem {
   }
 
   ReagentItem copyWith({
+    ReagentPreparationType? preparationType,
     String? name,
     String? solvent,
     double? stockConc,
@@ -207,6 +227,7 @@ class ReagentItem {
     double? molecularWeight,
   }) {
     return ReagentItem(
+      preparationType: preparationType ?? this.preparationType,
       name: name ?? this.name,
       solvent: solvent ?? this.solvent,
       stockConc: stockConc ?? this.stockConc,
@@ -218,5 +239,16 @@ class ReagentItem {
       numSamples: numSamples ?? this.numSamples,
       molecularWeight: molecularWeight ?? this.molecularWeight,
     );
+  }
+}
+
+extension ReagentPreparationTypeLabel on ReagentPreparationType {
+  String get label {
+    switch (this) {
+      case ReagentPreparationType.stockDilution:
+        return 'Stock dilution';
+      case ReagentPreparationType.solidSuspension:
+        return 'Solid in solvent';
+    }
   }
 }

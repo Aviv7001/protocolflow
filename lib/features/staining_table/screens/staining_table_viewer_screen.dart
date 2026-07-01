@@ -4,6 +4,7 @@ import '../services/staining_table_generator_service.dart';
 import '../models/staining_wizard.dart';
 import 'staining_table_manager_screen.dart';
 import '../../../models/protocol_table.dart';
+import '../../../widgets/save_table_action.dart';
 
 class StainingTableViewerScreen extends StatefulWidget {
   final StainingWizard wizard;
@@ -18,12 +19,14 @@ class StainingTableViewerScreen extends StatefulWidget {
   });
 
   @override
-  State<StainingTableViewerScreen> createState() => _StainingTableViewerScreenState();
+  State<StainingTableViewerScreen> createState() =>
+      _StainingTableViewerScreenState();
 }
 
 class _StainingTableViewerScreenState extends State<StainingTableViewerScreen> {
   late StainingWizard _wizard;
-  final StainingTableGeneratorService _generator = StainingTableGeneratorService();
+  final StainingTableGeneratorService _generator =
+      StainingTableGeneratorService();
 
   @override
   void initState() {
@@ -58,6 +61,7 @@ class _StainingTableViewerScreenState extends State<StainingTableViewerScreen> {
       appBar: AppBar(
         title: Text(_wizard.title.isEmpty ? 'Staining Table' : _wizard.title),
         actions: [
+          SaveTableAction(table: _wizard.generateTable()),
           if (!widget.isReadOnly)
             IconButton(
               icon: const Icon(Icons.edit),
@@ -71,10 +75,7 @@ class _StainingTableViewerScreenState extends State<StainingTableViewerScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            StainingResultTable(
-              wizard: _wizard,
-              generator: _generator,
-            ),
+            StainingResultTable(wizard: _wizard, generator: _generator),
           ],
         ),
       ),

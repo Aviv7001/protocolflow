@@ -82,6 +82,7 @@ class MasterMixWizard {
       'Stock conc',
       'final conc',
       'final volume',
+      'Suggestion',
     ];
 
     final List<List<dynamic>> data = [];
@@ -93,18 +94,26 @@ class MasterMixWizard {
           r.formattedStockConcentration,
           r.formattedFinalConcentration,
           r.formattedReagentVolume,
+          r.suggestions.isEmpty ? '' : r.suggestions.first.message,
         ]);
       }
       // Add solvent row
-      data.add([baseSolventName, '-', '-', result.formattedBaseSolventVolume]);
+      data.add([
+        baseSolventName,
+        '-',
+        '-',
+        result.formattedBaseSolventVolume,
+        '',
+      ]);
       // Add total row
-      data.add(['Total', '-', '-', result.formattedOptimizedFinalVolume]);
+      data.add(['Total', '-', '-', result.formattedOptimizedFinalVolume, '']);
     } else {
       data.add([
         'Error',
         result.errorMessage ?? 'Calculation failed',
         '-',
         '-',
+        '',
       ]);
     }
 

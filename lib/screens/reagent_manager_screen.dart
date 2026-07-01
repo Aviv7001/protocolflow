@@ -81,7 +81,7 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
           'You have unsaved changes in this table. Are you sure you want to exit?',
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Reagent Manager'),
+          title: const Text('C1V1 = C2V2 Dilution'),
           actions: [
             IconButton(
               icon: const Icon(Icons.save),
@@ -180,7 +180,7 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
       children: [
         const Divider(height: 40),
         Text(
-          'Generated Reagent Table Preview',
+          'Generated Dilution Table Preview',
           style: Theme.of(context).textTheme.titleLarge,
         ),
         const SizedBox(height: 16),
@@ -191,20 +191,23 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
 
   Widget _buildReagentEditor(int index, ReagentItem item) {
     final calc = ReagentMixCalculatorService();
-    final result = calc.calculateMix(
-      ReagentMixInput(
-        reagentName: item.name,
-        stockConcentration: item.stockConc,
-        stockUnit: item.stockUnit,
-        workingConcentration: item.workingConc,
-        workingUnit: item.workingUnit,
-        volumePerTube: item.volPerSample,
-        volumePerTubeUnit: item.volUnit,
-        numberOfTubes: item.numSamples,
-        extraVolumePercent: _wizard.extraVolumePercent,
-        molecularWeight: item.molecularWeight,
-      ),
+    final input = ReagentMixInput(
+      reagentName: item.name,
+      stockConcentration: item.stockConc,
+      stockUnit: item.stockUnit,
+      workingConcentration: item.workingConc,
+      workingUnit: item.workingUnit,
+      volumePerTube: item.volPerSample,
+      volumePerTubeUnit: item.volUnit,
+      numberOfTubes: item.numSamples,
+      extraVolumePercent: _wizard.extraVolumePercent,
+      molecularWeight: item.molecularWeight,
     );
+    final isSuspension =
+        item.preparationType == ReagentPreparationType.solidSuspension;
+    final result = isSuspension
+        ? calc.calculateSuspension(input)
+        : calc.calculateMix(input);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -235,6 +238,24 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
               ],
             ),
             const SizedBox(height: 8),
+            DropdownButtonFormField<ReagentPreparationType>(
+              initialValue: item.preparationType,
+              decoration: const InputDecoration(
+                labelText: 'Preparation Type',
+                isDense: true,
+              ),
+              items: ReagentPreparationType.values
+                  .map(
+                    (type) =>
+                        DropdownMenuItem(value: type, child: Text(type.label)),
+                  )
+                  .toList(),
+              onChanged: (type) {
+                if (type == null) return;
+                _updateReagent(index, item.copyWith(preparationType: type));
+              },
+            ),
+            const SizedBox(height: 8),
             Row(
               children: [
                 Expanded(
@@ -249,16 +270,18 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
               ],
             ),
             const SizedBox(height: 12),
+            if (!isSuspension) ...[
+              _buildConcRow(
+                'C1 (Stock Conc.)',
+                item.stockConc,
+                item.stockUnit,
+                (val) => _updateReagent(index, item.copyWith(stockConc: val)),
+                (unit) => _updateReagent(index, item.copyWith(stockUnit: unit)),
+              ),
+              const SizedBox(height: 8),
+            ],
             _buildConcRow(
-              'C1 (Stock Conc.)',
-              item.stockConc,
-              item.stockUnit,
-              (val) => _updateReagent(index, item.copyWith(stockConc: val)),
-              (unit) => _updateReagent(index, item.copyWith(stockUnit: unit)),
-            ),
-            const SizedBox(height: 8),
-            _buildConcRow(
-              'C2 (Final Conc.)',
+              isSuspension ? 'Target Conc.' : 'C2 (Final Conc.)',
               item.workingConc,
               item.workingUnit,
               (val) => _updateReagent(index, item.copyWith(workingConc: val)),
@@ -270,8 +293,8 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
                 Expanded(
                   flex: 3,
                   child: _DelayedTextField(
-                    decoration: const InputDecoration(
-                      labelText: 'Vol. / Tube',
+                    decoration: InputDecoration(
+                      labelText: isSuspension ? 'Final Volume' : 'Vol. / Tube',
                       isDense: true,
                     ),
                     keyboardType: const TextInputType.numberWithOptions(
@@ -315,8 +338,8 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
                 Expanded(
                   flex: 2,
                   child: _DelayedTextField(
-                    decoration: const InputDecoration(
-                      labelText: '# Tubes',
+                    decoration: InputDecoration(
+                      labelText: isSuspension ? '# Preps' : '# Tubes',
                       isDense: true,
                     ),
                     keyboardType: TextInputType.number,
@@ -441,29 +464,14 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
         ),
         const SizedBox(width: 8),
         Expanded(
-          flex: 2,
-          child: DropdownButtonFormField<ConcentrationUnit>(
-            initialValue: unit,
-            decoration: const InputDecoration(labelText: 'Unit', isDense: true),
-            items: ConcentrationUnit.values
-                .map(
-                  (u) => DropdownMenuItem(
-                    value: u,
-                    child: Text(
-                      _unitLabel(u),
-                      style: const TextStyle(fontSize: _uniformFontSize),
-                    ),
-                  ),
-                )
-                .toList(),
-            onChanged: (v) => onUnit(v!),
-          ),
+          flex: 4,
+          child: _ConcentrationUnitPicker(unit: unit, onChanged: onUnit),
         ),
       ],
     );
   }
 
-  String _unitLabel(ConcentrationUnit unit) {
+  String unitLabel(ConcentrationUnit unit) {
     switch (unit) {
       case ConcentrationUnit.M:
         return 'M';
@@ -491,6 +499,14 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
         return 'X';
       case ConcentrationUnit.gMol:
         return 'g/mol';
+      case ConcentrationUnit.gUL:
+        return 'g/uL';
+      case ConcentrationUnit.mgUL:
+        return 'mg/uL';
+      case ConcentrationUnit.ugUL:
+        return 'ug/uL';
+      case ConcentrationUnit.ngUL:
+        return 'ng/uL';
     }
   }
 
@@ -511,6 +527,8 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
     }
 
     final bool isMass = result.reagentMassGrams != null;
+    final bool isSuspension =
+        item.preparationType == ReagentPreparationType.solidSuspension;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -519,48 +537,59 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             if (isMass)
-              _resItemEditableMass('V1 (Stock)', result.reagentMassGrams!, (
-                val,
-              ) {
-                // val is in grams. We don't adjust C1 (MW) or C2.
-                // If mass is adjusted, we adjust the total volume V2 to keep the same C2.
-                final bool isStockMW = item.stockUnit == ConcentrationUnit.gMol;
-                final double mw = isStockMW ? item.stockConc : item.workingConc;
-                final double targetConc = isStockMW
-                    ? item.workingConc
-                    : item.stockConc;
-                final ConcentrationUnit targetUnit = isStockMW
-                    ? item.workingUnit
-                    : item.stockUnit;
+              _resItemEditableMass(
+                isSuspension ? 'Solid' : 'V1 (Stock)',
+                result.reagentMassGrams!,
+                (val) {
+                  final targetConc = isSuspension
+                      ? item.workingConc
+                      : item.stockUnit == ConcentrationUnit.gMol
+                      ? item.workingConc
+                      : item.stockConc;
+                  final targetUnit = isSuspension
+                      ? item.workingUnit
+                      : item.stockUnit == ConcentrationUnit.gMol
+                      ? item.workingUnit
+                      : item.stockUnit;
+                  final mw = item.stockUnit == ConcentrationUnit.gMol
+                      ? item.stockConc
+                      : item.workingConc;
 
-                double newV2L = 0;
-                if (LabCalculation.familyOf(targetUnit) ==
-                    ConcentrationFamily.molar) {
-                  final double m = LabCalculation.concentrationToBase(
-                    targetConc,
-                    targetUnit,
-                  );
-                  newV2L = val / (mw * m);
-                } else if (targetUnit == ConcentrationUnit.gL ||
-                    targetUnit == ConcentrationUnit.mgML) {
-                  newV2L = val / targetConc;
-                } else if (targetUnit == ConcentrationUnit.ugML) {
-                  newV2L = val / (targetConc * 1e-3);
-                }
+                  double newV2L = 0;
+                  if (LabCalculation.familyOf(targetUnit) ==
+                      ConcentrationFamily.molar) {
+                    final double m = LabCalculation.concentrationToBase(
+                      targetConc,
+                      targetUnit,
+                    );
+                    newV2L = val / (mw * m);
+                  } else if (LabCalculation.familyOf(targetUnit) ==
+                      ConcentrationFamily.massVolume) {
+                    final gPerL = LabCalculation.concentrationToBase(
+                      targetConc,
+                      targetUnit,
+                    );
+                    newV2L = val / gPerL;
+                  } else if (LabCalculation.familyOf(targetUnit) ==
+                      ConcentrationFamily.percentage) {
+                    newV2L = val / (targetConc * 10);
+                  }
 
-                if (newV2L > 0) {
-                  final newV2uL = newV2L * 1e6;
-                  // Round to 1 decimal place to avoid floating point issues
-                  final newVolPerTube =
-                      (newV2uL / (item.numSamples * _extraFactor) * 10)
-                          .round() /
-                      10.0;
-                  _updateReagent(
-                    index,
-                    item.copyWith(volPerSample: newVolPerTube),
-                  );
-                }
-              }, Colors.blue)
+                  if (newV2L > 0) {
+                    final newV2uL = newV2L * 1e6;
+                    final divisor = isSuspension
+                        ? item.numSamples
+                        : item.numSamples * _extraFactor;
+                    final newVolPerTube =
+                        (newV2uL / divisor * 10).round() / 10.0;
+                    _updateReagent(
+                      index,
+                      item.copyWith(volPerSample: newVolPerTube),
+                    );
+                  }
+                },
+                Colors.blue,
+              )
             else
               _resItemEditable('V1 (Stock)', result.reagentVolumeUl, (val) {
                 if (result.reagentVolumeUl > 0) {
@@ -576,9 +605,16 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
                   );
                 }
               }, Colors.blue),
-            _resItem('Solvent', result.formattedSolventVolume, Colors.green),
+            _resItem(
+              isSuspension ? 'Solvent' : 'Solvent',
+              result.formattedSolventVolume,
+              Colors.green,
+            ),
             _resItemEditable('V2 (Total)', result.totalVolumeUl, (val) {
-              final newVolPerTube = val / (item.numSamples * _extraFactor);
+              final divisor = isSuspension
+                  ? item.numSamples
+                  : item.numSamples * _extraFactor;
+              final newVolPerTube = val / divisor;
               _updateReagent(index, item.copyWith(volPerSample: newVolPerTube));
             }, Colors.black),
           ],
@@ -599,6 +635,27 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
                     ),
                   )
                   .toList(),
+            ),
+          ),
+        if (result.suggestions.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 8.0),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.teal.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.teal.withValues(alpha: 0.35)),
+              ),
+              child: Text(
+                result.suggestions.first.message,
+                style: TextStyle(
+                  color: Colors.teal.shade900,
+                  fontSize: _uniformFontSize - 2,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
           ),
       ],
@@ -765,6 +822,156 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
 
   double get _extraFactor {
     return 1 + _wizard.extraVolumePercent.clamp(0, 100) / 100;
+  }
+}
+
+class _ConcentrationUnitPicker extends StatelessWidget {
+  final ConcentrationUnit unit;
+  final ValueChanged<ConcentrationUnit> onChanged;
+
+  const _ConcentrationUnitPicker({required this.unit, required this.onChanged});
+
+  static const List<String> _amounts = [
+    'M',
+    'mM',
+    'uM',
+    'nM',
+    'pM',
+    'g',
+    'mg',
+    'ug',
+    'ng',
+    '%',
+    'X',
+    'ratio',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final parts = _UnitParts.fromUnit(unit);
+    final denominators = _denominatorsFor(parts.amount);
+    final selectedDenominator = denominators.contains(parts.denominator)
+        ? parts.denominator
+        : denominators.first;
+
+    return Row(
+      children: [
+        Expanded(
+          child: DropdownButtonFormField<String>(
+            initialValue: parts.amount,
+            decoration: const InputDecoration(labelText: 'Unit', isDense: true),
+            items: _amounts
+                .map(
+                  (value) => DropdownMenuItem(value: value, child: Text(value)),
+                )
+                .toList(),
+            onChanged: (value) {
+              if (value == null) return;
+              final nextDenominator = _denominatorsFor(value).first;
+              onChanged(_UnitParts(value, nextDenominator).toUnit());
+            },
+          ),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: DropdownButtonFormField<String>(
+            initialValue: selectedDenominator,
+            decoration: const InputDecoration(labelText: 'Per', isDense: true),
+            items: denominators
+                .map(
+                  (value) => DropdownMenuItem(value: value, child: Text(value)),
+                )
+                .toList(),
+            onChanged: denominators.length == 1
+                ? null
+                : (value) {
+                    if (value == null) return;
+                    onChanged(_UnitParts(parts.amount, value).toUnit());
+                  },
+          ),
+        ),
+      ],
+    );
+  }
+
+  static List<String> _denominatorsFor(String amount) {
+    switch (amount) {
+      case 'g':
+        return const ['L', 'uL', 'mol'];
+      case 'mg':
+      case 'ug':
+      case 'ng':
+        return const ['mL', 'uL'];
+      default:
+        return const ['-'];
+    }
+  }
+}
+
+class _UnitParts {
+  final String amount;
+  final String denominator;
+
+  const _UnitParts(this.amount, this.denominator);
+
+  factory _UnitParts.fromUnit(ConcentrationUnit unit) {
+    switch (unit) {
+      case ConcentrationUnit.M:
+        return const _UnitParts('M', '-');
+      case ConcentrationUnit.mM:
+        return const _UnitParts('mM', '-');
+      case ConcentrationUnit.uM:
+        return const _UnitParts('uM', '-');
+      case ConcentrationUnit.nM:
+        return const _UnitParts('nM', '-');
+      case ConcentrationUnit.pM:
+        return const _UnitParts('pM', '-');
+      case ConcentrationUnit.gL:
+        return const _UnitParts('g', 'L');
+      case ConcentrationUnit.gUL:
+        return const _UnitParts('g', 'uL');
+      case ConcentrationUnit.mgML:
+        return const _UnitParts('mg', 'mL');
+      case ConcentrationUnit.mgUL:
+        return const _UnitParts('mg', 'uL');
+      case ConcentrationUnit.ugML:
+        return const _UnitParts('ug', 'mL');
+      case ConcentrationUnit.ugUL:
+        return const _UnitParts('ug', 'uL');
+      case ConcentrationUnit.ngML:
+        return const _UnitParts('ng', 'mL');
+      case ConcentrationUnit.ngUL:
+        return const _UnitParts('ng', 'uL');
+      case ConcentrationUnit.percent:
+        return const _UnitParts('%', '-');
+      case ConcentrationUnit.X:
+        return const _UnitParts('X', '-');
+      case ConcentrationUnit.ratio:
+        return const _UnitParts('ratio', '-');
+      case ConcentrationUnit.gMol:
+        return const _UnitParts('g', 'mol');
+    }
+  }
+
+  ConcentrationUnit toUnit() {
+    if (amount == 'M') return ConcentrationUnit.M;
+    if (amount == 'mM') return ConcentrationUnit.mM;
+    if (amount == 'uM') return ConcentrationUnit.uM;
+    if (amount == 'nM') return ConcentrationUnit.nM;
+    if (amount == 'pM') return ConcentrationUnit.pM;
+    if (amount == 'g' && denominator == 'L') return ConcentrationUnit.gL;
+    if (amount == 'g' && denominator == 'uL') return ConcentrationUnit.gUL;
+    if (amount == 'mg' && denominator == 'mL') return ConcentrationUnit.mgML;
+    if (amount == 'mg' && denominator == 'uL') return ConcentrationUnit.mgUL;
+    if (amount == 'ug' && denominator == 'mL') return ConcentrationUnit.ugML;
+    if (amount == 'ug' && denominator == 'uL') return ConcentrationUnit.ugUL;
+    if (amount == 'ng' && denominator == 'mL') return ConcentrationUnit.ngML;
+    if (amount == 'ng' && denominator == 'uL') return ConcentrationUnit.ngUL;
+    if (amount == 'g' && denominator == 'mol') return ConcentrationUnit.gMol;
+    if (amount == '%') return ConcentrationUnit.percent;
+    if (amount == 'X') return ConcentrationUnit.X;
+    if (amount == 'ratio') return ConcentrationUnit.ratio;
+    return ConcentrationUnit.ugML;
   }
 }
 

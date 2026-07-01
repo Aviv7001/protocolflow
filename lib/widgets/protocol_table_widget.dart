@@ -69,6 +69,20 @@ class ProtocolTableWidget extends StatelessWidget {
   }
 
   void _openTableEditor(BuildContext context) {
+    openTableViewer(
+      context,
+      table: table,
+      isReadOnly: isReadOnly,
+      onSave: onSave,
+    );
+  }
+
+  static void openTableViewer(
+    BuildContext context, {
+    required ProtocolTable table,
+    bool isReadOnly = true,
+    Function(ProtocolTable)? onSave,
+  }) {
     final wizardState = table.metadata['wizard_state'];
 
     if (table.type == TableType.masterMix) {
@@ -82,9 +96,7 @@ class ProtocolTableWidget extends StatelessWidget {
             wizard: wizard,
             isReadOnly: isReadOnly,
             onUpdate: (updated) {
-              if (onSave != null) {
-                onSave!(updated.copyWith(id: table.id));
-              }
+              if (onSave != null) onSave(updated.copyWith(id: table.id));
             },
           ),
         ),
@@ -100,9 +112,7 @@ class ProtocolTableWidget extends StatelessWidget {
             wizard: wizard,
             isReadOnly: isReadOnly,
             onUpdate: (updated) {
-              if (onSave != null) {
-                onSave!(updated.copyWith(id: table.id));
-              }
+              if (onSave != null) onSave(updated.copyWith(id: table.id));
             },
           ),
         ),
@@ -118,9 +128,7 @@ class ProtocolTableWidget extends StatelessWidget {
             wizard: wizard,
             isReadOnly: isReadOnly,
             onUpdate: (updated) {
-              if (onSave != null) {
-                onSave!(updated.copyWith(id: table.id));
-              }
+              if (onSave != null) onSave(updated.copyWith(id: table.id));
             },
           ),
         ),
@@ -136,9 +144,7 @@ class ProtocolTableWidget extends StatelessWidget {
             input: input,
             isReadOnly: isReadOnly,
             onUpdate: (updated) {
-              if (onSave != null) {
-                onSave!(updated.copyWith(id: table.id));
-              }
+              if (onSave != null) onSave(updated.copyWith(id: table.id));
             },
           ),
         ),
@@ -156,9 +162,7 @@ class ProtocolTableWidget extends StatelessWidget {
             originalMetadata: table.metadata,
             isReadOnly: isReadOnly,
             onUpdate: (updated) {
-              if (onSave != null) {
-                onSave!(updated);
-              }
+              if (onSave != null) onSave(updated);
             },
           ),
         ),
@@ -172,9 +176,7 @@ class ProtocolTableWidget extends StatelessWidget {
             table: table,
             isReadOnly: isReadOnly,
             onUpdate: (updated) {
-              if (onSave != null) {
-                onSave!(updated.copyWith(id: table.id));
-              }
+              if (onSave != null) onSave(updated.copyWith(id: table.id));
             },
           ),
         ),

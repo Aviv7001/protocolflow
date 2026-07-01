@@ -5,6 +5,7 @@ import '../models/serial_dilution_input.dart';
 import '../services/serial_dilution_calculator_service.dart';
 import '../widgets/serial_dilution_result_table.dart';
 import 'serial_dilution_manager_screen.dart';
+import '../../../widgets/save_table_action.dart';
 
 class SerialDilutionViewerScreen extends StatefulWidget {
   final SerialDilutionInput input;
@@ -55,6 +56,7 @@ class _SerialDilutionViewerScreenState
       appBar: AppBar(
         title: Text(_input.title.isEmpty ? 'Serial Dilution' : _input.title),
         actions: [
+          SaveTableAction(table: _input.generateTable()),
           if (!widget.isReadOnly)
             IconButton(
               icon: const Icon(Icons.edit),

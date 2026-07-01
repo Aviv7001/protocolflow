@@ -11,8 +11,9 @@ void main() {
     expect(find.text('ProtocolFlow'), findsOneWidget);
     expect(find.byIcon(Icons.account_circle), findsOneWidget);
     expect(find.byType(Image), findsNothing);
+    expect(find.text('Overview'), findsOneWidget);
     expect(find.text('Today\'s Tasks'), findsOneWidget);
     expect(find.text('Running Protocols'), findsOneWidget);
-    expect(find.text('Quick Actions'), findsOneWidget);
+    expect(find.text('Quick Actions'), findsNothing);
   });
 }

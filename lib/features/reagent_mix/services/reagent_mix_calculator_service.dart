@@ -40,6 +40,7 @@ class ReagentMixResult {
   final String formattedTotalVolume;
   final bool optimized;
   final List<String> warnings;
+  final List<IntermediateDilutionSuggestion> suggestions;
   final double? reagentMassGrams;
 
   ReagentMixResult({
@@ -53,6 +54,7 @@ class ReagentMixResult {
     this.formattedTotalVolume = '',
     this.optimized = false,
     this.warnings = const [],
+    this.suggestions = const [],
     this.reagentMassGrams,
   });
 }
@@ -60,6 +62,67 @@ class ReagentMixResult {
 class ReagentMixCalculatorService {
   static const double minPipettableVolumeUl =
       LabCalculation.minPipettableVolumeUl;
+
+  ReagentMixResult calculateSuspension(ReagentMixInput input) {
+    if (input.workingConcentration <= 0) {
+      return ReagentMixResult(
+        success: false,
+        errorMessage: 'Target concentration must be greater than 0',
+      );
+    }
+    if (input.numberOfTubes <= 0) {
+      return ReagentMixResult(
+        success: false,
+        errorMessage: 'Number of preparations must be greater than 0',
+      );
+    }
+
+    final totalVolumeUl =
+        LabCalculation.volumeToUl(
+          input.volumePerTube,
+          input.volumePerTubeUnit,
+        ) *
+        input.numberOfTubes;
+    if (totalVolumeUl <= 0) {
+      return ReagentMixResult(
+        success: false,
+        errorMessage: 'Final volume must be greater than 0',
+      );
+    }
+
+    final totalVolumeL = totalVolumeUl / 1e6;
+    final massGrams = _solidMassForConcentration(
+      input.workingConcentration,
+      input.workingUnit,
+      totalVolumeL,
+      input.molecularWeight,
+    );
+
+    if (massGrams == null) {
+      return ReagentMixResult(
+        success: false,
+        errorMessage:
+            'Cannot calculate solid mass from unit ${LabCalculation.unitLabel(input.workingUnit)}',
+      );
+    }
+
+    return ReagentMixResult(
+      success: true,
+      reagentMassGrams: massGrams,
+      solventVolumeUl: totalVolumeUl,
+      totalVolumeUl: totalVolumeUl,
+      formattedReagentVolume: LabCalculation.formatMass(
+        massGrams,
+        unicodeMicro: true,
+      ),
+      formattedSolventVolume:
+          'Bring to ${LabCalculation.formatVolume(totalVolumeUl, unicodeMicro: true)}',
+      formattedTotalVolume: LabCalculation.formatVolume(
+        totalVolumeUl,
+        unicodeMicro: true,
+      ),
+    );
+  }
 
   ReagentMixResult calculateMix(ReagentMixInput input) {
     final warnings = <String>[];
@@ -166,6 +229,25 @@ class ReagentMixCalculatorService {
     }
 
     final solventVolumeUl = bestTotalVolumeUl - bestReagentVolumeUl;
+    final suggestions = <IntermediateDilutionSuggestion>[];
+    if (LabCalculation.isBelowPracticalTransferFraction(
+      transferUl: bestReagentVolumeUl,
+      totalUl: bestTotalVolumeUl,
+    )) {
+      final suggestion = LabCalculation.intermediateDilutionSuggestion(
+        stockConcentrationBase: stockInBase,
+        targetConcentrationBase: workingInBase,
+        targetDisplayUnit: input.workingUnit,
+        totalVolumeUl: bestTotalVolumeUl,
+      );
+      warnings.add(
+        LabCalculation.practicalTransferWarning(
+          transferUl: bestReagentVolumeUl,
+          totalUl: bestTotalVolumeUl,
+        ),
+      );
+      if (suggestion != null) suggestions.add(suggestion);
+    }
 
     return ReagentMixResult(
       success: true,
@@ -186,6 +268,7 @@ class ReagentMixCalculatorService {
       ),
       optimized: bestScore < double.infinity,
       warnings: warnings,
+      suggestions: suggestions,
     );
   }
 
@@ -280,8 +363,23 @@ class ReagentMixCalculatorService {
     double volumeL,
     double molecularWeight,
   ) {
+    return _solidMassForConcentration(
+      concentration,
+      unit,
+      volumeL,
+      molecularWeight,
+    );
+  }
+
+  double? _solidMassForConcentration(
+    double concentration,
+    ConcentrationUnit unit,
+    double volumeL, [
+    double? molecularWeight,
+  ]) {
     final family = LabCalculation.familyOf(unit);
     if (family == ConcentrationFamily.molar) {
+      if (molecularWeight == null || molecularWeight <= 0) return null;
       return LabCalculation.concentrationToBase(concentration, unit) *
           volumeL *
           molecularWeight;

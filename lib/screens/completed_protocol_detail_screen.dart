@@ -6,6 +6,8 @@ import 'package:protocolflow/models/protocol_step.dart';
 import 'package:protocolflow/models/step_note.dart';
 import 'package:protocolflow/models/protocol_table.dart';
 import 'package:protocolflow/widgets/local_image.dart';
+import 'package:protocolflow/widgets/protocol_step_notes_table.dart';
+import 'package:protocolflow/widgets/protocol_table_preview.dart';
 import 'package:protocolflow/widgets/protocol_table_widget.dart';
 import 'package:protocolflow/data/completed_protocols_data.dart';
 import 'package:protocolflow/services/docx_export_service.dart';
@@ -337,22 +339,18 @@ class CompletedProtocolDetailScreen extends StatelessWidget {
                 );
               }),
             ],
+            if (step.notes.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              ProtocolStepNotesTable(notes: step.notes),
+            ],
             if (step.tableIds.isNotEmpty) ...[
               const SizedBox(height: 12),
-              ...step.tableIds.map((id) {
-                final table = completedProtocol.protocol.tables.firstWhere(
-                  (t) => t.id == id,
-                  orElse: () =>
-                      ProtocolTable(id: 'err', title: 'Table Not Found'),
-                );
-                if (table.id == 'err') return const SizedBox.shrink();
-                return ProtocolTableWidget(table: table);
-              }),
+              LinkedProtocolTablesSection(tables: _linkedTablesForStep(step)),
             ],
             if (stepNotes.isNotEmpty) ...[
               const Divider(),
               const Text(
-                'Notes:',
+                'User Notes:',
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
                   color: AppColors.textSecondary,
@@ -624,5 +622,18 @@ class CompletedProtocolDetailScreen extends StatelessWidget {
         );
       }),
     ];
+  }
+
+  List<ProtocolTable> _linkedTablesForStep(ProtocolStep step) {
+    final linkedTables = <ProtocolTable>[];
+    for (final id in step.tableIds) {
+      for (final table in completedProtocol.protocol.tables) {
+        if (table.id == id) {
+          linkedTables.add(table);
+          break;
+        }
+      }
+    }
+    return linkedTables;
   }
 }

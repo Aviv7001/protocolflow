@@ -336,6 +336,20 @@ class PdfService {
               }),
             ],
           ),
+        if (step.notes.isNotEmpty) ...<pw.Widget>[
+          pw.SizedBox(height: 5),
+          pw.Text(
+            'Protocol Step Notes:',
+            style: pw.TextStyle(
+              fontSize: 11,
+              fontWeight: pw.FontWeight.bold,
+              color: PdfColors.blueGrey800,
+            ),
+          ),
+          ...step.notes.map(
+            (note) => _rtlBullet(note, fontSize: 11, isFullWidth: false),
+          ),
+        ],
         if (step.tableIds.isNotEmpty) ...<pw.Widget>[
           pw.SizedBox(height: 8),
           pw.Wrap(
@@ -355,7 +369,7 @@ class PdfService {
         if (stepNotes.isNotEmpty) ...<pw.Widget>[
           pw.SizedBox(height: 5),
           pw.Text(
-            'Notes:',
+            'User Notes:',
             style: pw.TextStyle(
               fontSize: 11,
               fontWeight: pw.FontWeight.bold,

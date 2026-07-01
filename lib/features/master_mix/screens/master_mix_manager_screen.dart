@@ -425,18 +425,20 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
                 : item.stockUnit;
 
             double newV2L = 0;
-            if (targetUnit.index < 5) {
-              // Molar
-              final double m =
-                  targetConc * [1, 1e-3, 1e-6, 1e-9, 1e-12][targetUnit.index];
+            if (LabCalculation.familyOf(targetUnit) ==
+                ConcentrationFamily.molar) {
+              final double m = LabCalculation.concentrationToBase(
+                targetConc,
+                targetUnit,
+              );
               newV2L = val / (mw * m);
-            } else if (targetUnit == ConcentrationUnit.gL ||
-                targetUnit == ConcentrationUnit.mgML) {
-              newV2L = val / targetConc;
-            } else if (targetUnit == ConcentrationUnit.ugML) {
-              newV2L = val / (targetConc * 1e-3);
-            } else if (targetUnit == ConcentrationUnit.ngML) {
-              newV2L = val / (targetConc * 1e-6);
+            } else if (LabCalculation.familyOf(targetUnit) ==
+                ConcentrationFamily.massVolume) {
+              final gPerL = LabCalculation.concentrationToBase(
+                targetConc,
+                targetUnit,
+              );
+              newV2L = val / gPerL;
             }
 
             if (newV2L > 0) {
@@ -731,6 +733,14 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
         return 'ratio';
       case ConcentrationUnit.gMol:
         return 'g/mol';
+      case ConcentrationUnit.gUL:
+        return 'g/uL';
+      case ConcentrationUnit.mgUL:
+        return 'mg/uL';
+      case ConcentrationUnit.ugUL:
+        return 'ug/uL';
+      case ConcentrationUnit.ngUL:
+        return 'ng/uL';
     }
   }
 }

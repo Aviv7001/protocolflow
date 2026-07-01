@@ -3,6 +3,7 @@ import '../widgets/plate_result_preview.dart';
 import '../../../models/plate_wizard.dart';
 import '../../../screens/plate_wizard_samples_screen.dart';
 import '../../../models/protocol_table.dart';
+import '../../../widgets/save_table_action.dart';
 
 class PlateViewerScreen extends StatefulWidget {
   final PlateLayoutWizard wizard;
@@ -61,6 +62,9 @@ class _PlateViewerScreenState extends State<PlateViewerScreen> {
       appBar: AppBar(
         title: Text(_wizard.title.isEmpty ? 'Plate Layout' : _wizard.title),
         actions: [
+          SaveTableAction(
+            table: _wizard.toProtocolTable().copyWith(id: widget.plateId),
+          ),
           if (!widget.isReadOnly)
             IconButton(
               icon: const Icon(Icons.edit),
@@ -71,9 +75,7 @@ class _PlateViewerScreenState extends State<PlateViewerScreen> {
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
-        child: PlateResultPreview(
-          wizard: _wizard,
-        ),
+        child: PlateResultPreview(wizard: _wizard),
       ),
     );
   }

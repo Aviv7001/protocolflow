@@ -59,6 +59,7 @@ class MasterMixResultTable extends StatelessWidget {
               1: FlexColumnWidth(1.5),
               2: FlexColumnWidth(1.5),
               3: FlexColumnWidth(1.5),
+              4: FlexColumnWidth(2.5),
             },
             children: [
               TableRow(
@@ -102,6 +103,15 @@ class MasterMixResultTable extends StatelessWidget {
                       ),
                     ),
                   ),
+                  _cellPadding(
+                    const Text(
+                      'Suggestion',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
                 ],
               ),
               ...res.reagentResults.map(
@@ -132,6 +142,17 @@ class MasterMixResultTable extends StatelessWidget {
                         ),
                       ),
                     ),
+                    _cellPadding(
+                      Text(
+                        r.suggestions.isEmpty
+                            ? ''
+                            : r.suggestions.first.message,
+                        style: const TextStyle(
+                          color: AppColors.info,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -154,6 +175,7 @@ class MasterMixResultTable extends StatelessWidget {
                       ),
                     ),
                   ),
+                  _cellPadding(const SizedBox.shrink()),
                 ],
               ),
               TableRow(
@@ -181,17 +203,25 @@ class MasterMixResultTable extends StatelessWidget {
                       ),
                     ),
                   ),
+                  _cellPadding(const SizedBox.shrink()),
                 ],
               ),
             ],
           ),
           if (res.warnings.isNotEmpty ||
-              res.reagentResults.any((r) => r.warnings.isNotEmpty)) ...[
+              res.reagentResults.any(
+                (r) => r.warnings.isNotEmpty || r.suggestions.isNotEmpty,
+              )) ...[
             const SizedBox(height: 16),
             ...res.warnings.map((w) => _warningItem(w)),
             ...res.reagentResults.expand(
               (r) =>
                   r.warnings.map((w) => _warningItem('${r.reagentName}: $w')),
+            ),
+            ...res.reagentResults.expand(
+              (r) => r.suggestions.map(
+                (s) => _suggestionItem('${r.reagentName}: ${s.message}'),
+              ),
             ),
           ],
         ],
@@ -210,6 +240,24 @@ class MasterMixResultTable extends StatelessWidget {
             child: Text(
               text,
               style: const TextStyle(fontSize: 11, color: AppColors.warning),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _suggestionItem(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        children: [
+          const Icon(Icons.tips_and_updates, size: 14, color: AppColors.info),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(fontSize: 11, color: AppColors.info),
             ),
           ),
         ],

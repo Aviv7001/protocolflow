@@ -42,6 +42,7 @@ void main() {
           actionTimers: {1: 1800},
           attachedFiles: ['step-image.png'],
           tableIds: ['table_1'],
+          notes: ['Protect from light', 'Use low-bind tubes'],
         ),
       ],
       tables: [
@@ -79,6 +80,7 @@ void main() {
       restored.steps.single.tableIds,
       equals(protocol.steps.single.tableIds),
     );
+    expect(restored.steps.single.notes, equals(protocol.steps.single.notes));
   });
 
   test('legacy actions key is restored as actionItems', () {
