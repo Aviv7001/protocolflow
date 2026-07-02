@@ -92,25 +92,44 @@ class _SerialDilutionManagerScreenState
       color: Colors.blue.shade50,
       child: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _resItem(
-              'Dilutions',
-              result.calculatedNumberOfDilutions.toString(),
-              Colors.blue,
-            ),
-            _resItemEditable('Final Volume', result.optimizedFinalVolumeUl, (
-              val,
-            ) {
-              final rounded = (val * 10).round() / 10.0;
-              setState(
-                () => _input = _input.copyWith(
-                  finalVolume: rounded,
-                  finalVolumeUnit: VolumeUnit.uL,
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _resItem(
+                  'Dilutions',
+                  result.calculatedNumberOfDilutions.toString(),
+                  Colors.blue,
                 ),
-              );
-            }, Colors.black),
+                _resItemEditable(
+                  'Final Volume',
+                  result.optimizedFinalVolumeUl,
+                  (val) {
+                    final rounded = (val * 10).round() / 10.0;
+                    setState(
+                      () => _input = _input.copyWith(
+                        finalVolume: rounded,
+                        finalVolumeUnit: VolumeUnit.uL,
+                      ),
+                    );
+                  },
+                  Colors.black,
+                ),
+              ],
+            ),
+            if (result.autoExtraVolumeReason != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                result.autoExtraVolumeReason!,
+                style: TextStyle(
+                  fontSize: _uniformFontSize - 2,
+                  color: Colors.blue.shade900,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -258,6 +277,18 @@ class _SerialDilutionManagerScreenState
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 12),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Auto optimize extra volume'),
+              subtitle: const Text(
+                'Try 10% to 30% and choose the best transfer score',
+              ),
+              value: _input.autoExtraVolume,
+              onChanged: (value) => setState(
+                () => _input = _input.copyWith(autoExtraVolume: value),
+              ),
             ),
             const SizedBox(height: 12),
             _buildVolumeRow(),

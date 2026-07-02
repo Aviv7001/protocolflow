@@ -9,12 +9,14 @@ import '../../../widgets/save_table_action.dart';
 
 class SerialDilutionViewerScreen extends StatefulWidget {
   final SerialDilutionInput input;
+  final ProtocolTable initialTable;
   final bool isReadOnly;
   final Function(ProtocolTable) onUpdate;
 
   const SerialDilutionViewerScreen({
     super.key,
     required this.input,
+    required this.initialTable,
     this.isReadOnly = false,
     required this.onUpdate,
   });
@@ -27,12 +29,14 @@ class SerialDilutionViewerScreen extends StatefulWidget {
 class _SerialDilutionViewerScreenState
     extends State<SerialDilutionViewerScreen> {
   late SerialDilutionInput _input;
+  late ProtocolTable _table;
   final _calculator = SerialDilutionCalculatorService();
 
   @override
   void initState() {
     super.initState();
     _input = widget.input;
+    _table = widget.initialTable;
   }
 
   void _editTable() async {
@@ -45,8 +49,12 @@ class _SerialDilutionViewerScreenState
     );
 
     if (updatedInput != null) {
-      setState(() => _input = updatedInput);
-      widget.onUpdate(_input.generateTable());
+      final updatedTable = updatedInput.generateTable().copyWith(id: _table.id);
+      setState(() {
+        _input = updatedInput;
+        _table = updatedTable;
+      });
+      widget.onUpdate(updatedTable);
     }
   }
 
@@ -56,7 +64,7 @@ class _SerialDilutionViewerScreenState
       appBar: AppBar(
         title: Text(_input.title.isEmpty ? 'Serial Dilution' : _input.title),
         actions: [
-          SaveTableAction(table: _input.generateTable()),
+          SaveTableAction(table: _table),
           if (!widget.isReadOnly)
             IconButton(
               icon: const Icon(Icons.edit),
@@ -70,6 +78,7 @@ class _SerialDilutionViewerScreenState
         child: SerialDilutionResultTable(
           input: _input,
           calculator: _calculator,
+          tableOverride: _table,
         ),
       ),
     );

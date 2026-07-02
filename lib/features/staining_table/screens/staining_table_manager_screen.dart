@@ -77,6 +77,16 @@ class _StainingTableManagerScreenState
     });
   }
 
+  void _moveChain(int fromIndex, int toIndex) {
+    if (toIndex < 0 || toIndex >= _wizard.panel.length) return;
+    setState(() {
+      final newPanel = List<StainChain>.from(_wizard.panel);
+      final chain = newPanel.removeAt(fromIndex);
+      newPanel.insert(toIndex, chain);
+      _wizard = _wizard.copyWith(panel: newPanel);
+    });
+  }
+
   void _addSample() {
     setState(() {
       final newSamples = List<StainingSample>.from(_wizard.samples);
@@ -102,6 +112,16 @@ class _StainingTableManagerScreenState
     setState(() {
       final newSamples = List<StainingSample>.from(_wizard.samples);
       newSamples[index] = newSample;
+      _wizard = _wizard.copyWith(samples: newSamples);
+    });
+  }
+
+  void _moveSample(int fromIndex, int toIndex) {
+    if (toIndex < 0 || toIndex >= _wizard.samples.length) return;
+    setState(() {
+      final newSamples = List<StainingSample>.from(_wizard.samples);
+      final sample = newSamples.removeAt(fromIndex);
+      newSamples.insert(toIndex, sample);
       _wizard = _wizard.copyWith(samples: newSamples);
     });
   }
@@ -304,6 +324,43 @@ class _StainingTableManagerScreenState
                     size: 20,
                   ),
                   onPressed: () => _removeChain(index),
+                ),
+                PopupMenuButton<_ReorderAction>(
+                  tooltip: 'Chain actions',
+                  onSelected: (action) {
+                    switch (action) {
+                      case _ReorderAction.moveUp:
+                        _moveChain(index, index - 1);
+                        break;
+                      case _ReorderAction.moveDown:
+                        _moveChain(index, index + 1);
+                        break;
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    PopupMenuItem(
+                      value: _ReorderAction.moveUp,
+                      enabled: index > 0,
+                      child: const Row(
+                        children: [
+                          Icon(Icons.keyboard_arrow_up),
+                          SizedBox(width: 8),
+                          Text('Move up'),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: _ReorderAction.moveDown,
+                      enabled: index < _wizard.panel.length - 1,
+                      child: const Row(
+                        children: [
+                          Icon(Icons.keyboard_arrow_down),
+                          SizedBox(width: 8),
+                          Text('Move down'),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -539,6 +596,43 @@ class _StainingTableManagerScreenState
                   ),
                   onPressed: () => _removeSample(sampleIndex),
                 ),
+                PopupMenuButton<_ReorderAction>(
+                  tooltip: 'Sample actions',
+                  onSelected: (action) {
+                    switch (action) {
+                      case _ReorderAction.moveUp:
+                        _moveSample(sampleIndex, sampleIndex - 1);
+                        break;
+                      case _ReorderAction.moveDown:
+                        _moveSample(sampleIndex, sampleIndex + 1);
+                        break;
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    PopupMenuItem(
+                      value: _ReorderAction.moveUp,
+                      enabled: sampleIndex > 0,
+                      child: const Row(
+                        children: [
+                          Icon(Icons.keyboard_arrow_up),
+                          SizedBox(width: 8),
+                          Text('Move up'),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: _ReorderAction.moveDown,
+                      enabled: sampleIndex < _wizard.samples.length - 1,
+                      child: const Row(
+                        children: [
+                          Icon(Icons.keyboard_arrow_down),
+                          SizedBox(width: 8),
+                          Text('Move down'),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -645,3 +739,5 @@ class _StainingTableManagerScreenState
     );
   }
 }
+
+enum _ReorderAction { moveUp, moveDown }

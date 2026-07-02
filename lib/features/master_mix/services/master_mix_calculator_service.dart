@@ -2,6 +2,8 @@ export '../../lab_math/lab_calculation.dart'
     show ConcentrationFamily, ConcentrationUnit, VolumeUnit;
 
 import '../../lab_math/lab_calculation.dart';
+import '../../measuring_tools/services/measuring_tool_service.dart';
+import '../../measuring_tools/services/transfer_optimizer_service.dart';
 
 class MasterMixReagentInput {
   final String reagentName;
@@ -26,6 +28,7 @@ class MasterMixInput {
   final double finalVolume;
   final VolumeUnit finalVolumeUnit;
   final double extraVolumePercent;
+  final bool autoExtraVolume;
   final String baseSolventName;
   final List<MasterMixReagentInput> reagents;
 
@@ -34,6 +37,7 @@ class MasterMixInput {
     required this.finalVolume,
     required this.finalVolumeUnit,
     this.extraVolumePercent = 10,
+    this.autoExtraVolume = false,
     required this.baseSolventName,
     required this.reagents,
   });
@@ -48,6 +52,7 @@ class MasterMixReagentResult {
   final List<String> warnings;
   final List<IntermediateDilutionSuggestion> suggestions;
   final double? reagentMassGrams;
+  final TransferEvaluationResult? transferEvaluation;
 
   MasterMixReagentResult({
     required this.reagentName,
@@ -58,6 +63,7 @@ class MasterMixReagentResult {
     this.warnings = const [],
     this.suggestions = const [],
     this.reagentMassGrams,
+    this.transferEvaluation,
   });
 }
 
@@ -73,6 +79,9 @@ class MasterMixResult {
   final double baseSolventVolumeUl;
   final String formattedBaseSolventVolume;
   final List<String> warnings;
+  final TransferEvaluationResult? solventTransferEvaluation;
+  final double selectedExtraVolumePercent;
+  final String? autoExtraVolumeReason;
 
   MasterMixResult({
     required this.success,
@@ -86,12 +95,16 @@ class MasterMixResult {
     this.baseSolventVolumeUl = 0,
     this.formattedBaseSolventVolume = '',
     this.warnings = const [],
+    this.solventTransferEvaluation,
+    this.selectedExtraVolumePercent = 0,
+    this.autoExtraVolumeReason,
   });
 }
 
 class MasterMixCalculatorService {
-  static const double minPipettableVolumeUl =
-      LabCalculation.minPipettableVolumeUl;
+  final TransferOptimizerService _optimizer = const TransferOptimizerService();
+  final MeasuringToolService _measuringToolService =
+      MeasuringToolService.instance;
 
   MasterMixResult calculateMasterMix(MasterMixInput input) {
     final globalWarnings = <String>[];
@@ -116,10 +129,8 @@ class MasterMixCalculatorService {
       input.finalVolume,
       input.finalVolumeUnit,
     );
-    final extraFactor = 1 + input.extraVolumePercent.clamp(0, 100) / 100;
-    final minimumPreparedUl = requestedUl * extraFactor;
-    final maxTotalUl = minimumPreparedUl * 1.3;
     final params = <_ReagentCalcParams>[];
+    final tools = _measuringToolService.activeTools();
 
     for (final reagent in input.reagents) {
       if (reagent.stockConcentration <= 0 || reagent.stockConcentration.isNaN) {
@@ -167,172 +178,179 @@ class MasterMixCalculatorService {
       }
     }
 
-    var bestTotalUl = minimumPreparedUl;
-    var bestScore = double.infinity;
-    var bestReagentVolumes = <double>[];
+    _MasterMixCandidate buildCandidate(double extraPercent) {
+      final totalUl = requestedUl * (1 + extraPercent / 100);
+      final reagentResults = <MasterMixReagentResult>[];
+      final evaluations = <TransferEvaluationResult>[];
+      final allWarnings = <String>[];
+      var totalReagentUl = 0.0;
 
-    final step = requestedUl < 100
-        ? 0.1
-        : requestedUl < 1000
-        ? 1.0
-        : requestedUl < 10000
-        ? 10.0
-        : 100.0;
+      for (final param in params) {
+        final volumeUl = param.ratio * totalUl;
+        totalReagentUl += volumeUl;
+        final stockFamily = LabCalculation.familyOf(
+          param.input.stockConcentrationUnit,
+        );
+        final finalFamily = LabCalculation.familyOf(
+          param.input.finalConcentrationUnit,
+        );
+        final isStockMw = stockFamily == ConcentrationFamily.molecularWeight;
+        final isFinalMw = finalFamily == ConcentrationFamily.molecularWeight;
 
-    for (
-      var currentTotalUl = minimumPreparedUl;
-      currentTotalUl <= maxTotalUl + (step / 2);
-      currentTotalUl += step
-    ) {
-      final reagentVolumes = params
-          .map((param) => param.ratio * currentTotalUl)
-          .toList();
-      final sumReagents = reagentVolumes.fold<double>(0, (a, b) => a + b);
-      final solventUl = currentTotalUl - sumReagents;
-      if (solventUl < 0) continue;
+        double? massGrams;
+        var formattedAmount = LabCalculation.formatVolume(
+          volumeUl,
+          unicodeMicro: true,
+        );
+        TransferEvaluationResult? transferEvaluation;
+        final reagentWarnings = <String>[];
+        final reagentSuggestions = <IntermediateDilutionSuggestion>[];
 
-      final anyTooSmall = reagentVolumes.asMap().entries.any((entry) {
-        final isPowder = params[entry.key].ratio == 0;
-        return !isPowder && entry.value < minPipettableVolumeUl;
-      });
-      if (anyTooSmall) continue;
+        if (isStockMw || isFinalMw) {
+          final mw = isStockMw
+              ? param.input.stockConcentration
+              : param.input.finalConcentration;
+          final targetConc = isStockMw
+              ? param.input.finalConcentration
+              : param.input.stockConcentration;
+          final targetUnit = isStockMw
+              ? param.input.finalConcentrationUnit
+              : param.input.stockConcentrationUnit;
+          massGrams = _calculateMassGrams(targetConc, targetUnit, totalUl, mw);
+          if (massGrams != null) {
+            formattedAmount = LabCalculation.formatMass(
+              massGrams,
+              unicodeMicro: true,
+            );
+          }
+        } else {
+          final stockBase = _stockBase(param.input);
+          final finalBase = _finalBase(param.input);
+          final suggestionMessage = _optimizer.suggestIntermediateDilution(
+            sourceConcentrationBase: stockBase,
+            targetConcentrationBase: finalBase,
+            totalVolumeUl: totalUl,
+            tools: tools,
+          );
+          transferEvaluation = _optimizer.evaluateTransferVolume(
+            volumeUl,
+            tools,
+            componentName: param.input.reagentName,
+            intermediateSuggestion: suggestionMessage,
+          );
+          evaluations.add(transferEvaluation);
+          if (transferEvaluation.warningMessage != null) {
+            reagentWarnings.add(transferEvaluation.warningMessage!);
+          }
+          if (transferEvaluation.suggestionMessage != null) {
+            final intermediate = LabCalculation.intermediateDilutionSuggestion(
+              stockConcentrationBase: stockBase,
+              targetConcentrationBase: finalBase,
+              targetDisplayUnit: param.input.finalConcentrationUnit,
+              totalVolumeUl: totalUl,
+            );
+            if (intermediate != null) {
+              reagentSuggestions.add(intermediate);
+            }
+          }
+        }
 
-      final score = LabCalculation.pipettingScore(
-        totalUl: currentTotalUl,
-        requestedUl: minimumPreparedUl,
-        measuredVolumesUl: [...reagentVolumes, solventUl],
-      );
-
-      if (score < bestScore) {
-        bestScore = score;
-        bestTotalUl = currentTotalUl;
-        bestReagentVolumes = reagentVolumes;
+        allWarnings.addAll(
+          reagentWarnings.map(
+            (warning) => '${param.input.reagentName}: $warning',
+          ),
+        );
+        reagentResults.add(
+          MasterMixReagentResult(
+            reagentName: param.input.reagentName,
+            reagentVolumeUl: massGrams != null ? 0 : volumeUl,
+            reagentMassGrams: massGrams,
+            formattedReagentVolume: formattedAmount,
+            formattedStockConcentration:
+                '${param.input.stockConcentration} ${_unitLabel(param.input.stockConcentrationUnit)}',
+            formattedFinalConcentration:
+                '${param.input.finalConcentration} ${_unitLabel(param.input.finalConcentrationUnit)}',
+            warnings: reagentWarnings,
+            suggestions: reagentSuggestions,
+            transferEvaluation: transferEvaluation,
+          ),
+        );
       }
+
+      final solventUl = totalUl - totalReagentUl;
+      if (solventUl < 0) {
+        return _MasterMixCandidate.invalid(extraPercent);
+      }
+      final solventEvaluation = _optimizer.evaluateTransferVolume(
+        solventUl,
+        tools,
+      );
+      evaluations.add(solventEvaluation);
+      if (solventEvaluation.warningMessage != null) {
+        allWarnings.add(
+          '${input.baseSolventName}: ${solventEvaluation.warningMessage!}',
+        );
+      }
+
+      return _MasterMixCandidate(
+        valid: true,
+        extraPercent: extraPercent,
+        totalUl: totalUl,
+        solventUl: solventUl,
+        reagentResults: reagentResults,
+        solventEvaluation: solventEvaluation,
+        summary: _optimizer.evaluateMixVolumes(evaluations),
+        warnings: allWarnings,
+      );
     }
 
-    if (bestReagentVolumes.isEmpty) {
+    final selected = input.autoExtraVolume
+        ? (() {
+            final autoResult = _optimizer.autoOptimizeExtraVolume(
+              evaluateForExtraPercent: (extraPercent) =>
+                  buildCandidate(extraPercent).summary,
+              currentExtraPercent: input.extraVolumePercent,
+            );
+            return buildCandidate(
+              autoResult.extraPercent,
+            ).copyWith(autoReason: autoResult.reason);
+          })()
+        : buildCandidate(input.extraVolumePercent);
+
+    if (!selected.valid) {
       return MasterMixResult(
         success: false,
         errorMessage:
-            'Could not find a valid mix. Some reagent volumes might be too small.',
+            'Could not calculate this master mix with the current reagent setup.',
         mixName: input.mixName,
       );
     }
 
-    final finalSolventUl =
-        bestTotalUl - bestReagentVolumes.fold<double>(0, (a, b) => a + b);
-    final reagentResults = <MasterMixReagentResult>[];
-
-    for (var i = 0; i < params.length; i++) {
-      final param = params[i];
-      final volumeUl = bestReagentVolumes[i];
-      final reagentWarnings = <String>[];
-      final stockFamily = LabCalculation.familyOf(
-        param.input.stockConcentrationUnit,
-      );
-      final finalFamily = LabCalculation.familyOf(
-        param.input.finalConcentrationUnit,
-      );
-      final isStockMw = stockFamily == ConcentrationFamily.molecularWeight;
-      final isFinalMw = finalFamily == ConcentrationFamily.molecularWeight;
-
-      double? massGrams;
-      var formattedAmount = LabCalculation.formatVolume(
-        volumeUl,
-        unicodeMicro: true,
-      );
-
-      if (isStockMw || isFinalMw) {
-        final mw = isStockMw
-            ? param.input.stockConcentration
-            : param.input.finalConcentration;
-        final targetConc = isStockMw
-            ? param.input.finalConcentration
-            : param.input.stockConcentration;
-        final targetUnit = isStockMw
-            ? param.input.finalConcentrationUnit
-            : param.input.stockConcentrationUnit;
-        massGrams = _calculateMassGrams(
-          targetConc,
-          targetUnit,
-          bestTotalUl,
-          mw,
-        );
-        if (massGrams != null) {
-          formattedAmount = LabCalculation.formatMass(
-            massGrams,
-            unicodeMicro: true,
-          );
-        }
-      }
-
-      if (volumeUl < 1.0 && massGrams == null) {
-        reagentWarnings.add(
-          'Volume is very low (${volumeUl.toStringAsFixed(2)} µL). Consider a pre-dilution.',
-        );
-      }
-
-      final reagentSuggestions = <IntermediateDilutionSuggestion>[];
-      if (massGrams == null &&
-          LabCalculation.isBelowPracticalTransferFraction(
-            transferUl: volumeUl,
-            totalUl: bestTotalUl,
-          )) {
-        reagentWarnings.add(
-          LabCalculation.practicalTransferWarning(
-            transferUl: volumeUl,
-            totalUl: bestTotalUl,
-          ),
-        );
-        final suggestion = _intermediateSuggestionForReagent(
-          param.input,
-          bestTotalUl,
-        );
-        if (suggestion != null) reagentSuggestions.add(suggestion);
-      }
-
-      reagentResults.add(
-        MasterMixReagentResult(
-          reagentName: param.input.reagentName,
-          reagentVolumeUl: massGrams != null ? 0 : volumeUl,
-          reagentMassGrams: massGrams,
-          formattedReagentVolume: formattedAmount,
-          formattedStockConcentration:
-              '${param.input.stockConcentration} ${_unitLabel(param.input.stockConcentrationUnit)}',
-          formattedFinalConcentration:
-              '${param.input.finalConcentration} ${_unitLabel(param.input.finalConcentrationUnit)}',
-          warnings: reagentWarnings,
-          suggestions: reagentSuggestions,
-        ),
-      );
-    }
-
-    if (finalSolventUl < 1.0 && finalSolventUl > 0) {
-      globalWarnings.add(
-        'Base solvent volume is very low (${finalSolventUl.toStringAsFixed(2)} µL).',
-      );
-    }
+    globalWarnings.addAll(selected.warnings);
 
     return MasterMixResult(
       success: true,
       mixName: input.mixName,
       requestedFinalVolumeUl: requestedUl,
-      optimizedFinalVolumeUl: bestTotalUl,
+      optimizedFinalVolumeUl: selected.totalUl,
       formattedRequestedFinalVolume: LabCalculation.formatVolume(
         requestedUl,
         unicodeMicro: true,
       ),
       formattedOptimizedFinalVolume: LabCalculation.formatVolume(
-        bestTotalUl,
+        selected.totalUl,
         unicodeMicro: true,
       ),
-      reagentResults: reagentResults,
-      baseSolventVolumeUl: finalSolventUl,
+      reagentResults: selected.reagentResults,
+      baseSolventVolumeUl: selected.solventUl,
       formattedBaseSolventVolume: LabCalculation.formatVolume(
-        finalSolventUl,
+        selected.solventUl,
         unicodeMicro: true,
       ),
       warnings: globalWarnings,
+      solventTransferEvaluation: selected.solventEvaluation,
+      selectedExtraVolumePercent: selected.extraPercent,
+      autoExtraVolumeReason: selected.autoReason,
     );
   }
 
@@ -395,10 +413,7 @@ class MasterMixCalculatorService {
     return finalMolar / stockMolar;
   }
 
-  IntermediateDilutionSuggestion? _intermediateSuggestionForReagent(
-    MasterMixReagentInput reagent,
-    double totalVolumeUl,
-  ) {
+  double _stockBase(MasterMixReagentInput reagent) {
     final stockFamily = LabCalculation.familyOf(reagent.stockConcentrationUnit);
     final finalFamily = LabCalculation.familyOf(reagent.finalConcentrationUnit);
     final mw = reagent.molecularWeight;
@@ -408,11 +423,11 @@ class MasterMixCalculatorService {
         (stockFamily == ConcentrationFamily.massVolume &&
             finalFamily == ConcentrationFamily.molar);
 
-    double stockBase;
-    double finalBase;
     if (isMolarMassPair) {
-      if (mw == null || mw <= 0) return null;
-      stockBase = stockFamily == ConcentrationFamily.molar
+      if (mw == null || mw <= 0) {
+        return 0;
+      }
+      return stockFamily == ConcentrationFamily.molar
           ? LabCalculation.concentrationToBase(
               reagent.stockConcentration,
               reagent.stockConcentrationUnit,
@@ -422,7 +437,30 @@ class MasterMixCalculatorService {
                   reagent.stockConcentrationUnit,
                 ) /
                 mw;
-      finalBase = finalFamily == ConcentrationFamily.molar
+    }
+
+    return LabCalculation.concentrationToBase(
+      reagent.stockConcentration,
+      reagent.stockConcentrationUnit,
+      molecularWeight: mw,
+    );
+  }
+
+  double _finalBase(MasterMixReagentInput reagent) {
+    final stockFamily = LabCalculation.familyOf(reagent.stockConcentrationUnit);
+    final finalFamily = LabCalculation.familyOf(reagent.finalConcentrationUnit);
+    final mw = reagent.molecularWeight;
+    final isMolarMassPair =
+        (stockFamily == ConcentrationFamily.molar &&
+            finalFamily == ConcentrationFamily.massVolume) ||
+        (stockFamily == ConcentrationFamily.massVolume &&
+            finalFamily == ConcentrationFamily.molar);
+
+    if (isMolarMassPair) {
+      if (mw == null || mw <= 0) {
+        return 0;
+      }
+      return finalFamily == ConcentrationFamily.molar
           ? LabCalculation.concentrationToBase(
               reagent.finalConcentration,
               reagent.finalConcentrationUnit,
@@ -432,24 +470,12 @@ class MasterMixCalculatorService {
                   reagent.finalConcentrationUnit,
                 ) /
                 mw;
-    } else {
-      stockBase = LabCalculation.concentrationToBase(
-        reagent.stockConcentration,
-        reagent.stockConcentrationUnit,
-        molecularWeight: mw,
-      );
-      finalBase = LabCalculation.concentrationToBase(
-        reagent.finalConcentration,
-        reagent.finalConcentrationUnit,
-        molecularWeight: mw,
-      );
     }
 
-    return LabCalculation.intermediateDilutionSuggestion(
-      stockConcentrationBase: stockBase,
-      targetConcentrationBase: finalBase,
-      targetDisplayUnit: reagent.finalConcentrationUnit,
-      totalVolumeUl: totalVolumeUl,
+    return LabCalculation.concentrationToBase(
+      reagent.finalConcentration,
+      reagent.finalConcentrationUnit,
+      molecularWeight: mw,
     );
   }
 
@@ -487,4 +513,64 @@ class _ReagentCalcParams {
   final double ratio;
 
   _ReagentCalcParams({required this.input, required this.ratio});
+}
+
+class _MasterMixCandidate {
+  final bool valid;
+  final double extraPercent;
+  final double totalUl;
+  final double solventUl;
+  final List<MasterMixReagentResult> reagentResults;
+  final TransferEvaluationResult solventEvaluation;
+  final MixEvaluationSummary summary;
+  final List<String> warnings;
+  final String? autoReason;
+
+  const _MasterMixCandidate({
+    required this.valid,
+    required this.extraPercent,
+    required this.totalUl,
+    required this.solventUl,
+    required this.reagentResults,
+    required this.solventEvaluation,
+    required this.summary,
+    required this.warnings,
+    this.autoReason,
+  });
+
+  factory _MasterMixCandidate.invalid(double extraPercent) {
+    return const _MasterMixCandidate(
+      valid: false,
+      extraPercent: 0,
+      totalUl: 0,
+      solventUl: 0,
+      reagentResults: [],
+      solventEvaluation: TransferEvaluationResult(
+        calculatedVolumeUl: 0,
+        status: TransferStatus.warningNoCompatibleTool,
+        score: 0,
+      ),
+      summary: MixEvaluationSummary(
+        componentEvaluations: [],
+        minComponentScore: 0,
+        avgComponentScore: 0,
+        warningCount: 0,
+      ),
+      warnings: [],
+    );
+  }
+
+  _MasterMixCandidate copyWith({String? autoReason}) {
+    return _MasterMixCandidate(
+      valid: valid,
+      extraPercent: extraPercent,
+      totalUl: totalUl,
+      solventUl: solventUl,
+      reagentResults: reagentResults,
+      solventEvaluation: solventEvaluation,
+      summary: summary,
+      warnings: warnings,
+      autoReason: autoReason ?? this.autoReason,
+    );
+  }
 }

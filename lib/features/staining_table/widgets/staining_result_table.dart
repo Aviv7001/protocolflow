@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/staining_wizard.dart';
 import '../services/staining_table_generator_service.dart';
 import '../../../widgets/table_export_actions.dart';
+import '../../../widgets/horizontal_table_scroll.dart';
 import '../../../theme/app_colors.dart';
 
 class StainingResultTable extends StatelessWidget {
@@ -26,9 +27,9 @@ class StainingResultTable extends StatelessWidget {
       table: wizard.generateTable(),
       child: Card(
         clipBehavior: Clip.antiAlias,
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
+        child: HorizontalTableScroll(
           child: DataTable(
+            border: TableBorder.all(color: AppColors.outlineVariant),
             columnSpacing: 24,
             headingRowColor: const WidgetStatePropertyAll(
               AppColors.surfaceContainer,

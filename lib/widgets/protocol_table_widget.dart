@@ -94,6 +94,7 @@ class ProtocolTableWidget extends StatelessWidget {
         MaterialPageRoute(
           builder: (context) => MasterMixViewerScreen(
             wizard: wizard,
+            initialTable: table,
             isReadOnly: isReadOnly,
             onUpdate: (updated) {
               if (onSave != null) onSave(updated.copyWith(id: table.id));
@@ -126,6 +127,7 @@ class ProtocolTableWidget extends StatelessWidget {
         MaterialPageRoute(
           builder: (context) => ReagentViewerScreen(
             wizard: wizard,
+            initialTable: table,
             isReadOnly: isReadOnly,
             onUpdate: (updated) {
               if (onSave != null) onSave(updated.copyWith(id: table.id));
@@ -142,6 +144,7 @@ class ProtocolTableWidget extends StatelessWidget {
         MaterialPageRoute(
           builder: (context) => SerialDilutionViewerScreen(
             input: input,
+            initialTable: table,
             isReadOnly: isReadOnly,
             onUpdate: (updated) {
               if (onSave != null) onSave(updated.copyWith(id: table.id));

@@ -1,4 +1,5 @@
 import '../../lab_math/lab_calculation.dart';
+import '../../measuring_tools/services/transfer_optimizer_service.dart';
 
 class SerialDilutionRow {
   final String dilutionName;
@@ -14,6 +15,8 @@ class SerialDilutionRow {
   final bool isZeroConcentrationRow;
   final List<String> warnings;
   final List<IntermediateDilutionSuggestion> suggestions;
+  final TransferEvaluationResult? transferEvaluation;
+  final TransferEvaluationResult? solventTransferEvaluation;
 
   SerialDilutionRow({
     required this.dilutionName,
@@ -29,5 +32,7 @@ class SerialDilutionRow {
     this.isZeroConcentrationRow = false,
     this.warnings = const [],
     this.suggestions = const [],
+    this.transferEvaluation,
+    this.solventTransferEvaluation,
   });
 }

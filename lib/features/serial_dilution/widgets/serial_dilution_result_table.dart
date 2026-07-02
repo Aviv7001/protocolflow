@@ -2,17 +2,25 @@ import 'package:flutter/material.dart';
 
 import '../models/serial_dilution_input.dart';
 import '../services/serial_dilution_calculator_service.dart';
+import '../../../models/protocol_table.dart';
+import '../../../widgets/horizontal_table_scroll.dart';
 import '../../../widgets/table_export_actions.dart';
 import '../../../theme/app_colors.dart';
+import '../../lab_math/lab_calculation.dart';
+import '../../measuring_tools/services/transfer_optimizer_service.dart';
 
 class SerialDilutionResultTable extends StatelessWidget {
   final SerialDilutionInput input;
   final SerialDilutionCalculatorService calculator;
+  final bool showExportActions;
+  final ProtocolTable? tableOverride;
 
   const SerialDilutionResultTable({
     super.key,
     required this.input,
     required this.calculator,
+    this.showExportActions = true,
+    this.tableOverride,
   });
 
   @override
@@ -37,124 +45,142 @@ class SerialDilutionResultTable extends StatelessWidget {
       );
     }
 
-    return TableExportActions(
-      table: input.generateTable(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Output Table', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 12),
-          Card(
-            clipBehavior: Clip.antiAlias,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                columnSpacing: 20,
-                headingRowColor: const WidgetStatePropertyAll(
-                  AppColors.surfaceContainer,
-                ),
-                columns: const [
-                  DataColumn(label: _HeaderCell('Dilution')),
-                  DataColumn(label: _HeaderCell('Concentration')),
-                  DataColumn(label: _HeaderCell('Transfer From')),
-                  DataColumn(label: _HeaderCell('Transfer')),
-                  DataColumn(label: _HeaderCell('Solvent')),
-                  DataColumn(label: _HeaderCell('Final')),
-                  DataColumn(label: _HeaderCell('Suggestion')),
-                ],
-                rows: result.rows
-                    .map(
-                      (row) => DataRow(
-                        color: row.isZeroConcentrationRow
-                            ? const WidgetStatePropertyAll(
-                                AppColors.primaryContainer,
-                              )
-                            : null,
-                        cells: [
-                          DataCell(
-                            Text(
-                              row.dilutionName,
-                              style: const TextStyle(fontSize: 10),
-                            ),
-                          ),
-                          DataCell(
-                            Text(
-                              row.formattedConcentration,
-                              style: const TextStyle(fontSize: 10),
-                            ),
-                          ),
-                          DataCell(
-                            Text(
-                              row.transferFrom,
-                              style: const TextStyle(fontSize: 10),
-                            ),
-                          ),
-                          DataCell(
-                            Text(
-                              row.formattedTransferVolume,
-                              style: const TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.primary,
-                              ),
-                            ),
-                          ),
-                          DataCell(
-                            Text(
-                              row.formattedSolventVolume,
-                              style: const TextStyle(fontSize: 10),
-                            ),
-                          ),
-                          DataCell(
-                            Text(
-                              row.formattedFinalVolume,
-                              style: const TextStyle(fontSize: 10),
-                            ),
-                          ),
-                          DataCell(
-                            Text(
-                              row.suggestions.isEmpty
-                                  ? ''
-                                  : row.suggestions.first.message,
-                              style: const TextStyle(
-                                fontSize: 10,
-                                color: AppColors.info,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                    .toList(),
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Output Table', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 12),
+        Card(
+          clipBehavior: Clip.antiAlias,
+          child: HorizontalTableScroll(
+            child: DataTable(
+              border: TableBorder.all(color: AppColors.outlineVariant),
+              columnSpacing: 20,
+              headingRowColor: const WidgetStatePropertyAll(
+                AppColors.surfaceContainer,
               ),
+              columns: const [
+                DataColumn(label: _HeaderCell('Dilution')),
+                DataColumn(label: _HeaderCell('Concentration')),
+                DataColumn(label: _HeaderCell('Transfer From')),
+                DataColumn(label: _HeaderCell('Transfer')),
+                DataColumn(label: _HeaderCell('Solvent')),
+                DataColumn(label: _HeaderCell('Final')),
+                DataColumn(label: _HeaderCell('Suggested')),
+                DataColumn(label: _HeaderCell('Tool')),
+                DataColumn(label: _HeaderCell('Suggestion')),
+              ],
+              rows: result.rows
+                  .map(
+                    (row) => DataRow(
+                      color: row.isZeroConcentrationRow
+                          ? const WidgetStatePropertyAll(
+                              AppColors.primaryContainer,
+                            )
+                          : null,
+                      cells: [
+                        DataCell(
+                          Text(
+                            row.dilutionName,
+                            style: const TextStyle(fontSize: 10),
+                          ),
+                        ),
+                        DataCell(
+                          Text(
+                            row.formattedConcentration,
+                            style: const TextStyle(fontSize: 10),
+                          ),
+                        ),
+                        DataCell(
+                          Text(
+                            row.transferFrom,
+                            style: const TextStyle(fontSize: 10),
+                          ),
+                        ),
+                        DataCell(
+                          Text(
+                            row.formattedTransferVolume,
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ),
+                        DataCell(
+                          Text(
+                            row.formattedSolventVolume,
+                            style: const TextStyle(fontSize: 10),
+                          ),
+                        ),
+                        DataCell(
+                          Text(
+                            row.formattedFinalVolume,
+                            style: const TextStyle(fontSize: 10),
+                          ),
+                        ),
+                        DataCell(
+                          Text(
+                            _transferLabel(row.transferEvaluation),
+                            style: const TextStyle(fontSize: 10),
+                          ),
+                        ),
+                        DataCell(
+                          Text(
+                            row.transferEvaluation?.recommendedToolName ?? '-',
+                            style: const TextStyle(fontSize: 10),
+                          ),
+                        ),
+                        DataCell(
+                          _statusIcons(
+                            warnings: row.warnings,
+                            suggestions: row.suggestions,
+                            evaluation: row.transferEvaluation,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                  .toList(),
             ),
           ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              _SummaryItem(
-                label: 'Dilutions',
-                value: result.calculatedNumberOfDilutions.toString(),
-              ),
-              const SizedBox(width: 24),
-              _SummaryItem(
-                label: 'Optimized final volume',
-                value: result.formattedOptimizedFinalVolume,
-              ),
-            ],
-          ),
-          if (result.warnings.isNotEmpty ||
-              result.rows.any((row) => row.suggestions.isNotEmpty)) ...[
-            const SizedBox(height: 16),
-            ...result.warnings.map((w) => _warningItem(w)),
-            ...result.rows.expand(
-              (row) => row.suggestions.map(
-                (s) => _suggestionItem('${row.dilutionName}: ${s.message}'),
-              ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            _SummaryItem(
+              label: 'Dilutions',
+              value: result.calculatedNumberOfDilutions.toString(),
+            ),
+            const SizedBox(width: 24),
+            _SummaryItem(
+              label: 'Optimized final volume',
+              value: result.formattedOptimizedFinalVolume,
             ),
           ],
+        ),
+        if (result.autoExtraVolumeReason != null) ...[
+          const SizedBox(height: 8),
+          _suggestionItem(result.autoExtraVolumeReason!),
         ],
-      ),
+        if (result.warnings.isNotEmpty ||
+            result.rows.any((row) => row.suggestions.isNotEmpty)) ...[
+          const SizedBox(height: 16),
+          ...result.warnings.map((w) => _warningItem(w)),
+          ...result.rows.expand(
+            (row) => row.suggestions.map(
+              (s) => _suggestionItem('${row.dilutionName}: ${s.message}'),
+            ),
+          ),
+        ],
+      ],
+    );
+
+    if (!showExportActions) return content;
+
+    return TableExportActions(
+      table: tableOverride ?? input.generateTable(),
+      child: content,
     );
   }
 
@@ -192,6 +218,40 @@ class SerialDilutionResultTable extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Widget _statusIcons({
+    required List<String> warnings,
+    required List<dynamic> suggestions,
+    dynamic evaluation,
+  }) {
+    final status = evaluation?.status;
+    final hasWarning =
+        warnings.isNotEmpty ||
+        status == TransferStatus.cautionLowRange ||
+        status == TransferStatus.cautionRepeatedTransfer ||
+        status == TransferStatus.warningNoCompatibleTool;
+    final hasSuggestion =
+        suggestions.isNotEmpty || evaluation?.suggestionMessage != null;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (hasWarning)
+          const Icon(Icons.warning_amber, size: 16, color: AppColors.warning),
+        if (hasWarning && hasSuggestion) const SizedBox(width: 4),
+        if (hasSuggestion)
+          const Icon(Icons.tips_and_updates, size: 16, color: AppColors.info),
+      ],
+    );
+  }
+
+  String _transferLabel(dynamic evaluation) {
+    if (evaluation?.transferVolumePerRepeatUl == null) return '-';
+    final perRepeat = evaluation.transferVolumePerRepeatUl as double;
+    final repeats = evaluation.repeats as int? ?? 1;
+    final label = LabCalculation.formatVolume(perRepeat, unicodeMicro: true);
+    return repeats > 1 ? '$label x $repeats' : label;
   }
 }
 

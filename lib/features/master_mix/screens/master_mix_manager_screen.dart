@@ -93,6 +93,7 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
         finalVolume: _wizard.finalVolume,
         finalVolumeUnit: _wizard.finalVolumeUnit,
         extraVolumePercent: _wizard.extraVolumePercent,
+        autoExtraVolume: _wizard.autoExtraVolume,
         baseSolventName: _wizard.baseSolventName,
         reagents: _wizard.reagents.map((r) => r.toInput()).toList(),
       ),
@@ -156,21 +157,41 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
       color: Colors.blue.shade50,
       child: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _resItem('Solvent', res.formattedBaseSolventVolume, Colors.green),
-            _resItemEditable('V2 (Total Mix)', res.optimizedFinalVolumeUl, (
-              val,
-            ) {
-              final roundedV2 = (val / _extraFactor * 10).round() / 10.0;
-              setState(
-                () => _wizard = _wizard.copyWith(
-                  finalVolume: roundedV2,
-                  finalVolumeUnit: VolumeUnit.uL,
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _resItem(
+                  'Solvent',
+                  res.formattedBaseSolventVolume,
+                  Colors.green,
                 ),
-              );
-            }, Colors.black),
+                _resItemEditable('V2 (Total Mix)', res.optimizedFinalVolumeUl, (
+                  val,
+                ) {
+                  final roundedV2 = (val / _extraFactor * 10).round() / 10.0;
+                  setState(
+                    () => _wizard = _wizard.copyWith(
+                      finalVolume: roundedV2,
+                      finalVolumeUnit: VolumeUnit.uL,
+                    ),
+                  );
+                }, Colors.black),
+              ],
+            ),
+            if (res.autoExtraVolumeReason != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                res.autoExtraVolumeReason!,
+                style: TextStyle(
+                  fontSize: _uniformFontSize - 2,
+                  color: Colors.blue.shade900,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -313,6 +334,18 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
                 () => _wizard = _wizard.copyWith(
                   extraVolumePercent: double.tryParse(v) ?? 0,
                 ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Auto optimize extra volume'),
+              subtitle: const Text(
+                'Try 10% to 30% and choose the best transfer score',
+              ),
+              value: _wizard.autoExtraVolume,
+              onChanged: (value) => setState(
+                () => _wizard = _wizard.copyWith(autoExtraVolume: value),
               ),
             ),
             const SizedBox(height: 12),

@@ -7,11 +7,13 @@ import 'screens/lab_tools_screen.dart';
 import 'screens/saved_tables_screen.dart';
 import 'theme/app_theme.dart';
 import 'data/completed_protocols_data.dart';
+import 'features/measuring_tools/services/measuring_tool_service.dart';
 import 'features/today_tasks/screens/task_history_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await loadPersistentProtocols();
+  await MeasuringToolService.instance.initialize();
   runApp(const ProtocolFlowApp());
 }
 

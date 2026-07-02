@@ -2,21 +2,14 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
-import '../features/master_mix/services/master_mix_calculator_service.dart';
-import '../features/master_mix/widgets/master_mix_result_table.dart';
 import '../features/plate_wizard/widgets/plate_result_preview.dart';
-import '../features/reagent_mix/widgets/reagent_result_table.dart';
-import '../features/serial_dilution/models/serial_dilution_input.dart';
-import '../features/serial_dilution/services/serial_dilution_calculator_service.dart';
-import '../features/serial_dilution/widgets/serial_dilution_result_table.dart';
 import '../features/staining_table/models/staining_wizard.dart';
 import '../features/staining_table/services/staining_table_generator_service.dart';
 import '../features/staining_table/widgets/staining_result_table.dart';
-import '../models/master_mix_wizard.dart';
 import '../models/plate_wizard.dart';
 import '../models/protocol_table.dart';
-import '../models/reagent_mix_wizard.dart';
 import '../theme/app_colors.dart';
+import 'horizontal_table_scroll.dart';
 import 'protocol_table_widget.dart';
 
 class ProtocolTablePreview extends StatelessWidget {
@@ -139,7 +132,7 @@ class ProtocolTablePreview extends StatelessWidget {
 
   Widget _buildInlineTable(BuildContext context) {
     final widget = _buildSpecializedTable();
-    if (widget != null) return _HorizontalTableSurface(child: widget);
+    if (widget != null) return HorizontalTableScroll(child: widget);
     if (_hasTableData(table)) return _InlineTableData(table: table);
     return Center(
       child: ProtocolTableWidget(
@@ -170,29 +163,18 @@ class ProtocolTablePreview extends StatelessWidget {
 
     try {
       switch (table.type) {
-        case TableType.masterMix:
-          return MasterMixResultTable(
-            wizard: MasterMixWizard.fromJson(jsonDecode(wizardState)),
-            calculator: MasterMixCalculatorService(),
-          );
         case TableType.staining:
           return StainingResultTable(
             wizard: StainingWizard.fromJson(jsonDecode(wizardState)),
             generator: StainingTableGeneratorService(),
           );
-        case TableType.reagentMix:
-          return ReagentResultTable(
-            wizard: ReagentMixWizard.fromJson(jsonDecode(wizardState)),
-          );
-        case TableType.serialDilution:
-          return SerialDilutionResultTable(
-            input: SerialDilutionInput.fromJson(jsonDecode(wizardState)),
-            calculator: SerialDilutionCalculatorService(),
-          );
         case TableType.plateLayout:
           return PlateResultPreview(
             wizard: PlateLayoutWizard.fromJson(jsonDecode(wizardState)),
           );
+        case TableType.masterMix:
+        case TableType.reagentMix:
+        case TableType.serialDilution:
         case TableType.reagentMatrix:
         case TableType.checklist:
         case TableType.generic:
@@ -361,106 +343,87 @@ class _InlineTableData extends StatelessWidget {
     );
     final hasRowHeaders = table.rowHeaders.isNotEmpty;
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minWidth: 360),
-        child: DataTable(
-          columnSpacing: 18,
-          headingRowHeight: 36,
-          dataRowMinHeight: 34,
-          dataRowMaxHeight: 48,
-          headingRowColor: const WidgetStatePropertyAll(
-            AppColors.surfaceContainer,
-          ),
-          columns: [
-            if (hasRowHeaders)
-              const DataColumn(
-                label: Text(
-                  '#',
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-                ),
-              ),
-            for (var i = 0; i < maxColumns; i++)
-              DataColumn(
-                label: Text(
-                  i < table.columnHeaders.length ? table.columnHeaders[i] : '',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.primary,
-                  ),
-                ),
-              ),
-          ],
-          rows: table.data.asMap().entries.map((entry) {
-            final rowIndex = entry.key;
-            final row = entry.value;
-            return DataRow(
-              cells: [
-                if (hasRowHeaders)
-                  DataCell(
-                    Text(
-                      rowIndex < table.rowHeaders.length
-                          ? table.rowHeaders[rowIndex]
-                          : '',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                  ),
-                for (var i = 0; i < maxColumns; i++)
-                  DataCell(
-                    Text(
-                      i < row.length ? row[i].toString() : '',
-                      style: const TextStyle(fontSize: 11),
-                    ),
-                  ),
-              ],
-            );
-          }).toList(),
+    return HorizontalTableScroll(
+      minWidth: 360,
+      child: DataTable(
+        border: TableBorder.all(color: AppColors.outlineVariant),
+        columnSpacing: 18,
+        headingRowHeight: 36,
+        dataRowMinHeight: 34,
+        dataRowMaxHeight: 48,
+        headingRowColor: const WidgetStatePropertyAll(
+          AppColors.surfaceContainer,
         ),
+        columns: [
+          if (hasRowHeaders)
+            const DataColumn(
+              label: Text(
+                '#',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+              ),
+            ),
+          for (var i = 0; i < maxColumns; i++)
+            DataColumn(
+              label: Text(
+                i < table.columnHeaders.length ? table.columnHeaders[i] : '',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.primary,
+                ),
+              ),
+            ),
+        ],
+        rows: table.data.asMap().entries.map((entry) {
+          final rowIndex = entry.key;
+          final row = entry.value;
+          return DataRow(
+            cells: [
+              if (hasRowHeaders)
+                DataCell(
+                  Text(
+                    rowIndex < table.rowHeaders.length
+                        ? table.rowHeaders[rowIndex]
+                        : '',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
+              for (var i = 0; i < maxColumns; i++)
+                DataCell(
+                  _isStatusColumn(i)
+                      ? _statusIcons(i < row.length ? row[i].toString() : '')
+                      : Text(
+                          i < row.length ? row[i].toString() : '',
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                ),
+            ],
+          );
+        }).toList(),
       ),
     );
   }
-}
 
-class _HorizontalTableSurface extends StatefulWidget {
-  const _HorizontalTableSurface({required this.child});
-
-  final Widget child;
-
-  @override
-  State<_HorizontalTableSurface> createState() =>
-      _HorizontalTableSurfaceState();
-}
-
-class _HorizontalTableSurfaceState extends State<_HorizontalTableSurface> {
-  final ScrollController _controller = ScrollController();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
+  bool _isStatusColumn(int index) {
+    return index < table.columnHeaders.length &&
+        table.columnHeaders[index] == 'Status';
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scrollbar(
-      controller: _controller,
-      thumbVisibility: true,
-      trackVisibility: true,
-      child: SingleChildScrollView(
-        controller: _controller,
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.only(bottom: 12),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 520),
-          child: widget.child,
-        ),
-      ),
+  Widget _statusIcons(String status) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (status.contains('Warning'))
+          const Icon(Icons.warning_amber, size: 16, color: AppColors.warning),
+        if (status.contains('Warning') && status.contains('Suggestion'))
+          const SizedBox(width: 4),
+        if (status.contains('Suggestion'))
+          const Icon(Icons.tips_and_updates, size: 16, color: AppColors.info),
+      ],
     );
   }
 }

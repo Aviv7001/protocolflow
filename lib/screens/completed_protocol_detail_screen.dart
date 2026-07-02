@@ -9,6 +9,7 @@ import 'package:protocolflow/widgets/local_image.dart';
 import 'package:protocolflow/widgets/protocol_step_notes_table.dart';
 import 'package:protocolflow/widgets/protocol_table_preview.dart';
 import 'package:protocolflow/widgets/protocol_table_widget.dart';
+import 'package:protocolflow/widgets/horizontal_table_scroll.dart';
 import 'package:protocolflow/data/completed_protocols_data.dart';
 import 'package:protocolflow/services/docx_export_service.dart';
 import 'package:protocolflow/services/pdf_service.dart';
@@ -157,8 +158,8 @@ class CompletedProtocolDetailScreen extends StatelessWidget {
             if (protocol.materials.isEmpty)
               const Text('No materials listed.')
             else
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
+              HorizontalTableScroll(
+                minWidth: 620,
                 child: DataTable(
                   columnSpacing: 24,
                   columns: const [

@@ -1,5 +1,8 @@
 import 'dart:convert';
+
 import 'protocol_table.dart';
+import '../features/lab_math/lab_calculation.dart';
+import '../features/measuring_tools/services/transfer_optimizer_service.dart';
 import '../features/master_mix/services/master_mix_calculator_service.dart';
 
 class MasterMixWizard {
@@ -7,6 +10,7 @@ class MasterMixWizard {
   final double finalVolume;
   final VolumeUnit finalVolumeUnit;
   final double extraVolumePercent;
+  final bool autoExtraVolume;
   final String baseSolventName;
   final List<MasterMixReagentItem> reagents;
 
@@ -15,6 +19,7 @@ class MasterMixWizard {
     this.finalVolume = 500,
     this.finalVolumeUnit = VolumeUnit.uL,
     this.extraVolumePercent = 10,
+    this.autoExtraVolume = false,
     this.baseSolventName = 'Water',
     this.reagents = const [],
   });
@@ -25,6 +30,7 @@ class MasterMixWizard {
       'finalVolume': finalVolume,
       'finalVolumeUnit': finalVolumeUnit.name,
       'extraVolumePercent': extraVolumePercent,
+      'autoExtraVolume': autoExtraVolume,
       'baseSolventName': baseSolventName,
       'reagents': reagents.map((r) => r.toJson()).toList(),
     };
@@ -39,6 +45,7 @@ class MasterMixWizard {
         orElse: () => VolumeUnit.uL,
       ),
       extraVolumePercent: (json['extraVolumePercent'] ?? 10).toDouble(),
+      autoExtraVolume: json['autoExtraVolume'] ?? false,
       baseSolventName: json['baseSolventName'] ?? 'Water',
       reagents: (json['reagents'] as List? ?? [])
           .map<MasterMixReagentItem>((r) => MasterMixReagentItem.fromJson(r))
@@ -51,6 +58,7 @@ class MasterMixWizard {
     double? finalVolume,
     VolumeUnit? finalVolumeUnit,
     double? extraVolumePercent,
+    bool? autoExtraVolume,
     String? baseSolventName,
     List<MasterMixReagentItem>? reagents,
   }) {
@@ -59,6 +67,7 @@ class MasterMixWizard {
       finalVolume: finalVolume ?? this.finalVolume,
       finalVolumeUnit: finalVolumeUnit ?? this.finalVolumeUnit,
       extraVolumePercent: extraVolumePercent ?? this.extraVolumePercent,
+      autoExtraVolume: autoExtraVolume ?? this.autoExtraVolume,
       baseSolventName: baseSolventName ?? this.baseSolventName,
       reagents: reagents ?? this.reagents,
     );
@@ -71,46 +80,65 @@ class MasterMixWizard {
       finalVolume: finalVolume,
       finalVolumeUnit: finalVolumeUnit,
       extraVolumePercent: extraVolumePercent,
+      autoExtraVolume: autoExtraVolume,
       baseSolventName: baseSolventName,
       reagents: reagents.map((r) => r.toInput()).toList(),
     );
 
     final result = service.calculateMasterMix(input);
 
-    final List<String> headers = [
+    final headers = [
       'Reagent name',
       'Stock conc',
       'final conc',
       'final volume',
-      'Suggestion',
+      'Suggested transfer',
+      'Tool',
+      'Status',
     ];
 
-    final List<List<dynamic>> data = [];
+    final data = <List<dynamic>>[];
 
     if (result.success) {
-      for (var r in result.reagentResults) {
+      for (final reagent in result.reagentResults) {
         data.add([
-          r.reagentName,
-          r.formattedStockConcentration,
-          r.formattedFinalConcentration,
-          r.formattedReagentVolume,
-          r.suggestions.isEmpty ? '' : r.suggestions.first.message,
+          reagent.reagentName,
+          reagent.formattedStockConcentration,
+          reagent.formattedFinalConcentration,
+          reagent.formattedReagentVolume,
+          _transferLabel(reagent.transferEvaluation),
+          _toolLabel(reagent.transferEvaluation),
+          _statusText(
+            reagent.transferEvaluation,
+            reagent.warnings.isNotEmpty,
+            reagent.suggestions.isNotEmpty,
+          ),
         ]);
       }
-      // Add solvent row
       data.add([
         baseSolventName,
         '-',
         '-',
         result.formattedBaseSolventVolume,
+        _transferLabel(result.solventTransferEvaluation),
+        _toolLabel(result.solventTransferEvaluation),
         '',
       ]);
-      // Add total row
-      data.add(['Total', '-', '-', result.formattedOptimizedFinalVolume, '']);
+      data.add([
+        'Total',
+        '-',
+        '-',
+        result.formattedOptimizedFinalVolume,
+        '-',
+        '-',
+        '',
+      ]);
     } else {
       data.add([
         'Error',
         result.errorMessage ?? 'Calculation failed',
+        '-',
+        '-',
         '-',
         '-',
         '',
@@ -130,6 +158,38 @@ class MasterMixWizard {
       ),
       metadata: {'wizard_state': jsonEncode(toJson())},
     );
+  }
+
+  String _transferLabel(dynamic evaluation) {
+    if (evaluation?.transferVolumePerRepeatUl == null) {
+      return '-';
+    }
+    final perRepeat = LabCalculation.formatVolume(
+      evaluation.transferVolumePerRepeatUl as double,
+      unicodeMicro: true,
+    );
+    final repeats = evaluation.repeats as int? ?? 1;
+    return repeats > 1 ? '$perRepeat x $repeats' : perRepeat;
+  }
+
+  String _toolLabel(dynamic evaluation) {
+    return evaluation?.recommendedToolName as String? ?? '-';
+  }
+
+  String _statusText(
+    dynamic evaluation,
+    bool hasWarnings,
+    bool hasSuggestions,
+  ) {
+    final status = evaluation?.status;
+    final statusName = status is TransferStatus ? status.label : null;
+    if (statusName != null && statusName.isNotEmpty) {
+      return statusName;
+    }
+    return [
+      if (hasWarnings) 'Warning',
+      if (hasSuggestions) 'Suggestion',
+    ].join(' ');
   }
 }
 

@@ -5,6 +5,7 @@ import '../features/staining_table/models/staining_wizard.dart';
 import '../models/reagent_mix_wizard.dart';
 import '../models/plate_wizard.dart';
 import '../features/master_mix/screens/master_mix_manager_screen.dart';
+import '../features/measuring_tools/screens/measuring_tools_manager_screen.dart';
 import '../features/serial_dilution/models/serial_dilution_input.dart';
 import '../features/serial_dilution/screens/serial_dilution_manager_screen.dart';
 import '../features/staining_table/screens/staining_table_manager_screen.dart';
@@ -82,6 +83,14 @@ class TableSelectionScreen extends StatelessWidget {
                     Icons.water_drop,
                     Colors.cyan,
                     onTap: () => _openSerialDilution(context),
+                  ),
+                  _buildTypeCard(
+                    context,
+                    'Measuring Tools',
+                    'Pipettes & cylinders',
+                    Icons.straighten,
+                    Colors.deepPurple,
+                    onTap: () => _openMeasuringTools(context),
                   ),
                   _buildTypeCard(
                     context,
@@ -331,6 +340,15 @@ class TableSelectionScreen extends StatelessWidget {
     if (result != null) {
       Navigator.pop(context, result);
     }
+  }
+
+  void _openMeasuringTools(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const MeasuringToolsManagerScreen(),
+      ),
+    );
   }
 
   Future<void> _handleCreatedTable(

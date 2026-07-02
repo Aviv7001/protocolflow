@@ -201,6 +201,7 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
       volumePerTubeUnit: item.volUnit,
       numberOfTubes: item.numSamples,
       extraVolumePercent: _wizard.extraVolumePercent,
+      autoExtraVolume: _wizard.autoExtraVolume,
       molecularWeight: item.molecularWeight,
     );
     final isSuspension =
@@ -402,6 +403,18 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
                 () => _wizard = _wizard.copyWith(
                   extraVolumePercent: double.tryParse(v) ?? 0,
                 ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Auto optimize extra volume'),
+              subtitle: const Text(
+                'Test 10% to 30% and pick the best transfer plan',
+              ),
+              value: _wizard.autoExtraVolume,
+              onChanged: (value) => setState(
+                () => _wizard = _wizard.copyWith(autoExtraVolume: value),
               ),
             ),
           ],
@@ -655,6 +668,18 @@ class _ReagentManagerScreenState extends State<ReagentManagerScreen> {
                   fontSize: _uniformFontSize - 2,
                   fontWeight: FontWeight.w600,
                 ),
+              ),
+            ),
+          ),
+        if (result.autoExtraVolumeReason != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8.0),
+            child: Text(
+              result.autoExtraVolumeReason!,
+              style: TextStyle(
+                color: Colors.blue.shade900,
+                fontSize: _uniformFontSize - 2,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),

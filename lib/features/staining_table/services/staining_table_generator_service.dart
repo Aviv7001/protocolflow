@@ -11,16 +11,17 @@ class StainingTableGeneratorService {
     bool includeSecondaryOnlyControl = true,
     bool includeFullStainRow = true,
   }) {
-    // 1. Collect all unique component names used in the panel to create columns
-    final Set<String> allComponentNames = {};
+    // 1. Collect all unique component names in panel order so stains from the
+    // same chain stay close to each other in the generated table.
+    final List<String> columns = [];
     for (var chain in wizard.panel) {
       for (var comp in chain.components) {
-        if (comp.name.isNotEmpty) {
-          allComponentNames.add(comp.name);
+        final name = comp.name.trim();
+        if (name.isNotEmpty && !columns.contains(name)) {
+          columns.add(name);
         }
       }
     }
-    final List<String> columns = allComponentNames.toList()..sort();
 
     final List<StainingTableRow> rows = [];
 
@@ -52,9 +53,10 @@ class StainingTableGeneratorService {
         }
       }
 
-      // 3. Last link only (Smart Control):
-      // For every unique reporter/last link that is part of a LINKED chain:
-      // Include that last link + all other independent stains (chains not using that reporter).
+      // 3. Last link only:
+      // - In single-stain context: show only the tested last link.
+      // - In full-stain context: show the full panel, but replace the tested
+      //   linked group with only its last link.
       if (sample.includeSecondaryOnly && includeSecondaryOnlyControl) {
         final Map<String, List<StainChain>> groupedByLastLink = {};
         for (var c in selectedChains) {
@@ -66,27 +68,37 @@ class StainingTableGeneratorService {
           final lastLinkName = entry.key;
           final chainsInGroup = entry.value;
 
-          // Only generate "Last link only" if at least one chain in the group is linked (length > 1)
+          // Only generate "Last link only" for linked chains.
           if (chainsInGroup.any((c) => c.secondary != null)) {
-            final List<StainComponent> rowComponents = [];
+            final lastLinkComponent = chainsInGroup.first.components.last;
 
-            // Add the last link component itself (representing the common reporter)
-            rowComponents.add(chainsInGroup.first.components.last);
-
-            // Add all components from chains that are NOT in this group
-            for (var otherChain in selectedChains) {
-              if (otherChain.components.last.name != lastLinkName) {
-                rowComponents.addAll(otherChain.components);
-              }
+            if (sample.includeSingleStain && includeSingleStainRows) {
+              rows.add(
+                _createRow(
+                  '${sample.sampleName} - $lastLinkName only (single stain)',
+                  [lastLinkComponent],
+                  columns,
+                ),
+              );
             }
 
-            rows.add(
-              _createRow(
-                '${sample.sampleName} - $lastLinkName only',
-                rowComponents,
-                columns,
-              ),
-            );
+            if (sample.includeFullStain && includeFullStainRow) {
+              final List<StainComponent> rowComponents = [lastLinkComponent];
+
+              for (var otherChain in selectedChains) {
+                if (otherChain.components.last.name != lastLinkName) {
+                  rowComponents.addAll(otherChain.components);
+                }
+              }
+
+              rows.add(
+                _createRow(
+                  '${sample.sampleName} - $lastLinkName only (full stain)',
+                  rowComponents,
+                  columns,
+                ),
+              );
+            }
           }
         }
       }

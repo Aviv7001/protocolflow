@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/protocol_table.dart';
 import '../theme/app_colors.dart';
+import 'horizontal_table_scroll.dart';
 import 'table_export_actions.dart';
 
 class GenericResultTable extends StatelessWidget {
@@ -17,9 +18,9 @@ class GenericResultTable extends StatelessWidget {
       includeRowHeaders: true,
       child: Card(
         clipBehavior: Clip.antiAlias,
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
+        child: HorizontalTableScroll(
           child: DataTable(
+            border: TableBorder.all(color: AppColors.outlineVariant),
             columnSpacing: 20,
             headingRowColor: const WidgetStatePropertyAll(
               AppColors.surfaceContainer,
@@ -59,12 +60,19 @@ class GenericResultTable extends StatelessWidget {
                       ),
                     ),
                   ),
-                  ...row.map((cell) {
+                  ...row.asMap().entries.map((cellEntry) {
+                    final cellIndex = cellEntry.key;
+                    final cell = cellEntry.value;
+                    final isStatusColumn =
+                        cellIndex < table.columnHeaders.length &&
+                        table.columnHeaders[cellIndex] == 'Status';
                     return DataCell(
-                      Text(
-                        cell.toString(),
-                        style: const TextStyle(fontSize: 10),
-                      ),
+                      isStatusColumn
+                          ? _statusIcons(cell.toString())
+                          : Text(
+                              cell.toString(),
+                              style: const TextStyle(fontSize: 10),
+                            ),
                     );
                   }),
                 ],
@@ -73,6 +81,20 @@ class GenericResultTable extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _statusIcons(String status) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (status.contains('Warning'))
+          const Icon(Icons.warning_amber, size: 16, color: AppColors.warning),
+        if (status.contains('Warning') && status.contains('Suggestion'))
+          const SizedBox(width: 4),
+        if (status.contains('Suggestion'))
+          const Icon(Icons.tips_and_updates, size: 16, color: AppColors.info),
+      ],
     );
   }
 }

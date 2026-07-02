@@ -2,6 +2,8 @@ export '../../lab_math/lab_calculation.dart'
     show ConcentrationFamily, ConcentrationUnit, VolumeUnit;
 
 import '../../lab_math/lab_calculation.dart';
+import '../../measuring_tools/services/measuring_tool_service.dart';
+import '../../measuring_tools/services/transfer_optimizer_service.dart';
 
 class ReagentMixInput {
   final String reagentName;
@@ -13,6 +15,7 @@ class ReagentMixInput {
   final VolumeUnit volumePerTubeUnit;
   final int numberOfTubes;
   final double extraVolumePercent;
+  final bool autoExtraVolume;
   final double? molecularWeight;
 
   ReagentMixInput({
@@ -25,6 +28,7 @@ class ReagentMixInput {
     required this.volumePerTubeUnit,
     required this.numberOfTubes,
     this.extraVolumePercent = 10,
+    this.autoExtraVolume = false,
     this.molecularWeight,
   });
 }
@@ -42,6 +46,10 @@ class ReagentMixResult {
   final List<String> warnings;
   final List<IntermediateDilutionSuggestion> suggestions;
   final double? reagentMassGrams;
+  final TransferEvaluationResult? reagentTransferEvaluation;
+  final TransferEvaluationResult? solventTransferEvaluation;
+  final double selectedExtraVolumePercent;
+  final String? autoExtraVolumeReason;
 
   ReagentMixResult({
     required this.success,
@@ -56,12 +64,17 @@ class ReagentMixResult {
     this.warnings = const [],
     this.suggestions = const [],
     this.reagentMassGrams,
+    this.reagentTransferEvaluation,
+    this.solventTransferEvaluation,
+    this.selectedExtraVolumePercent = 0,
+    this.autoExtraVolumeReason,
   });
 }
 
 class ReagentMixCalculatorService {
-  static const double minPipettableVolumeUl =
-      LabCalculation.minPipettableVolumeUl;
+  final TransferOptimizerService _optimizer = const TransferOptimizerService();
+  final MeasuringToolService _measuringToolService =
+      MeasuringToolService.instance;
 
   ReagentMixResult calculateSuspension(ReagentMixInput input) {
     if (input.workingConcentration <= 0) {
@@ -121,12 +134,15 @@ class ReagentMixCalculatorService {
         totalVolumeUl,
         unicodeMicro: true,
       ),
+      solventTransferEvaluation: _optimizer.evaluateTransferVolume(
+        totalVolumeUl,
+        _measuringToolService.activeTools(),
+      ),
+      selectedExtraVolumePercent: 0,
     );
   }
 
   ReagentMixResult calculateMix(ReagentMixInput input) {
-    final warnings = <String>[];
-
     if (input.stockConcentration <= 0) {
       return ReagentMixResult(
         success: false,
@@ -149,7 +165,9 @@ class ReagentMixCalculatorService {
     }
 
     var isCompatible = stockFamily == workingFamily;
-    if (workingFamily == ConcentrationFamily.ratio) isCompatible = true;
+    if (workingFamily == ConcentrationFamily.ratio) {
+      isCompatible = true;
+    }
 
     if (!isCompatible && input.molecularWeight == null) {
       return ReagentMixResult(
@@ -183,92 +201,100 @@ class ReagentMixCalculatorService {
       input.volumePerTubeUnit,
     );
     final baseTotalVolumeUl = volumePerTubeUl * input.numberOfTubes;
-    final extraFactor = 1 + input.extraVolumePercent.clamp(0, 100) / 100;
-    final minTotalVolumeUl = baseTotalVolumeUl * extraFactor;
-    final maxTotalVolumeUl = minTotalVolumeUl * 1.3;
+    final tools = _measuringToolService.activeTools();
 
-    var bestTotalVolumeUl = minTotalVolumeUl;
-    var bestReagentVolumeUl = 0.0;
-    var bestScore = double.infinity;
-
-    for (
-      var currentTotalUl = minTotalVolumeUl;
-      currentTotalUl <= maxTotalVolumeUl + 0.05;
-      currentTotalUl += 0.1
-    ) {
-      final currentReagentUl = (workingInBase * currentTotalUl) / stockInBase;
-      final currentSolventUl = currentTotalUl - currentReagentUl;
-
-      if (currentReagentUl < minPipettableVolumeUl) continue;
-
-      final score = LabCalculation.pipettingScore(
-        totalUl: currentTotalUl,
-        requestedUl: minTotalVolumeUl,
-        measuredVolumesUl: [currentReagentUl, currentSolventUl],
+    _ReagentMixCandidate buildCandidate(double extraPercent) {
+      final totalVolumeUl = baseTotalVolumeUl * (1 + extraPercent / 100);
+      final reagentVolumeUl = (workingInBase * totalVolumeUl) / stockInBase;
+      final solventVolumeUl = totalVolumeUl - reagentVolumeUl;
+      final suggestionMessage = _optimizer.suggestIntermediateDilution(
+        sourceConcentrationBase: stockInBase,
+        targetConcentrationBase: workingInBase,
+        totalVolumeUl: totalVolumeUl,
+        tools: tools,
       );
-
-      if (score < bestScore) {
-        bestScore = score;
-        bestTotalVolumeUl = currentTotalUl;
-        bestReagentVolumeUl = currentReagentUl;
-      }
-    }
-
-    if (bestReagentVolumeUl < minPipettableVolumeUl) {
-      return ReagentMixResult(
-        success: false,
-        errorMessage:
-            'Required reagent volume is below the minimum pipettable limit ($minPipettableVolumeUl uL)',
+      final reagentEvaluation = _optimizer.evaluateTransferVolume(
+        reagentVolumeUl,
+        tools,
+        componentName: input.reagentName,
+        intermediateSuggestion: suggestionMessage,
+      );
+      final solventEvaluation = _optimizer.evaluateTransferVolume(
+        solventVolumeUl,
+        tools,
+      );
+      final summary = _optimizer.evaluateMixVolumes([
+        reagentEvaluation,
+        solventEvaluation,
+      ]);
+      return _ReagentMixCandidate(
+        extraPercent: extraPercent,
+        totalVolumeUl: totalVolumeUl,
+        reagentVolumeUl: reagentVolumeUl,
+        solventVolumeUl: solventVolumeUl,
+        reagentEvaluation: reagentEvaluation,
+        solventEvaluation: solventEvaluation,
+        summary: summary,
       );
     }
 
-    if (bestReagentVolumeUl < 1.0) {
-      warnings.add(
-        'Reagent volume is very low (${bestReagentVolumeUl.toStringAsFixed(2)} uL). Use a serial dilution if higher precision is needed.',
-      );
-    }
+    final selected = input.autoExtraVolume
+        ? (() {
+            final autoResult = _optimizer.autoOptimizeExtraVolume(
+              evaluateForExtraPercent: (extraPercent) =>
+                  buildCandidate(extraPercent).summary,
+              currentExtraPercent: input.extraVolumePercent,
+            );
+            return buildCandidate(
+              autoResult.extraPercent,
+            ).copyWith(autoReason: autoResult.reason);
+          })()
+        : buildCandidate(input.extraVolumePercent);
 
-    final solventVolumeUl = bestTotalVolumeUl - bestReagentVolumeUl;
+    final warnings = <String>[
+      if (selected.reagentEvaluation.warningMessage != null)
+        selected.reagentEvaluation.warningMessage!,
+      if (selected.solventEvaluation.warningMessage != null)
+        selected.solventEvaluation.warningMessage!,
+    ];
+
     final suggestions = <IntermediateDilutionSuggestion>[];
-    if (LabCalculation.isBelowPracticalTransferFraction(
-      transferUl: bestReagentVolumeUl,
-      totalUl: bestTotalVolumeUl,
-    )) {
-      final suggestion = LabCalculation.intermediateDilutionSuggestion(
+    if (selected.reagentEvaluation.suggestionMessage != null) {
+      final intermediate = LabCalculation.intermediateDilutionSuggestion(
         stockConcentrationBase: stockInBase,
         targetConcentrationBase: workingInBase,
         targetDisplayUnit: input.workingUnit,
-        totalVolumeUl: bestTotalVolumeUl,
+        totalVolumeUl: selected.totalVolumeUl,
       );
-      warnings.add(
-        LabCalculation.practicalTransferWarning(
-          transferUl: bestReagentVolumeUl,
-          totalUl: bestTotalVolumeUl,
-        ),
-      );
-      if (suggestion != null) suggestions.add(suggestion);
+      if (intermediate != null) {
+        suggestions.add(intermediate);
+      }
     }
 
     return ReagentMixResult(
       success: true,
-      reagentVolumeUl: bestReagentVolumeUl,
-      solventVolumeUl: solventVolumeUl,
-      totalVolumeUl: bestTotalVolumeUl,
+      reagentVolumeUl: selected.reagentVolumeUl,
+      solventVolumeUl: selected.solventVolumeUl,
+      totalVolumeUl: selected.totalVolumeUl,
       formattedReagentVolume: LabCalculation.formatVolume(
-        bestReagentVolumeUl,
+        selected.reagentVolumeUl,
         unicodeMicro: true,
       ),
       formattedSolventVolume: LabCalculation.formatVolume(
-        solventVolumeUl,
+        selected.solventVolumeUl,
         unicodeMicro: true,
       ),
       formattedTotalVolume: LabCalculation.formatVolume(
-        bestTotalVolumeUl,
+        selected.totalVolumeUl,
         unicodeMicro: true,
       ),
-      optimized: bestScore < double.infinity,
+      optimized: input.autoExtraVolume,
       warnings: warnings,
       suggestions: suggestions,
+      reagentTransferEvaluation: selected.reagentEvaluation,
+      solventTransferEvaluation: selected.solventEvaluation,
+      selectedExtraVolumePercent: selected.extraPercent,
+      autoExtraVolumeReason: selected.autoReason,
     );
   }
 
@@ -354,6 +380,11 @@ class ReagentMixCalculatorService {
         totalVolumeUl,
         unicodeMicro: true,
       ),
+      solventTransferEvaluation: _optimizer.evaluateTransferVolume(
+        totalVolumeUl,
+        _measuringToolService.activeTools(),
+      ),
+      selectedExtraVolumePercent: input.extraVolumePercent,
     );
   }
 
@@ -379,7 +410,9 @@ class ReagentMixCalculatorService {
   ]) {
     final family = LabCalculation.familyOf(unit);
     if (family == ConcentrationFamily.molar) {
-      if (molecularWeight == null || molecularWeight <= 0) return null;
+      if (molecularWeight == null || molecularWeight <= 0) {
+        return null;
+      }
       return LabCalculation.concentrationToBase(concentration, unit) *
           volumeL *
           molecularWeight;
@@ -391,5 +424,40 @@ class ReagentMixCalculatorService {
       return (concentration / 100.0) * (volumeL * 1000);
     }
     return null;
+  }
+}
+
+class _ReagentMixCandidate {
+  final double extraPercent;
+  final double totalVolumeUl;
+  final double reagentVolumeUl;
+  final double solventVolumeUl;
+  final TransferEvaluationResult reagentEvaluation;
+  final TransferEvaluationResult solventEvaluation;
+  final MixEvaluationSummary summary;
+  final String? autoReason;
+
+  const _ReagentMixCandidate({
+    required this.extraPercent,
+    required this.totalVolumeUl,
+    required this.reagentVolumeUl,
+    required this.solventVolumeUl,
+    required this.reagentEvaluation,
+    required this.solventEvaluation,
+    required this.summary,
+    this.autoReason,
+  });
+
+  _ReagentMixCandidate copyWith({String? autoReason}) {
+    return _ReagentMixCandidate(
+      extraPercent: extraPercent,
+      totalVolumeUl: totalVolumeUl,
+      reagentVolumeUl: reagentVolumeUl,
+      solventVolumeUl: solventVolumeUl,
+      reagentEvaluation: reagentEvaluation,
+      solventEvaluation: solventEvaluation,
+      summary: summary,
+      autoReason: autoReason ?? this.autoReason,
+    );
   }
 }

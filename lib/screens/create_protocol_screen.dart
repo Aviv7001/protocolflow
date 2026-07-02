@@ -14,6 +14,7 @@ import '../theme/app_colors.dart';
 import '../widgets/protocol_table_widget.dart';
 import '../widgets/protocol_table_preview.dart';
 import '../widgets/protocol_step_notes_table.dart';
+import '../widgets/horizontal_table_scroll.dart';
 import '../services/auth_service.dart';
 import '../services/drive_sync_service.dart';
 import '../services/picked_image_store.dart';
@@ -1151,8 +1152,8 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
       );
     }
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
+    return HorizontalTableScroll(
+      minWidth: 620,
       child: DataTable(
         columnSpacing: 20,
         horizontalMargin: 0,

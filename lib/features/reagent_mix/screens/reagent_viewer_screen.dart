@@ -7,12 +7,14 @@ import '../../../widgets/save_table_action.dart';
 
 class ReagentViewerScreen extends StatefulWidget {
   final ReagentMixWizard wizard;
+  final ProtocolTable initialTable;
   final bool isReadOnly;
   final Function(ProtocolTable) onUpdate;
 
   const ReagentViewerScreen({
     super.key,
     required this.wizard,
+    required this.initialTable,
     this.isReadOnly = false,
     required this.onUpdate,
   });
@@ -23,11 +25,13 @@ class ReagentViewerScreen extends StatefulWidget {
 
 class _ReagentViewerScreenState extends State<ReagentViewerScreen> {
   late ReagentMixWizard _wizard;
+  late ProtocolTable _table;
 
   @override
   void initState() {
     super.initState();
     _wizard = widget.wizard;
+    _table = widget.initialTable;
   }
 
   void _editTable() async {
@@ -44,10 +48,14 @@ class _ReagentViewerScreenState extends State<ReagentViewerScreen> {
     );
 
     if (updatedWizard != null) {
+      final updatedTable = updatedWizard.generateTable().copyWith(
+        id: _table.id,
+      );
       setState(() {
         _wizard = updatedWizard;
+        _table = updatedTable;
       });
-      widget.onUpdate(_wizard.generateTable());
+      widget.onUpdate(updatedTable);
     }
   }
 
@@ -59,7 +67,7 @@ class _ReagentViewerScreenState extends State<ReagentViewerScreen> {
           _wizard.title.isEmpty ? 'C1V1 = C2V2 Dilution' : _wizard.title,
         ),
         actions: [
-          SaveTableAction(table: _wizard.generateTable()),
+          SaveTableAction(table: _table),
           if (!widget.isReadOnly)
             IconButton(
               icon: const Icon(Icons.edit),
@@ -70,7 +78,7 @@ class _ReagentViewerScreenState extends State<ReagentViewerScreen> {
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
-        child: ReagentResultTable(wizard: _wizard),
+        child: ReagentResultTable(wizard: _wizard, tableOverride: _table),
       ),
     );
   }

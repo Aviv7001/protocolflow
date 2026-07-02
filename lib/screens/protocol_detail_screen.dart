@@ -16,6 +16,7 @@ import '../services/export_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/protocol_step_notes_table.dart';
 import '../widgets/protocol_table_preview.dart';
+import '../widgets/horizontal_table_scroll.dart';
 import 'run_protocol_screen.dart';
 import 'create_protocol_screen.dart';
 
@@ -335,8 +336,8 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
             if (protocol.materials.isEmpty)
               const Text('No materials listed.')
             else
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
+              HorizontalTableScroll(
+                minWidth: 620,
                 child: DataTable(
                   columnSpacing: 24,
                   columns: const [

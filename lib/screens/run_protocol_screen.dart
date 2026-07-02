@@ -14,6 +14,7 @@ import 'package:protocolflow/data/completed_protocols_data.dart';
 import 'package:protocolflow/services/picked_image_store.dart';
 import 'package:protocolflow/theme/app_colors.dart';
 import 'package:protocolflow/widgets/action_timer_wrapper.dart';
+import 'package:protocolflow/widgets/horizontal_table_scroll.dart';
 import 'package:protocolflow/widgets/local_image.dart';
 import 'package:protocolflow/widgets/protocol_step_notes_table.dart';
 import 'package:protocolflow/widgets/protocol_table_preview.dart';
@@ -1095,8 +1096,8 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
               ? const Center(child: Text('No materials listed.'))
               : SingleChildScrollView(
                   scrollDirection: Axis.vertical,
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
+                  child: HorizontalTableScroll(
+                    minWidth: 620,
                     child: DataTable(
                       columnSpacing: 24,
                       columns: const [

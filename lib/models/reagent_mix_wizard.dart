@@ -1,6 +1,8 @@
 import 'dart:convert';
+
 import 'protocol_table.dart';
 import '../features/lab_math/lab_calculation.dart';
+import '../features/measuring_tools/services/transfer_optimizer_service.dart';
 import '../features/reagent_mix/services/reagent_mix_calculator_service.dart';
 
 enum ReagentPreparationType { stockDilution, solidSuspension }
@@ -9,11 +11,13 @@ class ReagentMixWizard {
   final String title;
   final List<ReagentItem> reagents;
   final double extraVolumePercent;
+  final bool autoExtraVolume;
 
   ReagentMixWizard({
     this.title = 'C1V1 = C2V2 Dilution',
     this.reagents = const [],
     this.extraVolumePercent = 10,
+    this.autoExtraVolume = false,
   });
 
   Map<String, dynamic> toJson() {
@@ -21,6 +25,7 @@ class ReagentMixWizard {
       'title': title,
       'reagents': reagents.map((r) => r.toJson()).toList(),
       'extraVolumePercent': extraVolumePercent,
+      'autoExtraVolume': autoExtraVolume,
     };
   }
 
@@ -36,6 +41,7 @@ class ReagentMixWizard {
           : legacyOverfillFactor == null
           ? 10
           : ((legacyOverfillFactor - 1) * 100),
+      autoExtraVolume: json['autoExtraVolume'] ?? false,
     );
   }
 
@@ -43,16 +49,18 @@ class ReagentMixWizard {
     String? title,
     List<ReagentItem>? reagents,
     double? extraVolumePercent,
+    bool? autoExtraVolume,
   }) {
     return ReagentMixWizard(
       title: title ?? this.title,
       reagents: reagents ?? this.reagents,
       extraVolumePercent: extraVolumePercent ?? this.extraVolumePercent,
+      autoExtraVolume: autoExtraVolume ?? this.autoExtraVolume,
     );
   }
 
   ProtocolTable generateTable() {
-    final List<String> headers = [
+    final headers = [
       'Preparation',
       'Reagent',
       'Solvent',
@@ -63,66 +71,78 @@ class ReagentMixWizard {
       'V2 (Total)',
       'V1 (from Stock)',
       'Solvent Vol.',
-      'Suggestion',
+      'Suggested Transfer',
+      'Tool',
+      'Status',
     ];
 
     final service = ReagentMixCalculatorService();
 
-    final List<List<dynamic>> data = reagents.map((r) {
+    final data = reagents.map((reagent) {
       final input = ReagentMixInput(
-        reagentName: r.name,
-        stockConcentration: r.stockConc,
-        stockUnit: r.stockUnit,
-        workingConcentration: r.workingConc,
-        workingUnit: r.workingUnit,
-        volumePerTube: r.volPerSample,
-        volumePerTubeUnit: r.volUnit,
-        numberOfTubes: r.numSamples,
+        reagentName: reagent.name,
+        stockConcentration: reagent.stockConc,
+        stockUnit: reagent.stockUnit,
+        workingConcentration: reagent.workingConc,
+        workingUnit: reagent.workingUnit,
+        volumePerTube: reagent.volPerSample,
+        volumePerTubeUnit: reagent.volUnit,
+        numberOfTubes: reagent.numSamples,
         extraVolumePercent: extraVolumePercent,
-        molecularWeight: r.molecularWeight,
+        autoExtraVolume: autoExtraVolume,
+        molecularWeight: reagent.molecularWeight,
       );
 
-      final result = r.preparationType == ReagentPreparationType.solidSuspension
+      final result =
+          reagent.preparationType == ReagentPreparationType.solidSuspension
           ? service.calculateSuspension(input)
           : service.calculateMix(input);
 
       if (!result.success) {
-        return [
-          r.preparationType.label,
-          r.name,
-          r.solvent,
+        return <dynamic>[
+          reagent.preparationType.label,
+          reagent.name,
+          reagent.solvent,
           'ERR',
           'ERR',
           'ERR',
-          r.numSamples,
+          reagent.numSamples,
           'ERROR',
           result.errorMessage ?? 'Calc failed',
+          '',
+          '',
           '',
           '',
         ];
       }
 
-      String formatConc(double val, ConcentrationUnit unit) {
+      String formatConc(double value, ConcentrationUnit unit) {
         if (unit == ConcentrationUnit.ratio) {
-          return '1:${val.toStringAsFixed(val == val.toInt() ? 0 : 1)}';
+          return '1:${value.toStringAsFixed(value == value.toInt() ? 0 : 1)}';
         }
-        return '$val ${LabCalculation.unitLabel(unit)}';
+        return '$value ${LabCalculation.unitLabel(unit)}';
       }
 
-      return [
-        r.preparationType.label,
-        r.name,
-        r.solvent,
-        r.preparationType == ReagentPreparationType.solidSuspension
+      return <dynamic>[
+        reagent.preparationType.label,
+        reagent.name,
+        reagent.solvent,
+        reagent.preparationType == ReagentPreparationType.solidSuspension
             ? '-'
-            : formatConc(r.stockConc, r.stockUnit),
-        formatConc(r.workingConc, r.workingUnit),
-        '${r.volPerSample} ${r.volUnit.name}',
-        r.numSamples.toString(),
+            : formatConc(reagent.stockConc, reagent.stockUnit),
+        formatConc(reagent.workingConc, reagent.workingUnit),
+        '${reagent.volPerSample} ${reagent.volUnit.name}',
+        reagent.numSamples.toString(),
         result.formattedTotalVolume,
         result.formattedReagentVolume,
         result.formattedSolventVolume,
-        result.suggestions.isEmpty ? '' : result.suggestions.first.message,
+        _transferLabel(result.reagentTransferEvaluation),
+        _toolLabel(result.reagentTransferEvaluation),
+        _statusText(
+          result.reagentTransferEvaluation,
+          result.warnings.isNotEmpty,
+          result.suggestions.isNotEmpty,
+        ),
       ];
     }).toList();
 
@@ -139,6 +159,38 @@ class ReagentMixWizard {
       ),
       metadata: {'wizard_state': jsonEncode(toJson())},
     );
+  }
+
+  String _transferLabel(dynamic evaluation) {
+    if (evaluation?.transferVolumePerRepeatUl == null) {
+      return '-';
+    }
+    final perRepeat = LabCalculation.formatVolume(
+      evaluation.transferVolumePerRepeatUl as double,
+      unicodeMicro: true,
+    );
+    final repeats = evaluation.repeats as int? ?? 1;
+    return repeats > 1 ? '$perRepeat x $repeats' : perRepeat;
+  }
+
+  String _toolLabel(dynamic evaluation) {
+    return evaluation?.recommendedToolName as String? ?? '-';
+  }
+
+  String _statusText(
+    dynamic evaluation,
+    bool hasWarnings,
+    bool hasSuggestions,
+  ) {
+    final status = evaluation?.status;
+    final statusName = status is TransferStatus ? status.label : null;
+    if (statusName != null && statusName.isNotEmpty) {
+      return statusName;
+    }
+    return [
+      if (hasWarnings) 'Warning',
+      if (hasSuggestions) 'Suggestion',
+    ].join(' ');
   }
 }
 

@@ -9,6 +9,8 @@ class SerialDilutionResult {
   final String formattedOptimizedFinalVolume;
   final List<SerialDilutionRow> rows;
   final List<String> warnings;
+  final double selectedExtraVolumePercent;
+  final String? autoExtraVolumeReason;
 
   SerialDilutionResult({
     required this.success,
@@ -19,5 +21,7 @@ class SerialDilutionResult {
     this.formattedOptimizedFinalVolume = '',
     this.rows = const [],
     this.warnings = const [],
+    this.selectedExtraVolumePercent = 0,
+    this.autoExtraVolumeReason,
   });
 }

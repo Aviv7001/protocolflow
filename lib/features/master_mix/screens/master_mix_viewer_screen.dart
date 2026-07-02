@@ -8,12 +8,14 @@ import '../../../widgets/save_table_action.dart';
 
 class MasterMixViewerScreen extends StatefulWidget {
   final MasterMixWizard wizard;
+  final ProtocolTable initialTable;
   final bool isReadOnly;
   final Function(ProtocolTable) onUpdate;
 
   const MasterMixViewerScreen({
     super.key,
     required this.wizard,
+    required this.initialTable,
     this.isReadOnly = false,
     required this.onUpdate,
   });
@@ -24,12 +26,14 @@ class MasterMixViewerScreen extends StatefulWidget {
 
 class _MasterMixViewerScreenState extends State<MasterMixViewerScreen> {
   late MasterMixWizard _wizard;
+  late ProtocolTable _table;
   final MasterMixCalculatorService _calculator = MasterMixCalculatorService();
 
   @override
   void initState() {
     super.initState();
     _wizard = widget.wizard;
+    _table = widget.initialTable;
   }
 
   void _editTable() async {
@@ -46,10 +50,14 @@ class _MasterMixViewerScreenState extends State<MasterMixViewerScreen> {
     );
 
     if (updatedWizard != null) {
+      final updatedTable = updatedWizard.generateTable().copyWith(
+        id: _table.id,
+      );
       setState(() {
         _wizard = updatedWizard;
+        _table = updatedTable;
       });
-      widget.onUpdate(_wizard.generateTable());
+      widget.onUpdate(updatedTable);
     }
   }
 
@@ -59,7 +67,7 @@ class _MasterMixViewerScreenState extends State<MasterMixViewerScreen> {
       appBar: AppBar(
         title: Text(_wizard.mixName),
         actions: [
-          SaveTableAction(table: _wizard.generateTable()),
+          SaveTableAction(table: _table),
           if (!widget.isReadOnly)
             IconButton(
               icon: const Icon(Icons.edit),
@@ -70,7 +78,11 @@ class _MasterMixViewerScreenState extends State<MasterMixViewerScreen> {
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
-        child: MasterMixResultTable(wizard: _wizard, calculator: _calculator),
+        child: MasterMixResultTable(
+          wizard: _wizard,
+          calculator: _calculator,
+          tableOverride: _table,
+        ),
       ),
     );
   }

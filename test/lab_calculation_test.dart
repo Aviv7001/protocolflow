@@ -108,7 +108,7 @@ void main() {
 
   group('ReagentMixCalculatorService smart pipetting', () {
     test(
-      'suggests intermediate stock when direct transfer is below 5 percent',
+      'recommends a compatible measuring tool for a small direct transfer',
       () {
         final result = ReagentMixCalculatorService().calculateMix(
           ReagentMixInput(
@@ -126,14 +126,10 @@ void main() {
 
         expect(result.success, isTrue);
         expect(result.reagentVolumeUl, closeTo(1, 0.000001));
-        expect(result.warnings, isNotEmpty);
-        expect(result.suggestions, hasLength(1));
-        expect(
-          result.suggestions.first.intermediateStockConcentration,
-          closeTo(20, 0.000001),
-        );
-        expect(result.suggestions.first.finalTransferVolumeUl, 50);
-        expect(result.suggestions.first.finalSolventVolumeUl, 950);
+        expect(result.reagentTransferEvaluation, isNotNull);
+        expect(result.reagentTransferEvaluation!.recommendedToolName, 'M2.5');
+        expect(result.reagentTransferEvaluation!.repeats, 1);
+        expect(result.suggestions, isEmpty);
       },
     );
 
@@ -163,7 +159,7 @@ void main() {
 
   group('MasterMixCalculatorService smart pipetting', () {
     test(
-      'adds intermediate suggestions for low fraction reagent transfers',
+      'recommends a compatible measuring tool for small reagent volumes',
       () {
         final result = MasterMixCalculatorService().calculateMasterMix(
           MasterMixInput(
@@ -185,11 +181,12 @@ void main() {
         );
 
         expect(result.success, isTrue);
-        expect(result.reagentResults.single.suggestions, hasLength(1));
+        expect(result.reagentResults.single.transferEvaluation, isNotNull);
         expect(
-          result.reagentResults.single.suggestions.first.finalTransferVolumeUl,
-          closeTo(50, 0.000001),
+          result.reagentResults.single.transferEvaluation!.recommendedToolName,
+          'M2.5',
         );
+        expect(result.reagentResults.single.suggestions, isEmpty);
       },
     );
   });

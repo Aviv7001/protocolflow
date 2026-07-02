@@ -1,8 +1,8 @@
 import 'dart:convert';
 
 import '../../../models/protocol_table.dart';
-import '../../master_mix/services/master_mix_calculator_service.dart'
-    show ConcentrationUnit, VolumeUnit;
+import '../../lab_math/lab_calculation.dart';
+import '../../measuring_tools/services/transfer_optimizer_service.dart';
 import '../services/serial_dilution_calculator_service.dart';
 
 enum DilutionMode { forward, independent }
@@ -21,6 +21,7 @@ class SerialDilutionInput {
   final double finalVolume;
   final VolumeUnit finalVolumeUnit;
   final double extraVolumePercent;
+  final bool autoExtraVolume;
   final DilutionMode dilutionMode;
   final SeriesLengthMode seriesLengthMode;
   final int? numberOfDilutions;
@@ -40,6 +41,7 @@ class SerialDilutionInput {
     this.finalVolume = 500,
     this.finalVolumeUnit = VolumeUnit.uL,
     this.extraVolumePercent = 10,
+    this.autoExtraVolume = false,
     this.dilutionMode = DilutionMode.forward,
     this.seriesLengthMode = SeriesLengthMode.numberOfDilutions,
     this.numberOfDilutions = 8,
@@ -62,6 +64,7 @@ class SerialDilutionInput {
       'finalVolume': finalVolume,
       'finalVolumeUnit': finalVolumeUnit.name,
       'extraVolumePercent': extraVolumePercent,
+      'autoExtraVolume': autoExtraVolume,
       'dilutionMode': dilutionMode.name,
       'seriesLengthMode': seriesLengthMode.name,
       'numberOfDilutions': numberOfDilutions,
@@ -97,6 +100,7 @@ class SerialDilutionInput {
         orElse: () => VolumeUnit.uL,
       ),
       extraVolumePercent: (json['extraVolumePercent'] ?? 10).toDouble(),
+      autoExtraVolume: json['autoExtraVolume'] ?? false,
       dilutionMode: DilutionMode.values.firstWhere(
         (e) => e.name == json['dilutionMode'],
         orElse: () => DilutionMode.forward,
@@ -131,6 +135,7 @@ class SerialDilutionInput {
     double? finalVolume,
     VolumeUnit? finalVolumeUnit,
     double? extraVolumePercent,
+    bool? autoExtraVolume,
     DilutionMode? dilutionMode,
     SeriesLengthMode? seriesLengthMode,
     int? numberOfDilutions,
@@ -154,6 +159,7 @@ class SerialDilutionInput {
       finalVolume: finalVolume ?? this.finalVolume,
       finalVolumeUnit: finalVolumeUnit ?? this.finalVolumeUnit,
       extraVolumePercent: extraVolumePercent ?? this.extraVolumePercent,
+      autoExtraVolume: autoExtraVolume ?? this.autoExtraVolume,
       dilutionMode: dilutionMode ?? this.dilutionMode,
       seriesLengthMode: seriesLengthMode ?? this.seriesLengthMode,
       numberOfDilutions: numberOfDilutions ?? this.numberOfDilutions,
@@ -177,7 +183,9 @@ class SerialDilutionInput {
       'Transfer Volume',
       'Solvent Volume',
       'Final Volume',
-      'Suggestion',
+      'Suggested Transfer',
+      'Tool',
+      'Status',
     ];
 
     final data = result.success
@@ -190,7 +198,9 @@ class SerialDilutionInput {
                   row.formattedTransferVolume,
                   row.formattedSolventVolume,
                   row.formattedFinalVolume,
-                  row.suggestions.isEmpty ? '' : row.suggestions.first.message,
+                  _transferLabel(row.transferEvaluation),
+                  _toolLabel(row.transferEvaluation),
+                  _statusText(row),
                 ],
               )
               .toList()
@@ -198,6 +208,8 @@ class SerialDilutionInput {
             [
               'Error',
               result.errorMessage ?? 'Calculation failed',
+              '',
+              '',
               '',
               '',
               '',
@@ -219,5 +231,33 @@ class SerialDilutionInput {
       ),
       metadata: {'wizard_state': jsonEncode(toJson())},
     );
+  }
+
+  String _transferLabel(dynamic evaluation) {
+    if (evaluation?.transferVolumePerRepeatUl == null) {
+      return '-';
+    }
+    final perRepeat = LabCalculation.formatVolume(
+      evaluation.transferVolumePerRepeatUl as double,
+      unicodeMicro: true,
+    );
+    final repeats = evaluation.repeats as int? ?? 1;
+    return repeats > 1 ? '$perRepeat x $repeats' : perRepeat;
+  }
+
+  String _toolLabel(dynamic evaluation) {
+    return evaluation?.recommendedToolName as String? ?? '-';
+  }
+
+  String _statusText(dynamic row) {
+    final status = row.transferEvaluation?.status;
+    final statusName = status is TransferStatus ? status.label : null;
+    if (statusName != null && statusName.isNotEmpty) {
+      return statusName;
+    }
+    return [
+      if (row.warnings.isNotEmpty) 'Warning',
+      if (row.suggestions.isNotEmpty) 'Suggestion',
+    ].join(' ');
   }
 }
