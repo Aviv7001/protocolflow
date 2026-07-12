@@ -2,15 +2,12 @@ import 'package:flutter/material.dart';
 import '../models/protocol_table.dart';
 import '../models/master_mix_wizard.dart';
 import '../features/staining_table/models/staining_wizard.dart';
-import '../models/reagent_mix_wizard.dart';
 import '../models/plate_wizard.dart';
 import '../features/master_mix/screens/master_mix_manager_screen.dart';
-import '../features/measuring_tools/screens/measuring_tools_manager_screen.dart';
 import '../features/serial_dilution/models/serial_dilution_input.dart';
 import '../features/serial_dilution/screens/serial_dilution_manager_screen.dart';
 import '../features/staining_table/screens/staining_table_manager_screen.dart';
 import '../services/storage_service.dart';
-import 'reagent_manager_screen.dart';
 import 'plate_wizard_samples_screen.dart';
 import 'saved_table_picker_screen.dart';
 import 'table_data_editor_screen.dart';
@@ -70,27 +67,11 @@ class TableSelectionScreen extends StatelessWidget {
                   ),
                   _buildTypeCard(
                     context,
-                    'C1V1 = C2V2',
-                    'Reagent Dilution',
-                    Icons.science,
-                    Colors.teal,
-                    onTap: () => _openReagentMix(context),
-                  ),
-                  _buildTypeCard(
-                    context,
                     'Serial Dilution',
                     'Standard Curve',
                     Icons.water_drop,
                     Colors.cyan,
                     onTap: () => _openSerialDilution(context),
-                  ),
-                  _buildTypeCard(
-                    context,
-                    'Measuring Tools',
-                    'Pipettes & cylinders',
-                    Icons.straighten,
-                    Colors.deepPurple,
-                    onTap: () => _openMeasuringTools(context),
                   ),
                   _buildTypeCard(
                     context,
@@ -258,22 +239,6 @@ class TableSelectionScreen extends StatelessWidget {
     }
   }
 
-  void _openReagentMix(BuildContext context) async {
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ReagentManagerScreen(
-          wizard: ReagentMixWizard(),
-          onUpdate: (updated) {},
-        ),
-      ),
-    );
-    if (!context.mounted) return;
-    if (result != null && result is ReagentMixWizard) {
-      await _handleCreatedTable(context, result.generateTable());
-    }
-  }
-
   void _openSerialDilution(BuildContext context) async {
     final result = await Navigator.push(
       context,
@@ -340,15 +305,6 @@ class TableSelectionScreen extends StatelessWidget {
     if (result != null) {
       Navigator.pop(context, result);
     }
-  }
-
-  void _openMeasuringTools(BuildContext context) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const MeasuringToolsManagerScreen(),
-      ),
-    );
   }
 
   Future<void> _handleCreatedTable(

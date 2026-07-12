@@ -1,10 +1,8 @@
 enum TableType {
   generic,
   plateLayout,
-  reagentMatrix,
   masterMix,
   checklist,
-  reagentMix,
   staining,
   serialDilution,
 }

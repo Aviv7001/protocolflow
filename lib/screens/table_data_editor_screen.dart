@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../models/protocol_table.dart';
 import '../models/plate_wizard.dart';
-import '../models/reagent_mix_wizard.dart';
 import '../models/master_mix_wizard.dart';
 import 'plate_wizard_samples_screen.dart';
 import '../features/staining_table/models/staining_wizard.dart';
@@ -35,7 +34,6 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
   bool _isGridView = false;
 
   late PlateLayoutWizard _plateWizard;
-  late ReagentMixWizard _reagentWizard;
   late MasterMixWizard _masterMixWizard;
   late StainingWizard _stainingWizard;
 
@@ -94,19 +92,6 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
       } else {
         _initDefaultPlateWizard();
       }
-    } else if (_type == TableType.reagentMix) {
-      _isGridView = false;
-      if (table.metadata.containsKey('wizard_state')) {
-        try {
-          _reagentWizard = ReagentMixWizard.fromJson(
-            jsonDecode(table.metadata['wizard_state']!),
-          );
-        } catch (e) {
-          _initDefaultReagentWizard();
-        }
-      } else {
-        _initDefaultReagentWizard();
-      }
     } else if (_type == TableType.masterMix) {
       _isGridView = false;
       if (table.metadata.containsKey('wizard_state')) {
@@ -146,12 +131,6 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
     );
   }
 
-  void _initDefaultReagentWizard() {
-    _reagentWizard = ReagentMixWizard(
-      reagents: [ReagentItem(name: 'Reagent 1')],
-    );
-  }
-
   void _initDefaultMasterMixWizard() {
     _masterMixWizard = MasterMixWizard(
       reagents: [MasterMixReagentItem(name: 'Reagent 1')],
@@ -174,8 +153,6 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
         ..._allTables[_currentTableIndex].metadata,
         if (_type == TableType.plateLayout)
           'wizard_state': jsonEncode(_plateWizard.toJson()),
-        if (_type == TableType.reagentMix)
-          'wizard_state': jsonEncode(_reagentWizard.toJson()),
         if (_type == TableType.masterMix)
           'wizard_state': jsonEncode(_masterMixWizard.toJson()),
         if (_type == TableType.staining)
@@ -190,8 +167,6 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
 
     if (_type == TableType.plateLayout) {
       updatedTables = _plateWizard.generateTables();
-    } else if (_type == TableType.reagentMix) {
-      updatedTables = [_reagentWizard.generateTable()];
     } else if (_type == TableType.masterMix) {
       updatedTables = [_masterMixWizard.generateTable()];
     } else if (_type == TableType.staining) {

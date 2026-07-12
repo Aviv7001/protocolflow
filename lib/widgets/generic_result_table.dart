@@ -3,6 +3,7 @@ import '../models/protocol_table.dart';
 import '../theme/app_colors.dart';
 import 'horizontal_table_scroll.dart';
 import 'table_export_actions.dart';
+import 'transfer_status_icons.dart';
 
 class GenericResultTable extends StatelessWidget {
   final ProtocolTable table;
@@ -85,16 +86,6 @@ class GenericResultTable extends StatelessWidget {
   }
 
   Widget _statusIcons(String status) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (status.contains('Warning'))
-          const Icon(Icons.warning_amber, size: 16, color: AppColors.warning),
-        if (status.contains('Warning') && status.contains('Suggestion'))
-          const SizedBox(width: 4),
-        if (status.contains('Suggestion'))
-          const Icon(Icons.tips_and_updates, size: 16, color: AppColors.info),
-      ],
-    );
+    return TransferStatusIcons(statusText: status);
   }
 }

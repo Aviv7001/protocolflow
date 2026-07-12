@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import '../../../models/reagent_mix_wizard.dart';
 import '../../../models/protocol_table.dart';
-import '../../measuring_tools/services/transfer_optimizer_service.dart';
 import '../services/reagent_mix_calculator_service.dart';
 import '../../../widgets/horizontal_table_scroll.dart';
 import '../../../widgets/table_export_actions.dart';
+import '../../../widgets/transfer_status_icons.dart';
 import '../../../theme/app_colors.dart';
 
 class ReagentResultTable extends StatelessWidget {
@@ -79,7 +79,7 @@ class ReagentResultTable extends StatelessWidget {
                     if (isStatus && rowIndex < results.length) {
                       final result = results[rowIndex];
                       return DataCell(
-                        _statusIcons(
+                        TransferStatusIcons(
                           warnings: result.warnings,
                           suggestions: result.suggestions,
                           evaluation: result.reagentTransferEvaluation,
@@ -128,38 +128,15 @@ class ReagentResultTable extends StatelessWidget {
     return TableExportActions(table: table, child: content);
   }
 
-  Widget _statusIcons({
-    required List<String> warnings,
-    required List<dynamic> suggestions,
-    dynamic evaluation,
-  }) {
-    final status = evaluation?.status;
-    final hasWarning =
-        warnings.isNotEmpty ||
-        status == TransferStatus.cautionLowRange ||
-        status == TransferStatus.cautionRepeatedTransfer ||
-        status == TransferStatus.warningNoCompatibleTool;
-    final hasSuggestion =
-        suggestions.isNotEmpty || evaluation?.suggestionMessage != null;
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (hasWarning)
-          const Icon(Icons.warning_amber, size: 16, color: AppColors.warning),
-        if (hasWarning && hasSuggestion) const SizedBox(width: 4),
-        if (hasSuggestion)
-          const Icon(Icons.tips_and_updates, size: 16, color: AppColors.info),
-      ],
-    );
-  }
-
   Widget _warningItem(String text) {
     return _noteItem(Icons.warning_amber, AppColors.warning, text);
   }
 
   Widget _suggestionItem(String text) {
-    return _noteItem(Icons.tips_and_updates, AppColors.info, text);
+    final icon = text.toLowerCase().contains('auto-selected')
+        ? Icons.auto_fix_high
+        : Icons.science_outlined;
+    return _noteItem(icon, AppColors.info, text);
   }
 
   Widget _noteItem(IconData icon, Color color, String text) {

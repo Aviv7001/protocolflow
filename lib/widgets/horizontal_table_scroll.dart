@@ -27,19 +27,30 @@ class _HorizontalTableScrollState extends State<HorizontalTableScroll> {
 
   @override
   Widget build(BuildContext context) {
-    return Scrollbar(
-      controller: _controller,
-      thumbVisibility: true,
-      trackVisibility: true,
-      child: SingleChildScrollView(
-        controller: _controller,
-        scrollDirection: Axis.horizontal,
-        padding: widget.padding,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(minWidth: widget.minWidth),
-          child: widget.child,
-        ),
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final viewportWidth = constraints.hasBoundedWidth
+            ? constraints.maxWidth
+            : widget.minWidth;
+        final tableWidth = viewportWidth > widget.minWidth
+            ? viewportWidth
+            : widget.minWidth;
+
+        return Scrollbar(
+          controller: _controller,
+          thumbVisibility: tableWidth > viewportWidth,
+          trackVisibility: tableWidth > viewportWidth,
+          child: SingleChildScrollView(
+            controller: _controller,
+            scrollDirection: Axis.horizontal,
+            padding: widget.padding,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: tableWidth),
+              child: widget.child,
+            ),
+          ),
+        );
+      },
     );
   }
 }

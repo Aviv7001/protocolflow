@@ -149,7 +149,7 @@ class ReagentMixWizard {
     return ProtocolTable(
       id: 'reagent_mix_${DateTime.now().millisecondsSinceEpoch}',
       title: title,
-      type: TableType.reagentMix,
+      type: TableType.generic,
       columnHeaders: headers,
       rowHeaders: List.generate(reagents.length, (i) => (i + 1).toString()),
       data: data,

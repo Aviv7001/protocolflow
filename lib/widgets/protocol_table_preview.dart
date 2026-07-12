@@ -11,6 +11,7 @@ import '../models/protocol_table.dart';
 import '../theme/app_colors.dart';
 import 'horizontal_table_scroll.dart';
 import 'protocol_table_widget.dart';
+import 'transfer_status_icons.dart';
 
 class ProtocolTablePreview extends StatelessWidget {
   const ProtocolTablePreview({
@@ -173,9 +174,7 @@ class ProtocolTablePreview extends StatelessWidget {
             wizard: PlateLayoutWizard.fromJson(jsonDecode(wizardState)),
           );
         case TableType.masterMix:
-        case TableType.reagentMix:
         case TableType.serialDilution:
-        case TableType.reagentMatrix:
         case TableType.checklist:
         case TableType.generic:
           return null;
@@ -189,16 +188,12 @@ class ProtocolTablePreview extends StatelessWidget {
     switch (type) {
       case TableType.plateLayout:
         return Icons.grid_on;
-      case TableType.reagentMatrix:
-        return Icons.biotech;
       case TableType.masterMix:
         return Icons.calculate;
       case TableType.checklist:
         return Icons.fact_check;
       case TableType.staining:
         return Icons.color_lens;
-      case TableType.reagentMix:
-        return Icons.science;
       case TableType.serialDilution:
         return Icons.water_drop;
       case TableType.generic:
@@ -212,9 +207,6 @@ class ProtocolTablePreview extends StatelessWidget {
         return 'Master mix';
       case TableType.staining:
         return 'Staining table';
-      case TableType.reagentMix:
-      case TableType.reagentMatrix:
-        return 'C1V1 = C2V2';
       case TableType.serialDilution:
         return 'Serial dilution';
       case TableType.plateLayout:
@@ -414,16 +406,6 @@ class _InlineTableData extends StatelessWidget {
   }
 
   Widget _statusIcons(String status) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (status.contains('Warning'))
-          const Icon(Icons.warning_amber, size: 16, color: AppColors.warning),
-        if (status.contains('Warning') && status.contains('Suggestion'))
-          const SizedBox(width: 4),
-        if (status.contains('Suggestion'))
-          const Icon(Icons.tips_and_updates, size: 16, color: AppColors.info),
-      ],
-    );
+    return TransferStatusIcons(statusText: status);
   }
 }

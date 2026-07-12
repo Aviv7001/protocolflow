@@ -5,9 +5,9 @@ import '../services/serial_dilution_calculator_service.dart';
 import '../../../models/protocol_table.dart';
 import '../../../widgets/horizontal_table_scroll.dart';
 import '../../../widgets/table_export_actions.dart';
+import '../../../widgets/transfer_status_icons.dart';
 import '../../../theme/app_colors.dart';
 import '../../lab_math/lab_calculation.dart';
-import '../../measuring_tools/services/transfer_optimizer_service.dart';
 
 class SerialDilutionResultTable extends StatelessWidget {
   final SerialDilutionInput input;
@@ -132,7 +132,7 @@ class SerialDilutionResultTable extends StatelessWidget {
                           ),
                         ),
                         DataCell(
-                          _statusIcons(
+                          TransferStatusIcons(
                             warnings: row.warnings,
                             suggestions: row.suggestions,
                             evaluation: row.transferEvaluation,
@@ -203,11 +203,14 @@ class SerialDilutionResultTable extends StatelessWidget {
   }
 
   Widget _suggestionItem(String text) {
+    final icon = text.toLowerCase().contains('auto-selected')
+        ? Icons.auto_fix_high
+        : Icons.science_outlined;
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: Row(
         children: [
-          const Icon(Icons.tips_and_updates, size: 14, color: AppColors.info),
+          Icon(icon, size: 14, color: AppColors.info),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -217,32 +220,6 @@ class SerialDilutionResultTable extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _statusIcons({
-    required List<String> warnings,
-    required List<dynamic> suggestions,
-    dynamic evaluation,
-  }) {
-    final status = evaluation?.status;
-    final hasWarning =
-        warnings.isNotEmpty ||
-        status == TransferStatus.cautionLowRange ||
-        status == TransferStatus.cautionRepeatedTransfer ||
-        status == TransferStatus.warningNoCompatibleTool;
-    final hasSuggestion =
-        suggestions.isNotEmpty || evaluation?.suggestionMessage != null;
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (hasWarning)
-          const Icon(Icons.warning_amber, size: 16, color: AppColors.warning),
-        if (hasWarning && hasSuggestion) const SizedBox(width: 4),
-        if (hasSuggestion)
-          const Icon(Icons.tips_and_updates, size: 16, color: AppColors.info),
-      ],
     );
   }
 

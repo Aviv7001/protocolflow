@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
-import '../services/master_mix_calculator_service.dart';
+
 import '../../../models/master_mix_wizard.dart';
 import '../../../models/protocol_table.dart';
+import '../../../theme/app_colors.dart';
 import '../../../widgets/horizontal_table_scroll.dart';
 import '../../../widgets/table_export_actions.dart';
-import '../../../theme/app_colors.dart';
+import '../../../widgets/transfer_status_icons.dart';
 import '../../lab_math/lab_calculation.dart';
-import '../../measuring_tools/services/transfer_optimizer_service.dart';
+import '../services/master_mix_calculator_service.dart';
 
 class MasterMixResultTable extends StatelessWidget {
   final MasterMixWizard wizard;
@@ -24,35 +25,10 @@ class MasterMixResultTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final res = calculator.calculateMasterMix(
-      MasterMixInput(
-        mixName: wizard.mixName,
-        finalVolume: wizard.finalVolume,
-        finalVolumeUnit: wizard.finalVolumeUnit,
-        extraVolumePercent: wizard.extraVolumePercent,
-        autoExtraVolume: wizard.autoExtraVolume,
-        baseSolventName: wizard.baseSolventName,
-        reagents: wizard.reagents.map((r) => r.toInput()).toList(),
-      ),
-    );
-
-    if (!res.success) {
-      return Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppColors.error.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.error),
-        ),
-        child: Text(
-          res.errorMessage ?? 'Error in calculation',
-          style: const TextStyle(
-            color: AppColors.error,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      );
-    }
+    final results = [
+      for (final mix in wizard.mixes)
+        _MixCalculation(mix, calculator.calculateMasterMix(mix.toInput())),
+    ];
 
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -69,6 +45,7 @@ class MasterMixResultTable extends StatelessWidget {
                 AppColors.surfaceContainer,
               ),
               columns: const [
+                DataColumn(label: _HeaderCell('Mix')),
                 DataColumn(label: _HeaderCell('Reagent')),
                 DataColumn(label: _HeaderCell('Stock')),
                 DataColumn(label: _HeaderCell('Final')),
@@ -77,147 +54,39 @@ class MasterMixResultTable extends StatelessWidget {
                 DataColumn(label: _HeaderCell('Tool')),
                 DataColumn(label: _HeaderCell('Status')),
               ],
-              rows: [
-                ...res.reagentResults.map(
-                  (r) => DataRow(
-                    cells: [
-                      DataCell(
-                        Text(
-                          r.reagentName,
-                          style: const TextStyle(fontSize: 10),
-                        ),
-                      ),
-                      DataCell(
-                        Text(
-                          r.formattedStockConcentration,
-                          style: const TextStyle(fontSize: 10),
-                        ),
-                      ),
-                      DataCell(
-                        Text(
-                          r.formattedFinalConcentration,
-                          style: const TextStyle(fontSize: 10),
-                        ),
-                      ),
-                      DataCell(
-                        Text(
-                          r.formattedReagentVolume,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.primary,
-                            fontSize: 10,
-                          ),
-                        ),
-                      ),
-                      DataCell(
-                        Text(
-                          _transferLabel(r.transferEvaluation),
-                          style: const TextStyle(fontSize: 10),
-                        ),
-                      ),
-                      DataCell(
-                        Text(
-                          r.transferEvaluation?.recommendedToolName ?? '-',
-                          style: const TextStyle(fontSize: 10),
-                        ),
-                      ),
-                      DataCell(
-                        _statusIcons(
-                          warnings: r.warnings,
-                          suggestions: r.suggestions,
-                          evaluation: r.transferEvaluation,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                DataRow(
-                  cells: [
-                    DataCell(
-                      Text(
-                        wizard.baseSolventName,
-                        style: const TextStyle(fontSize: 10),
-                      ),
-                    ),
-                    const DataCell(Text('-', style: TextStyle(fontSize: 10))),
-                    const DataCell(Text('-', style: TextStyle(fontSize: 10))),
-                    DataCell(
-                      Text(
-                        res.formattedBaseSolventVolume,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 10,
-                        ),
-                      ),
-                    ),
-                    DataCell(
-                      Text(
-                        _transferLabel(res.solventTransferEvaluation),
-                        style: const TextStyle(fontSize: 10),
-                      ),
-                    ),
-                    DataCell(
-                      Text(
-                        res.solventTransferEvaluation?.recommendedToolName ??
-                            '-',
-                        style: const TextStyle(fontSize: 10),
-                      ),
-                    ),
-                    const DataCell(SizedBox.shrink()),
-                  ],
-                ),
-                DataRow(
-                  color: const WidgetStatePropertyAll(
-                    AppColors.primaryContainer,
-                  ),
-                  cells: [
-                    const DataCell(
-                      Text(
-                        'TOTAL',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 10,
-                        ),
-                      ),
-                    ),
-                    const DataCell(SizedBox.shrink()),
-                    const DataCell(SizedBox.shrink()),
-                    DataCell(
-                      Text(
-                        res.formattedOptimizedFinalVolume,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 10,
-                        ),
-                      ),
-                    ),
-                    const DataCell(SizedBox.shrink()),
-                    const DataCell(SizedBox.shrink()),
-                    const DataCell(SizedBox.shrink()),
-                  ],
-                ),
-              ],
+              rows: [for (final item in results) ..._rowsForMix(item)],
             ),
           ),
         ),
-        if (res.autoExtraVolumeReason != null) ...[
-          const SizedBox(height: 8),
-          _suggestionItem(res.autoExtraVolumeReason!),
-        ],
-        if (res.warnings.isNotEmpty ||
-            res.reagentResults.any(
-              (r) => r.warnings.isNotEmpty || r.suggestions.isNotEmpty,
-            )) ...[
-          const SizedBox(height: 16),
-          ...res.warnings.map((w) => _warningItem(w)),
-          ...res.reagentResults.expand(
-            (r) => r.warnings.map((w) => _warningItem('${r.reagentName}: $w')),
-          ),
-          ...res.reagentResults.expand(
-            (r) => r.suggestions.map(
-              (s) => _suggestionItem('${r.reagentName}: ${s.message}'),
+        for (final item in results) ...[
+          if (item.result.autoExtraVolumeReason != null) ...[
+            const SizedBox(height: 8),
+            _suggestionItem(
+              '${item.mix.mixName}: ${item.result.autoExtraVolumeReason!}',
             ),
-          ),
+          ],
+          if (!item.result.success) ...[
+            const SizedBox(height: 8),
+            _warningItem(
+              '${item.mix.mixName}: ${item.result.errorMessage ?? 'Calculation failed'}',
+            ),
+          ],
+          if (item.result.warnings.isNotEmpty ||
+              item.result.reagentResults.any(
+                (r) => r.suggestions.isNotEmpty,
+              )) ...[
+            const SizedBox(height: 8),
+            ...item.result.warnings.toSet().map(
+              (w) => _warningItem('${item.mix.mixName}: $w'),
+            ),
+            ...item.result.reagentResults.expand(
+              (r) => r.suggestions.map(
+                (s) => _suggestionItem(
+                  '${item.mix.mixName} / ${r.reagentName}: ${s.message}',
+                ),
+              ),
+            ),
+          ],
         ],
       ],
     );
@@ -228,6 +97,88 @@ class MasterMixResultTable extends StatelessWidget {
       table: tableOverride ?? wizard.generateTable(),
       child: content,
     );
+  }
+
+  List<DataRow> _rowsForMix(_MixCalculation item) {
+    final mix = item.mix;
+    final res = item.result;
+
+    if (!res.success) {
+      return [
+        DataRow(
+          cells: [
+            DataCell(_CellText(mix.mixName)),
+            const DataCell(_ErrorCell('Error')),
+            DataCell(_CellText(res.errorMessage ?? 'Calculation failed')),
+            const DataCell(_CellText('-')),
+            const DataCell(_CellText('-')),
+            const DataCell(_CellText('-')),
+            const DataCell(_CellText('-')),
+            const DataCell(SizedBox.shrink()),
+          ],
+        ),
+      ];
+    }
+
+    return [
+      ...res.reagentResults.map(
+        (r) => DataRow(
+          cells: [
+            DataCell(_CellText(mix.mixName)),
+            DataCell(_CellText(r.reagentName)),
+            DataCell(_CellText(r.formattedStockConcentration)),
+            DataCell(_CellText(r.formattedFinalConcentration)),
+            DataCell(
+              _CellText(
+                r.formattedReagentVolume,
+                color: AppColors.primary,
+                bold: true,
+              ),
+            ),
+            DataCell(_CellText(_transferLabel(r.transferEvaluation))),
+            DataCell(
+              _CellText(r.transferEvaluation?.recommendedToolName ?? '-'),
+            ),
+            DataCell(
+              TransferStatusIcons(
+                warnings: r.warnings,
+                suggestions: r.suggestions,
+                evaluation: r.transferEvaluation,
+              ),
+            ),
+          ],
+        ),
+      ),
+      DataRow(
+        cells: [
+          DataCell(_CellText(mix.mixName)),
+          DataCell(_CellText(mix.baseSolventName)),
+          const DataCell(_CellText('-')),
+          const DataCell(_CellText('-')),
+          DataCell(_CellText(res.formattedBaseSolventVolume, bold: true)),
+          DataCell(_CellText(_transferLabel(res.solventTransferEvaluation))),
+          DataCell(
+            _CellText(
+              res.solventTransferEvaluation?.recommendedToolName ?? '-',
+            ),
+          ),
+          const DataCell(SizedBox.shrink()),
+        ],
+      ),
+      DataRow(
+        color: const WidgetStatePropertyAll(AppColors.primaryContainer),
+        cells: [
+          DataCell(_CellText(mix.mixName, bold: true)),
+          const DataCell(_CellText('TOTAL', bold: true)),
+          const DataCell(SizedBox.shrink()),
+          const DataCell(SizedBox.shrink()),
+          DataCell(_CellText(res.formattedOptimizedFinalVolume, bold: true)),
+          const DataCell(SizedBox.shrink()),
+          const DataCell(SizedBox.shrink()),
+          const DataCell(SizedBox.shrink()),
+        ],
+      ),
+    ];
   }
 
   Widget _warningItem(String text) {
@@ -249,11 +200,14 @@ class MasterMixResultTable extends StatelessWidget {
   }
 
   Widget _suggestionItem(String text) {
+    final icon = text.toLowerCase().contains('auto-selected')
+        ? Icons.auto_fix_high
+        : Icons.science_outlined;
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: Row(
         children: [
-          const Icon(Icons.tips_and_updates, size: 14, color: AppColors.info),
+          Icon(icon, size: 14, color: AppColors.info),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -266,32 +220,6 @@ class MasterMixResultTable extends StatelessWidget {
     );
   }
 
-  Widget _statusIcons({
-    required List<String> warnings,
-    required List<dynamic> suggestions,
-    dynamic evaluation,
-  }) {
-    final status = evaluation?.status;
-    final hasWarning =
-        warnings.isNotEmpty ||
-        status == TransferStatus.cautionLowRange ||
-        status == TransferStatus.cautionRepeatedTransfer ||
-        status == TransferStatus.warningNoCompatibleTool;
-    final hasSuggestion =
-        suggestions.isNotEmpty || evaluation?.suggestionMessage != null;
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (hasWarning)
-          const Icon(Icons.warning_amber, size: 16, color: AppColors.warning),
-        if (hasWarning && hasSuggestion) const SizedBox(width: 4),
-        if (hasSuggestion)
-          const Icon(Icons.tips_and_updates, size: 16, color: AppColors.info),
-      ],
-    );
-  }
-
   String _transferLabel(dynamic evaluation) {
     if (evaluation?.transferVolumePerRepeatUl == null) return '-';
     final perRepeat = evaluation.transferVolumePerRepeatUl as double;
@@ -299,6 +227,13 @@ class MasterMixResultTable extends StatelessWidget {
     final label = LabCalculation.formatVolume(perRepeat, unicodeMicro: true);
     return repeats > 1 ? '$label x $repeats' : label;
   }
+}
+
+class _MixCalculation {
+  final MasterMixItem mix;
+  final MasterMixResult result;
+
+  const _MixCalculation(this.mix, this.result);
 }
 
 class _HeaderCell extends StatelessWidget {
@@ -311,6 +246,44 @@ class _HeaderCell extends StatelessWidget {
     return Text(
       text,
       style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+    );
+  }
+}
+
+class _CellText extends StatelessWidget {
+  final String text;
+  final Color? color;
+  final bool bold;
+
+  const _CellText(this.text, {this.color, this.bold = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: TextStyle(
+        fontSize: 10,
+        color: color,
+        fontWeight: bold ? FontWeight.bold : null,
+      ),
+    );
+  }
+}
+
+class _ErrorCell extends StatelessWidget {
+  final String text;
+
+  const _ErrorCell(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: const TextStyle(
+        color: AppColors.error,
+        fontWeight: FontWeight.bold,
+        fontSize: 10,
+      ),
     );
   }
 }

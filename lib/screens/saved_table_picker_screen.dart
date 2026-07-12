@@ -172,9 +172,6 @@ class _SavedTablePickerScreenState extends State<SavedTablePickerScreen> {
         return Icons.biotech;
       case TableType.staining:
         return Icons.color_lens;
-      case TableType.reagentMix:
-      case TableType.reagentMatrix:
-        return Icons.science;
       case TableType.serialDilution:
         return Icons.water_drop;
       case TableType.plateLayout:
@@ -192,9 +189,6 @@ class _SavedTablePickerScreenState extends State<SavedTablePickerScreen> {
         return Colors.blue;
       case TableType.staining:
         return Colors.indigo;
-      case TableType.reagentMix:
-      case TableType.reagentMatrix:
-        return Colors.teal;
       case TableType.serialDilution:
         return Colors.cyan;
       case TableType.plateLayout:
@@ -212,9 +206,6 @@ class _SavedTablePickerScreenState extends State<SavedTablePickerScreen> {
         return 'Master mix';
       case TableType.staining:
         return 'Staining table';
-      case TableType.reagentMix:
-      case TableType.reagentMatrix:
-        return 'C1V1 = C2V2';
       case TableType.serialDilution:
         return 'Serial dilution';
       case TableType.plateLayout:

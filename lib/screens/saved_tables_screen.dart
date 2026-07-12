@@ -184,9 +184,6 @@ class _SavedTablesScreenState extends State<SavedTablesScreen> {
         return 'Master mix';
       case TableType.staining:
         return 'Staining table';
-      case TableType.reagentMix:
-      case TableType.reagentMatrix:
-        return 'C1V1 = C2V2';
       case TableType.serialDilution:
         return 'Serial dilution';
       case TableType.plateLayout:

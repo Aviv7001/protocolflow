@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+
+import '../../../models/master_mix_wizard.dart';
+import '../../../widgets/unsaved_changes_pop_scope.dart';
 import '../../lab_math/lab_calculation.dart';
 import '../services/master_mix_calculator_service.dart';
-import '../../../models/master_mix_wizard.dart';
 import '../widgets/master_mix_result_table.dart';
-import '../../../widgets/unsaved_changes_pop_scope.dart';
 
 class MasterMixManagerScreen extends StatefulWidget {
   final MasterMixWizard wizard;
@@ -38,67 +39,107 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
     ConcentrationUnit.gMol,
   ];
   bool _canActuallyPop = false;
+  final Set<int> _collapsedMixIndexes = {};
 
   @override
   void initState() {
     super.initState();
-    _wizard = widget.wizard;
+    _wizard = widget.wizard.mixes.isEmpty
+        ? widget.wizard.copyWith(mixes: [MasterMixItem()])
+        : widget.wizard;
   }
 
-  void _addReagent() {
+  void _addMix() {
     setState(() {
-      ConcentrationUnit lastStockUnit = ConcentrationUnit.mM;
-      ConcentrationUnit lastFinalUnit = ConcentrationUnit.uM;
-
-      if (_wizard.reagents.isNotEmpty) {
-        final last = _wizard.reagents.last;
-        lastStockUnit = last.stockUnit;
-        lastFinalUnit = last.finalUnit;
-      }
-
       _wizard = _wizard.copyWith(
-        reagents: [
-          ..._wizard.reagents,
-          MasterMixReagentItem(
-            name: 'Reagent ${_wizard.reagents.length + 1}',
-            stockUnit: lastStockUnit,
-            finalUnit: lastFinalUnit,
-          ),
+        mixes: [
+          ..._wizard.mixes,
+          MasterMixItem(mixName: 'Mix ${_wizard.mixes.length + 1}'),
         ],
       );
     });
   }
 
-  void _removeReagent(int index) {
+  void _removeMix(int mixIndex) {
+    if (_wizard.mixes.length <= 1) return;
     setState(() {
-      final newReagents = List<MasterMixReagentItem>.from(_wizard.reagents)
-        ..removeAt(index);
-      _wizard = _wizard.copyWith(reagents: newReagents);
+      final mixes = List<MasterMixItem>.from(_wizard.mixes)..removeAt(mixIndex);
+      final collapsed = _collapsedMixIndexes.toList()..sort();
+      _collapsedMixIndexes
+        ..clear()
+        ..addAll(
+          collapsed
+              .where((index) => index != mixIndex)
+              .map((index) => index > mixIndex ? index - 1 : index),
+        );
+      _wizard = _wizard.copyWith(mixes: mixes);
     });
   }
 
-  void _updateReagent(int index, MasterMixReagentItem newItem) {
+  void _toggleMixCollapsed(int mixIndex) {
     setState(() {
-      final newReagents = List<MasterMixReagentItem>.from(_wizard.reagents);
-      newReagents[index] = newItem;
-      _wizard = _wizard.copyWith(reagents: newReagents);
+      if (_collapsedMixIndexes.contains(mixIndex)) {
+        _collapsedMixIndexes.remove(mixIndex);
+      } else {
+        _collapsedMixIndexes.add(mixIndex);
+      }
     });
+  }
+
+  void _updateMix(int mixIndex, MasterMixItem mix) {
+    setState(() {
+      final mixes = List<MasterMixItem>.from(_wizard.mixes);
+      mixes[mixIndex] = mix;
+      _wizard = _wizard.copyWith(mixes: mixes);
+    });
+  }
+
+  void _addReagent(int mixIndex) {
+    final mix = _wizard.mixes[mixIndex];
+    var lastStockUnit = ConcentrationUnit.mM;
+    var lastFinalUnit = ConcentrationUnit.uM;
+
+    if (mix.reagents.isNotEmpty) {
+      final last = mix.reagents.last;
+      lastStockUnit = last.stockUnit;
+      lastFinalUnit = last.finalUnit;
+    }
+
+    _updateMix(
+      mixIndex,
+      mix.copyWith(
+        reagents: [
+          ...mix.reagents,
+          MasterMixReagentItem(
+            name: 'Reagent ${mix.reagents.length + 1}',
+            stockUnit: lastStockUnit,
+            finalUnit: lastFinalUnit,
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _removeReagent(int mixIndex, int reagentIndex) {
+    final mix = _wizard.mixes[mixIndex];
+    final reagents = List<MasterMixReagentItem>.from(mix.reagents)
+      ..removeAt(reagentIndex);
+    _updateMix(mixIndex, mix.copyWith(reagents: reagents));
+  }
+
+  void _updateReagent(
+    int mixIndex,
+    int reagentIndex,
+    MasterMixReagentItem reagent,
+  ) {
+    final mix = _wizard.mixes[mixIndex];
+    final reagents = List<MasterMixReagentItem>.from(mix.reagents);
+    reagents[reagentIndex] = reagent;
+    _updateMix(mixIndex, mix.copyWith(reagents: reagents));
   }
 
   @override
   Widget build(BuildContext context) {
-    final res = _calculator.calculateMasterMix(
-      MasterMixInput(
-        mixName: _wizard.mixName,
-        finalVolume: _wizard.finalVolume,
-        finalVolumeUnit: _wizard.finalVolumeUnit,
-        extraVolumePercent: _wizard.extraVolumePercent,
-        autoExtraVolume: _wizard.autoExtraVolume,
-        baseSolventName: _wizard.baseSolventName,
-        reagents: _wizard.reagents.map((r) => r.toInput()).toList(),
-      ),
-    );
-
     return UnsavedChangesPopScope(
       canPop: _canActuallyPop,
       message:
@@ -118,29 +159,23 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _buildGeneralInfo(),
-              const SizedBox(height: 24),
-              Text('Reagents', style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 8),
-              ..._wizard.reagents.asMap().entries.map(
-                (e) => _buildReagentEditor(e.key, e.value, res),
+              _buildTableNameCard(),
+              const SizedBox(height: 16),
+              ..._wizard.mixes.asMap().entries.map(
+                (entry) => _buildMixCard(entry.key, entry.value),
               ),
-              Padding(
-                padding: const EdgeInsets.only(top: 12.0),
-                child: Center(
-                  child: ElevatedButton.icon(
-                    onPressed: _addReagent,
-                    icon: const Icon(Icons.add),
-                    label: const Text(
-                      'Add Reagent',
-                      style: TextStyle(fontSize: _uniformFontSize),
-                    ),
+              const SizedBox(height: 12),
+              Center(
+                child: ElevatedButton.icon(
+                  onPressed: _addMix,
+                  icon: const Icon(Icons.add),
+                  label: const Text(
+                    'Add Mix',
+                    style: TextStyle(fontSize: _uniformFontSize),
                   ),
                 ),
               ),
               const SizedBox(height: 32),
-              _buildGlobalResultPreview(res),
-              const SizedBox(height: 12),
               MasterMixResultTable(wizard: _wizard, calculator: _calculator),
               const SizedBox(height: 40),
             ],
@@ -150,13 +185,194 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
     );
   }
 
-  Widget _buildGlobalResultPreview(MasterMixResult res) {
-    if (!res.success) return const SizedBox.shrink();
-
+  Widget _buildTableNameCard() {
     return Card(
-      color: Colors.blue.shade50,
       child: Padding(
         padding: const EdgeInsets.all(16.0),
+        child: _DelayedTextField(
+          decoration: const InputDecoration(
+            labelText: 'Table Name',
+            border: OutlineInputBorder(),
+          ),
+          initialValue: _wizard.tableName,
+          style: const TextStyle(fontSize: _uniformFontSize),
+          onCommit: (v) =>
+              setState(() => _wizard = _wizard.copyWith(tableName: v)),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMixCard(int mixIndex, MasterMixItem mix) {
+    final result = _calculator.calculateMasterMix(mix.toInput());
+    final isCollapsed = _collapsedMixIndexes.contains(mixIndex);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    mix.mixName.isEmpty ? 'Mix ${mixIndex + 1}' : mix.mixName,
+                    style: Theme.of(context).textTheme.titleMedium,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                IconButton(
+                  tooltip: isCollapsed ? 'Expand mix' : 'Shrink mix',
+                  icon: Icon(
+                    isCollapsed ? Icons.expand_more : Icons.expand_less,
+                  ),
+                  onPressed: () => _toggleMixCollapsed(mixIndex),
+                ),
+                if (_wizard.mixes.length > 1)
+                  IconButton(
+                    tooltip: 'Remove mix',
+                    icon: const Icon(Icons.delete_outline, color: Colors.red),
+                    onPressed: () => _removeMix(mixIndex),
+                  ),
+              ],
+            ),
+            if (isCollapsed) ...[
+              const SizedBox(height: 4),
+              Text(
+                '${mix.reagents.length} reagent${mix.reagents.length == 1 ? '' : 's'}',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+            ],
+            if (!isCollapsed) ...[
+              const SizedBox(height: 12),
+              _DelayedTextField(
+                decoration: const InputDecoration(
+                  labelText: 'Mix Name',
+                  border: OutlineInputBorder(),
+                ),
+                initialValue: mix.mixName,
+                style: const TextStyle(fontSize: _uniformFontSize),
+                onCommit: (v) => _updateMix(mixIndex, mix.copyWith(mixName: v)),
+              ),
+              const SizedBox(height: 12),
+              _DelayedTextField(
+                initialValue: mix.baseSolventName,
+                decoration: const InputDecoration(
+                  labelText: 'Base Solvent Name',
+                  border: OutlineInputBorder(),
+                ),
+                style: const TextStyle(fontSize: _uniformFontSize),
+                onCommit: (v) =>
+                    _updateMix(mixIndex, mix.copyWith(baseSolventName: v)),
+              ),
+              const SizedBox(height: 12),
+              _buildVolumeRow(mixIndex, mix),
+              const SizedBox(height: 12),
+              _DelayedTextField(
+                initialValue: mix.extraVolumePercent.toString(),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Extra Volume %',
+                  border: OutlineInputBorder(),
+                ),
+                style: const TextStyle(fontSize: _uniformFontSize),
+                onCommit: (v) => _updateMix(
+                  mixIndex,
+                  mix.copyWith(extraVolumePercent: double.tryParse(v) ?? 0),
+                ),
+              ),
+              const SizedBox(height: 4),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Optimize extra volume'),
+                subtitle: const Text(
+                  'Try 10% to 30% and choose the best transfer score',
+                ),
+                value: mix.autoExtraVolume,
+                onChanged: (value) =>
+                    _updateMix(mixIndex, mix.copyWith(autoExtraVolume: value)),
+              ),
+              if (result.success) ...[
+                const SizedBox(height: 8),
+                _buildMixResultPreview(mixIndex, mix, result),
+              ],
+              ...mix.reagents.asMap().entries.map(
+                (entry) => _buildReagentEditor(
+                  mixIndex,
+                  entry.key,
+                  entry.value,
+                  result,
+                ),
+              ),
+              const Divider(height: 32),
+              _buildAddReagentButton(mixIndex),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVolumeRow(int mixIndex, MasterMixItem mix) {
+    return Row(
+      children: [
+        Expanded(
+          flex: 2,
+          child: _DelayedTextField(
+            initialValue: mix.finalVolume.toString(),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Final Volume',
+              border: OutlineInputBorder(),
+            ),
+            style: const TextStyle(fontSize: _uniformFontSize),
+            onCommit: (v) => _updateMix(
+              mixIndex,
+              mix.copyWith(finalVolume: double.tryParse(v) ?? 0),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: DropdownButtonFormField<VolumeUnit>(
+            initialValue: mix.finalVolumeUnit,
+            decoration: const InputDecoration(
+              labelText: 'Unit',
+              border: OutlineInputBorder(),
+            ),
+            items: VolumeUnit.values
+                .map(
+                  (u) => DropdownMenuItem(
+                    value: u,
+                    child: Text(
+                      u.name,
+                      style: const TextStyle(fontSize: _uniformFontSize),
+                    ),
+                  ),
+                )
+                .toList(),
+            onChanged: (v) =>
+                _updateMix(mixIndex, mix.copyWith(finalVolumeUnit: v!)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMixResultPreview(
+    int mixIndex,
+    MasterMixItem mix,
+    MasterMixResult result,
+  ) {
+    return Card(
+      color: Colors.blue.shade50,
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -165,26 +381,31 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
               children: [
                 _resItem(
                   'Solvent',
-                  res.formattedBaseSolventVolume,
+                  result.formattedBaseSolventVolume,
                   Colors.green,
                 ),
-                _resItemEditable('V2 (Total Mix)', res.optimizedFinalVolumeUl, (
-                  val,
-                ) {
-                  final roundedV2 = (val / _extraFactor * 10).round() / 10.0;
-                  setState(
-                    () => _wizard = _wizard.copyWith(
-                      finalVolume: roundedV2,
-                      finalVolumeUnit: VolumeUnit.uL,
-                    ),
-                  );
-                }, Colors.black),
+                _resItemEditable(
+                  'V2 (Total Mix)',
+                  result.optimizedFinalVolumeUl,
+                  (val) {
+                    final roundedV2 =
+                        (val / _extraFactor(mix) * 1000).round() / 1000.0;
+                    _updateMix(
+                      mixIndex,
+                      mix.copyWith(
+                        finalVolume: roundedV2,
+                        finalVolumeUnit: VolumeUnit.uL,
+                      ),
+                    );
+                  },
+                  Colors.black,
+                ),
               ],
             ),
-            if (res.autoExtraVolumeReason != null) ...[
+            if (result.autoExtraVolumeReason != null) ...[
               const SizedBox(height: 10),
               Text(
-                res.autoExtraVolumeReason!,
+                result.autoExtraVolumeReason!,
                 style: TextStyle(
                   fontSize: _uniformFontSize - 2,
                   color: Colors.blue.shade900,
@@ -198,11 +419,200 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
     );
   }
 
+  Widget _buildAddReagentButton(int mixIndex) {
+    return Center(
+      child: OutlinedButton.icon(
+        onPressed: () => _addReagent(mixIndex),
+        icon: const Icon(Icons.add),
+        label: const Text(
+          'Add Reagent',
+          style: TextStyle(fontSize: _uniformFontSize),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReagentEditor(
+    int mixIndex,
+    int reagentIndex,
+    MasterMixReagentItem item,
+    MasterMixResult result,
+  ) {
+    MasterMixReagentResult? reagentResult;
+    if (result.success && reagentIndex < result.reagentResults.length) {
+      reagentResult = result.reagentResults[reagentIndex];
+    }
+
+    return Column(
+      children: [
+        const Divider(height: 32),
+        Row(
+          children: [
+            Expanded(
+              child: _DelayedTextField(
+                initialValue: item.name,
+                decoration: const InputDecoration(
+                  labelText: 'Reagent Name',
+                  border: OutlineInputBorder(),
+                ),
+                style: const TextStyle(
+                  fontSize: _uniformFontSize,
+                  fontWeight: FontWeight.bold,
+                ),
+                onCommit: (v) => _updateReagent(
+                  mixIndex,
+                  reagentIndex,
+                  item.copyWith(name: v),
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Remove reagent',
+              icon: const Icon(Icons.delete_outline, color: Colors.red),
+              onPressed: () => _removeReagent(mixIndex, reagentIndex),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        _buildConcRow(
+          'C1 (Stock Conc.)',
+          item.stockConc,
+          item.stockUnit,
+          (v) => _updateReagent(
+            mixIndex,
+            reagentIndex,
+            item.copyWith(stockConc: v),
+          ),
+          (u) => _updateReagent(
+            mixIndex,
+            reagentIndex,
+            item.copyWith(stockUnit: u),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _buildConcRow(
+          'C2 (Final Conc.)',
+          item.finalConc,
+          item.finalUnit,
+          (v) => _updateReagent(
+            mixIndex,
+            reagentIndex,
+            item.copyWith(finalConc: v),
+          ),
+          (u) => _updateReagent(
+            mixIndex,
+            reagentIndex,
+            item.copyWith(finalUnit: u),
+          ),
+        ),
+        if (reagentResult != null) ...[
+          const Divider(height: 24),
+          _buildReagentResultPreview(
+            mixIndex,
+            reagentIndex,
+            item,
+            reagentResult,
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildReagentResultPreview(
+    int mixIndex,
+    int reagentIndex,
+    MasterMixReagentItem item,
+    MasterMixReagentResult rRes,
+  ) {
+    final mix = _wizard.mixes[mixIndex];
+    final isMass = rRes.reagentMassGrams != null;
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        if (isMass)
+          _resItemEditableMass('V1 (from Stock)', rRes.reagentMassGrams!, (
+            val,
+          ) {
+            final isStockMW = item.stockUnit == ConcentrationUnit.gMol;
+            final mw = isStockMW ? item.stockConc : item.finalConc;
+            final targetConc = isStockMW ? item.finalConc : item.stockConc;
+            final targetUnit = isStockMW ? item.finalUnit : item.stockUnit;
+
+            var newV2L = 0.0;
+            if (LabCalculation.familyOf(targetUnit) ==
+                ConcentrationFamily.molar) {
+              final m = LabCalculation.concentrationToBase(
+                targetConc,
+                targetUnit,
+              );
+              newV2L = val / (mw * m);
+            } else if (LabCalculation.familyOf(targetUnit) ==
+                ConcentrationFamily.massVolume) {
+              final gPerL = LabCalculation.concentrationToBase(
+                targetConc,
+                targetUnit,
+              );
+              newV2L = val / gPerL;
+            }
+
+            if (newV2L > 0) {
+              final newV2uL = newV2L * 1e6;
+              final roundedV2 =
+                  (newV2uL / _extraFactor(mix) * 1000).round() / 1000.0;
+              _updateMix(
+                mixIndex,
+                mix.copyWith(
+                  finalVolume: roundedV2,
+                  finalVolumeUnit: VolumeUnit.uL,
+                ),
+              );
+            }
+          }, Colors.blue)
+        else
+          _resItemEditable('V1 (from Stock)', rRes.reagentVolumeUl, (val) {
+            final stockFamily = LabCalculation.familyOf(item.stockUnit);
+            final finalFamily = LabCalculation.familyOf(item.finalUnit);
+            var ratio = 0.0;
+            if (stockFamily == finalFamily) {
+              final stockBase = LabCalculation.concentrationToBase(
+                item.stockConc,
+                item.stockUnit,
+              );
+              final finalBase = LabCalculation.concentrationToBase(
+                item.finalConc,
+                item.finalUnit,
+              );
+              ratio = finalBase / stockBase;
+            }
+            if (ratio > 0) {
+              final newV2 = val / ratio;
+              final roundedV2 =
+                  (newV2 / _extraFactor(mix) * 1000).round() / 1000.0;
+              _updateMix(
+                mixIndex,
+                mix.copyWith(
+                  finalVolume: roundedV2,
+                  finalVolumeUnit: VolumeUnit.uL,
+                ),
+              );
+            }
+          }, Colors.blue),
+        _resItem('Stock C1', rRes.formattedStockConcentration, Colors.grey),
+        _resItem('Final C2', rRes.formattedFinalConcentration, Colors.grey),
+      ],
+    );
+  }
+
+  double _extraFactor(MasterMixItem mix) {
+    return (1 + mix.extraVolumePercent.clamp(0, 100) / 100).toDouble();
+  }
+
   void _handleDone(BuildContext context) async {
-    final String? name = await _showSaveDialog(context, 'Master Mix Table');
+    final name = await _showSaveDialog(context, _wizard.tableName);
     if (name != null) {
       setState(() {
-        _wizard = _wizard.copyWith(mixName: name);
+        _wizard = _wizard.copyWith(tableName: name);
       });
       widget.onUpdate(_wizard);
       if (context.mounted) {
@@ -216,7 +626,7 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
     BuildContext context,
     String suggestedName,
   ) async {
-    String currentName = suggestedName;
+    var currentName = suggestedName;
     return showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
@@ -245,292 +655,6 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
         ],
       ),
     );
-  }
-
-  Widget _buildGeneralInfo() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'General Information',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 16),
-            _DelayedTextField(
-              decoration: const InputDecoration(
-                labelText: 'Mix Name / Table Title',
-                border: OutlineInputBorder(),
-              ),
-              initialValue: _wizard.mixName,
-              style: const TextStyle(fontSize: _uniformFontSize),
-              onCommit: (v) =>
-                  setState(() => _wizard = _wizard.copyWith(mixName: v)),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  flex: 2,
-                  child: _DelayedTextField(
-                    initialValue: _wizard.finalVolume.toString(),
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    decoration: const InputDecoration(
-                      labelText: 'Final Volume',
-                      border: OutlineInputBorder(),
-                    ),
-                    style: const TextStyle(fontSize: _uniformFontSize),
-                    onCommit: (v) => setState(
-                      () => _wizard = _wizard.copyWith(
-                        finalVolume: double.tryParse(v) ?? 0,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: DropdownButtonFormField<VolumeUnit>(
-                    initialValue: _wizard.finalVolumeUnit,
-                    decoration: const InputDecoration(
-                      labelText: 'Unit',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: VolumeUnit.values
-                        .map(
-                          (u) => DropdownMenuItem(
-                            value: u,
-                            child: Text(
-                              u.name,
-                              style: const TextStyle(
-                                fontSize: _uniformFontSize,
-                              ),
-                            ),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (v) => setState(
-                      () => _wizard = _wizard.copyWith(finalVolumeUnit: v!),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            _DelayedTextField(
-              initialValue: _wizard.extraVolumePercent.toString(),
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              decoration: const InputDecoration(
-                labelText: 'Extra Volume %',
-                border: OutlineInputBorder(),
-              ),
-              style: const TextStyle(fontSize: _uniformFontSize),
-              onCommit: (v) => setState(
-                () => _wizard = _wizard.copyWith(
-                  extraVolumePercent: double.tryParse(v) ?? 0,
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Auto optimize extra volume'),
-              subtitle: const Text(
-                'Try 10% to 30% and choose the best transfer score',
-              ),
-              value: _wizard.autoExtraVolume,
-              onChanged: (value) => setState(
-                () => _wizard = _wizard.copyWith(autoExtraVolume: value),
-              ),
-            ),
-            const SizedBox(height: 12),
-            _DelayedTextField(
-              initialValue: _wizard.baseSolventName,
-              decoration: const InputDecoration(
-                labelText: 'Base Solvent Name',
-                border: OutlineInputBorder(),
-              ),
-              style: const TextStyle(fontSize: _uniformFontSize),
-              onCommit: (v) => setState(
-                () => _wizard = _wizard.copyWith(baseSolventName: v),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildReagentEditor(
-    int index,
-    MasterMixReagentItem item,
-    MasterMixResult res,
-  ) {
-    MasterMixReagentResult? reagentRes;
-    if (res.success && index < res.reagentResults.length) {
-      reagentRes = res.reagentResults[index];
-    }
-
-    return Card(
-      margin: const EdgeInsets.only(top: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: _DelayedTextField(
-                    initialValue: item.name,
-                    decoration: const InputDecoration(
-                      labelText: 'Reagent Name',
-                      border: UnderlineInputBorder(),
-                    ),
-                    style: const TextStyle(
-                      fontSize: _uniformFontSize,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    onCommit: (v) =>
-                        _updateReagent(index, item.copyWith(name: v)),
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline, color: Colors.red),
-                  onPressed: () => _removeReagent(index),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            _buildConcRow(
-              'C1 (Stock Concentration)',
-              item.stockConc,
-              item.stockUnit,
-              (v) => _updateReagent(index, item.copyWith(stockConc: v)),
-              (u) => _updateReagent(index, item.copyWith(stockUnit: u)),
-            ),
-            const SizedBox(height: 12),
-            _buildConcRow(
-              'C2 (Final Concentration)',
-              item.finalConc,
-              item.finalUnit,
-              (v) => _updateReagent(index, item.copyWith(finalConc: v)),
-              (u) => _updateReagent(index, item.copyWith(finalUnit: u)),
-            ),
-
-            if (reagentRes != null) ...[
-              const Divider(height: 24),
-              _buildReagentResultPreview(index, item, reagentRes, res),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildReagentResultPreview(
-    int index,
-    MasterMixReagentItem item,
-    MasterMixReagentResult rRes,
-    MasterMixResult globalRes,
-  ) {
-    final bool isMass = rRes.reagentMassGrams != null;
-
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        if (isMass)
-          _resItemEditableMass('V1 (from Stock)', rRes.reagentMassGrams!, (
-            val,
-          ) {
-            // Adjust Global V2 based on this mass and C1/C2
-            final bool isStockMW = item.stockUnit == ConcentrationUnit.gMol;
-            final double mw = isStockMW ? item.stockConc : item.finalConc;
-            final double targetConc = isStockMW
-                ? item.finalConc
-                : item.stockConc;
-            final ConcentrationUnit targetUnit = isStockMW
-                ? item.finalUnit
-                : item.stockUnit;
-
-            double newV2L = 0;
-            if (LabCalculation.familyOf(targetUnit) ==
-                ConcentrationFamily.molar) {
-              final double m = LabCalculation.concentrationToBase(
-                targetConc,
-                targetUnit,
-              );
-              newV2L = val / (mw * m);
-            } else if (LabCalculation.familyOf(targetUnit) ==
-                ConcentrationFamily.massVolume) {
-              final gPerL = LabCalculation.concentrationToBase(
-                targetConc,
-                targetUnit,
-              );
-              newV2L = val / gPerL;
-            }
-
-            if (newV2L > 0) {
-              final newV2uL = newV2L * 1e6;
-              // Round to 1 decimal place to keep it clean
-              final roundedV2 = (newV2uL / _extraFactor * 10).round() / 10.0;
-              setState(
-                () => _wizard = _wizard.copyWith(
-                  finalVolume: roundedV2,
-                  finalVolumeUnit: VolumeUnit.uL,
-                ),
-              );
-            }
-          }, Colors.blue)
-        else
-          _resItemEditable('V1 (from Stock)', rRes.reagentVolumeUl, (val) {
-            // Calculate required Global V2 to get this V1 for this reagent
-            final stockFamily = _getFamily(item.stockUnit);
-            final finalFamily = _getFamily(item.finalUnit);
-            double ratio = 0;
-            if (stockFamily == finalFamily) {
-              final stockBase = _convertToBaseConc(
-                item.stockConc,
-                item.stockUnit,
-              );
-              final finalBase = _convertToBaseConc(
-                item.finalConc,
-                item.finalUnit,
-              );
-              ratio = finalBase / stockBase;
-            }
-            if (ratio > 0) {
-              final newV2 = val / ratio;
-              // Round to 1 decimal place to keep it clean
-              final roundedV2 = (newV2 / _extraFactor * 10).round() / 10.0;
-              setState(
-                () => _wizard = _wizard.copyWith(
-                  finalVolume: roundedV2,
-                  finalVolumeUnit: VolumeUnit.uL,
-                ),
-              );
-            }
-          }, Colors.blue),
-        _resItem('Stock C1', rRes.formattedStockConcentration, Colors.grey),
-        _resItem('Final C2', rRes.formattedFinalConcentration, Colors.grey),
-      ],
-    );
-  }
-
-  ConcentrationFamily _getFamily(ConcentrationUnit unit) {
-    return LabCalculation.familyOf(unit);
-  }
-
-  double _convertToBaseConc(double val, ConcentrationUnit unit) {
-    return LabCalculation.concentrationToBase(val, unit);
-  }
-
-  double get _extraFactor {
-    return (1 + _wizard.extraVolumePercent.clamp(0, 100) / 100).toDouble();
   }
 
   Widget _resItem(String label, String val, Color color) {
@@ -566,12 +690,12 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
     String unit;
     double factor;
     if (valUl >= 1000) {
-      displayVal = (valUl / 1000).toStringAsFixed(2);
+      displayVal = (valUl / 1000).toStringAsFixed(3);
       unit = 'mL';
       factor = 1000;
     } else {
-      displayVal = valUl.toStringAsFixed(1);
-      unit = 'µL';
+      displayVal = valUl.toStringAsFixed(3);
+      unit = 'uL';
       factor = 1;
     }
 
@@ -589,7 +713,7 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             SizedBox(
-              width: 70,
+              width: 78,
               child: _DelayedTextField(
                 initialValue: displayVal,
                 keyboardType: const TextInputType.numberWithOptions(
@@ -631,16 +755,16 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
     String unit;
     double factor;
     if (valGrams >= 1) {
-      displayVal = valGrams.toStringAsFixed(2);
+      displayVal = valGrams.toStringAsFixed(3);
       unit = 'g';
       factor = 1;
     } else if (valGrams >= 0.001) {
-      displayVal = (valGrams * 1000).toStringAsFixed(2);
+      displayVal = (valGrams * 1000).toStringAsFixed(3);
       unit = 'mg';
       factor = 0.001;
     } else {
-      displayVal = (valGrams * 1000000).toStringAsFixed(1);
-      unit = 'µg';
+      displayVal = (valGrams * 1000000).toStringAsFixed(3);
+      unit = 'ug';
       factor = 0.000001;
     }
 
@@ -658,7 +782,7 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             SizedBox(
-              width: 70,
+              width: 78,
               child: _DelayedTextField(
                 initialValue: displayVal,
                 keyboardType: const TextInputType.numberWithOptions(
@@ -725,7 +849,7 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
                   (u) => DropdownMenuItem(
                     value: u,
                     child: Text(
-                      _unitLabel(u),
+                      LabCalculation.unitLabel(u),
                       style: const TextStyle(fontSize: _uniformFontSize),
                     ),
                   ),
@@ -736,45 +860,6 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
         ),
       ],
     );
-  }
-
-  String _unitLabel(ConcentrationUnit unit) {
-    switch (unit) {
-      case ConcentrationUnit.M:
-        return 'M';
-      case ConcentrationUnit.mM:
-        return 'mM';
-      case ConcentrationUnit.uM:
-        return 'µM';
-      case ConcentrationUnit.nM:
-        return 'nM';
-      case ConcentrationUnit.pM:
-        return 'pM';
-      case ConcentrationUnit.gL:
-        return 'g/L';
-      case ConcentrationUnit.mgML:
-        return 'mg/mL';
-      case ConcentrationUnit.ugML:
-        return 'µg/mL';
-      case ConcentrationUnit.ngML:
-        return 'ng/mL';
-      case ConcentrationUnit.percent:
-        return '%';
-      case ConcentrationUnit.X:
-        return 'X';
-      case ConcentrationUnit.ratio:
-        return 'ratio';
-      case ConcentrationUnit.gMol:
-        return 'g/mol';
-      case ConcentrationUnit.gUL:
-        return 'g/uL';
-      case ConcentrationUnit.mgUL:
-        return 'mg/uL';
-      case ConcentrationUnit.ugUL:
-        return 'ug/uL';
-      case ConcentrationUnit.ngUL:
-        return 'ng/uL';
-    }
   }
 }
 

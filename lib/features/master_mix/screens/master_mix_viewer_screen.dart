@@ -65,7 +65,7 @@ class _MasterMixViewerScreenState extends State<MasterMixViewerScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(_wizard.mixName),
+        title: Text(_wizard.tableName),
         actions: [
           SaveTableAction(table: _table),
           if (!widget.isReadOnly)

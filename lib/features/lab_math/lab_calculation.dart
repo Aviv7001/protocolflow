@@ -299,11 +299,11 @@ class LabCalculation {
   static String formatVolume(double ul, {bool unicodeMicro = false}) {
     final micro = unicodeMicro ? 'µL' : 'uL';
     if (!ul.isFinite) return 'N/A';
-    if (ul == 0) return '0 $micro';
-    if (ul >= 1000000) return '${formatNumber(ul / 1000000)} L';
-    if (ul >= 1000) return '${formatNumber(ul / 1000)} mL';
-    if (ul >= 0.1) return '${formatNumber(ul)} $micro';
-    return '${formatNumber(ul * 1000)} nL';
+    if (ul == 0) return '0.000 $micro';
+    if (ul >= 1000000) return '${(ul / 1000000).toStringAsFixed(3)} L';
+    if (ul >= 1000) return '${(ul / 1000).toStringAsFixed(3)} mL';
+    if (ul >= 0.1) return '${ul.toStringAsFixed(3)} $micro';
+    return '${(ul * 1000).toStringAsFixed(3)} nL';
   }
 
   static String formatMass(double grams, {bool unicodeMicro = false}) {

@@ -7,9 +7,7 @@ import '../models/protocol_additional_data.dart';
 import '../models/protocol_step.dart';
 import '../models/protocol_table.dart';
 import '../models/master_mix_wizard.dart';
-import '../models/reagent_mix_wizard.dart';
 import '../features/master_mix/services/master_mix_calculator_service.dart';
-import '../features/reagent_mix/services/reagent_mix_calculator_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/protocol_table_widget.dart';
 import '../widgets/protocol_table_preview.dart';
@@ -436,9 +434,6 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
         return Colors.blue;
       case TableType.staining:
         return Colors.indigo;
-      case TableType.reagentMix:
-      case TableType.reagentMatrix:
-        return Colors.teal;
       case TableType.serialDilution:
         return Colors.cyan;
       case TableType.plateLayout:
@@ -462,72 +457,28 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
       if (t.type == TableType.masterMix) {
         try {
           final wizard = MasterMixWizard.fromJson(jsonDecode(wizardState));
-          final result = MasterMixCalculatorService().calculateMasterMix(
-            MasterMixInput(
-              mixName: wizard.mixName,
-              finalVolume: wizard.finalVolume,
-              finalVolumeUnit: wizard.finalVolumeUnit,
-              extraVolumePercent: wizard.extraVolumePercent,
-              baseSolventName: wizard.baseSolventName,
-              reagents: wizard.reagents.map((r) => r.toInput()).toList(),
-            ),
-          );
+          final calculator = MasterMixCalculatorService();
+          for (final mix in wizard.mixes) {
+            final result = calculator.calculateMasterMix(mix.toInput());
 
-          if (result.success) {
-            for (var r in result.reagentResults) {
-              if (r.reagentName.isNotEmpty) {
-                totalVolumesUl[r.reagentName] =
-                    (totalVolumesUl[r.reagentName] ?? 0) + r.reagentVolumeUl;
-                stockConcentrations[r.reagentName] =
-                    r.formattedStockConcentration;
+            if (result.success) {
+              for (final r in result.reagentResults) {
+                if (r.reagentName.isNotEmpty) {
+                  totalVolumesUl[r.reagentName] =
+                      (totalVolumesUl[r.reagentName] ?? 0) + r.reagentVolumeUl;
+                  stockConcentrations[r.reagentName] =
+                      r.formattedStockConcentration;
+                }
               }
-            }
-            if (wizard.baseSolventName.isNotEmpty) {
-              totalVolumesUl[wizard.baseSolventName] =
-                  (totalVolumesUl[wizard.baseSolventName] ?? 0) +
-                  result.baseSolventVolumeUl;
+              if (mix.baseSolventName.isNotEmpty) {
+                totalVolumesUl[mix.baseSolventName] =
+                    (totalVolumesUl[mix.baseSolventName] ?? 0) +
+                    result.baseSolventVolumeUl;
+              }
             }
           }
         } catch (e) {
           debugPrint('Error syncing MasterMix: $e');
-        }
-      } else if (t.type == TableType.reagentMix) {
-        try {
-          final wizard = ReagentMixWizard.fromJson(jsonDecode(wizardState));
-          final service = ReagentMixCalculatorService();
-          for (var r in wizard.reagents) {
-            final input = ReagentMixInput(
-              reagentName: r.name,
-              stockConcentration: r.stockConc,
-              stockUnit: r.stockUnit,
-              workingConcentration: r.workingConc,
-              workingUnit: r.workingUnit,
-              volumePerTube: r.volPerSample,
-              volumePerTubeUnit: r.volUnit,
-              numberOfTubes: r.numSamples,
-              extraVolumePercent: wizard.extraVolumePercent,
-              molecularWeight: r.molecularWeight,
-            );
-            final result =
-                r.preparationType == ReagentPreparationType.solidSuspension
-                ? service.calculateSuspension(input)
-                : service.calculateMix(input);
-            if (result.success) {
-              if (r.name.isNotEmpty &&
-                  r.preparationType != ReagentPreparationType.solidSuspension) {
-                totalVolumesUl[r.name] =
-                    (totalVolumesUl[r.name] ?? 0) + result.reagentVolumeUl;
-                stockConcentrations[r.name] =
-                    '${r.stockConc} ${r.stockUnit.name}';
-              }
-              if (r.solvent.isNotEmpty) {
-                totalVolumesUl[r.solvent] =
-                    (totalVolumesUl[r.solvent] ?? 0) + result.solventVolumeUl;
-              }
-            }
-          }
-        } catch (e) {
-          debugPrint('Error syncing ReagentMix: $e');
         }
       }
     }
@@ -1635,9 +1586,6 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
         return Icons.biotech;
       case TableType.staining:
         return Icons.color_lens;
-      case TableType.reagentMix:
-      case TableType.reagentMatrix:
-        return Icons.science;
       case TableType.serialDilution:
         return Icons.water_drop;
       case TableType.plateLayout:

@@ -3,13 +3,11 @@ import 'package:flutter/material.dart';
 import '../models/protocol_table.dart';
 import '../models/master_mix_wizard.dart';
 import '../features/staining_table/models/staining_wizard.dart';
-import '../models/reagent_mix_wizard.dart';
 import '../models/plate_wizard.dart';
 import '../features/master_mix/screens/master_mix_viewer_screen.dart';
 import '../features/serial_dilution/models/serial_dilution_input.dart';
 import '../features/serial_dilution/screens/serial_dilution_viewer_screen.dart';
 import '../features/staining_table/screens/staining_table_viewer_screen.dart';
-import '../features/reagent_mix/screens/reagent_viewer_screen.dart';
 import '../features/plate_wizard/screens/plate_viewer_screen.dart';
 import '../screens/generic_viewer_screen.dart';
 
@@ -118,23 +116,6 @@ class ProtocolTableWidget extends StatelessWidget {
           ),
         ),
       );
-    } else if (table.type == TableType.reagentMix) {
-      final wizard = wizardState != null
-          ? ReagentMixWizard.fromJson(jsonDecode(wizardState))
-          : ReagentMixWizard();
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => ReagentViewerScreen(
-            wizard: wizard,
-            initialTable: table,
-            isReadOnly: isReadOnly,
-            onUpdate: (updated) {
-              if (onSave != null) onSave(updated.copyWith(id: table.id));
-            },
-          ),
-        ),
-      );
     } else if (table.type == TableType.serialDilution) {
       final input = wizardState != null
           ? SerialDilutionInput.fromJson(jsonDecode(wizardState))
@@ -191,16 +172,12 @@ class ProtocolTableWidget extends StatelessWidget {
     switch (type) {
       case TableType.plateLayout:
         return Icons.grid_on;
-      case TableType.reagentMatrix:
-        return Icons.biotech;
       case TableType.masterMix:
         return Icons.calculate;
       case TableType.checklist:
         return Icons.fact_check;
       case TableType.staining:
         return Icons.color_lens;
-      case TableType.reagentMix:
-        return Icons.science;
       case TableType.serialDilution:
         return Icons.water_drop;
       default:
@@ -220,9 +197,6 @@ class ProtocolTableWidget extends StatelessWidget {
         return Colors.blue;
       case TableType.staining:
         return Colors.indigo;
-      case TableType.reagentMix:
-      case TableType.reagentMatrix:
-        return Colors.teal;
       case TableType.serialDilution:
         return Colors.cyan;
       case TableType.plateLayout:
