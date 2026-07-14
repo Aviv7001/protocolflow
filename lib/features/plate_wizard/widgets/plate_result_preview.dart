@@ -64,55 +64,115 @@ class _PlateResultPreviewState extends State<PlateResultPreview> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            _plateTitle(table),
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _plateTitle(table),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Full screen view',
+                onPressed: () => _openFullScreenPlate(table, rows, cols),
+                icon: const Icon(Icons.fullscreen),
+              ),
+            ],
           ),
           const SizedBox(height: 12),
           TableExportActions(
             table: table,
             includeRowHeaders: true,
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.grey.shade300),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.05),
-                      blurRadius: 10,
-                    ),
-                  ],
-                ),
-                child: Scrollbar(
-                  controller: controller,
-                  thumbVisibility: true,
-                  trackVisibility: true,
-                  child: SingleChildScrollView(
-                    controller: controller,
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
-                    child: Column(
-                      children: [
-                        _buildColumnHeaders(cols),
-                        const SizedBox(height: 12),
-                        ...List.generate(
-                          rows,
-                          (rowIndex) => _buildPlateRow(table, rowIndex, cols),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
+            child: _buildScrollablePlateBoard(controller, table, rows, cols),
           ),
         ],
       ),
     );
   }
+
+  Widget _buildScrollablePlateBoard(
+    ScrollController controller,
+    ProtocolTable table,
+    int rows,
+    int cols,
+  ) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: _buildPlateFrame(
+        child: Scrollbar(
+          controller: controller,
+          thumbVisibility: true,
+          trackVisibility: true,
+          child: SingleChildScrollView(
+            controller: controller,
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+            child: _buildPlateBoard(table, rows, cols),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPlateFrame({required Widget child}) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade300),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+
+  Widget _buildPlateBoard(ProtocolTable table, int rows, int cols) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildColumnHeaders(cols),
+        const SizedBox(height: 12),
+        ...List.generate(
+          rows,
+          (rowIndex) => _buildPlateRow(table, rowIndex, cols),
+        ),
+      ],
+    );
+  }
+
+  void _openFullScreenPlate(ProtocolTable table, int rows, int cols) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (context) => _FullScreenPlateView(
+          title: _plateTitle(table),
+          boardWidth: _plateBoardWidth(cols),
+          boardHeight: _plateBoardHeight(rows),
+          child: _buildPlateFrame(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+              child: _buildPlateBoard(table, rows, cols),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  double _plateBoardWidth(int cols) => 32 + 35 + (cols * 59);
+
+  double _plateBoardHeight(int rows) => 44 + 12 + (rows * 59) + 44;
 
   Widget _buildColumnHeaders(int cols) {
     return Row(
@@ -251,5 +311,158 @@ class _PlateResultPreviewState extends State<PlateResultPreview> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Long-format Excel export ready')),
     );
+  }
+}
+
+class _FullScreenPlateView extends StatefulWidget {
+  const _FullScreenPlateView({
+    required this.title,
+    required this.boardWidth,
+    required this.boardHeight,
+    required this.child,
+  });
+
+  final String title;
+  final double boardWidth;
+  final double boardHeight;
+  final Widget child;
+
+  @override
+  State<_FullScreenPlateView> createState() => _FullScreenPlateViewState();
+}
+
+class _FullScreenPlateViewState extends State<_FullScreenPlateView> {
+  final TransformationController _controller = TransformationController();
+  final ScrollController _horizontalController = ScrollController();
+  final ScrollController _verticalController = ScrollController();
+  double _fitScale = 1;
+  Size? _lastViewportSize;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _horizontalController.dispose();
+    _verticalController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        titleSpacing: 0,
+        title: Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+        actions: [
+          IconButton(
+            tooltip: 'Zoom out',
+            onPressed: () => _scaleBy(0.82),
+            icon: const Icon(Icons.zoom_out),
+          ),
+          IconButton(
+            tooltip: 'Reset zoom',
+            onPressed: _resetZoom,
+            icon: const Icon(Icons.center_focus_strong),
+          ),
+          IconButton(
+            tooltip: 'Zoom in',
+            onPressed: () => _scaleBy(1.22),
+            icon: const Icon(Icons.zoom_in),
+          ),
+        ],
+      ),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          _scheduleAutoFit(constraints.biggest);
+          final contentWidth = widget.boardWidth > constraints.maxWidth
+              ? widget.boardWidth
+              : constraints.maxWidth;
+          final contentHeight = widget.boardHeight > constraints.maxHeight
+              ? widget.boardHeight
+              : constraints.maxHeight;
+
+          return Scrollbar(
+            controller: _verticalController,
+            thumbVisibility: true,
+            trackVisibility: true,
+            notificationPredicate: (notification) =>
+                notification.metrics.axis == Axis.vertical,
+            child: SingleChildScrollView(
+              controller: _verticalController,
+              padding: const EdgeInsets.fromLTRB(12, 12, 20, 20),
+              child: Scrollbar(
+                controller: _horizontalController,
+                thumbVisibility: true,
+                trackVisibility: true,
+                notificationPredicate: (notification) =>
+                    notification.metrics.axis == Axis.horizontal,
+                child: SingleChildScrollView(
+                  controller: _horizontalController,
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.only(right: 12, bottom: 12),
+                  child: SizedBox(
+                    width: contentWidth,
+                    height: contentHeight,
+                    child: Center(
+                      child: InteractiveViewer(
+                        transformationController: _controller,
+                        minScale: 0.45,
+                        maxScale: 4,
+                        boundaryMargin: const EdgeInsets.all(80),
+                        constrained: false,
+                        trackpadScrollCausesScale: true,
+                        child: widget.child,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _scaleBy(double factor) {
+    final next = _controller.value.clone()..scaleByDouble(factor, factor, 1, 1);
+    setState(() => _controller.value = next);
+  }
+
+  void _resetZoom() {
+    setState(() => _applyScale(_fitScale));
+  }
+
+  void _scheduleAutoFit(Size viewportSize) {
+    if (_lastViewportSize == viewportSize) return;
+    _lastViewportSize = viewportSize;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final nextFitScale = _calculateFitScale(viewportSize);
+      setState(() {
+        _fitScale = nextFitScale;
+        _applyScale(nextFitScale);
+      });
+    });
+  }
+
+  double _calculateFitScale(Size viewportSize) {
+    const horizontalPadding = 44.0;
+    const verticalPadding = 44.0;
+    final availableWidth = (viewportSize.width - horizontalPadding).clamp(
+      1.0,
+      double.infinity,
+    );
+    final availableHeight = (viewportSize.height - verticalPadding).clamp(
+      1.0,
+      double.infinity,
+    );
+    final scaleX = availableWidth / widget.boardWidth;
+    final scaleY = availableHeight / widget.boardHeight;
+    final fitScale = widget.boardWidth >= widget.boardHeight ? scaleX : scaleY;
+    return fitScale.clamp(0.45, 1.6).toDouble();
+  }
+
+  void _applyScale(double scale) {
+    _controller.value = Matrix4.identity()..scaleByDouble(scale, scale, 1, 1);
   }
 }

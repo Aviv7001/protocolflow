@@ -12,7 +12,6 @@ import '../services/import_service.dart';
 import '../services/storage_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/google_sign_in_button.dart';
-import '../widgets/responsive_layout.dart';
 import '../features/measuring_tools/screens/measuring_tools_manager_screen.dart';
 import 'lab_tools_screen.dart';
 import 'library_screen.dart';
@@ -43,8 +42,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isSyncing = false;
   bool _hasAttemptedStartupSync = false;
   int _selectedDesktopIndex = 0;
-  bool _isSidebarExpanded = true;
-  bool _isMobileSidebarOpen = false;
+  bool _isSidebarOpen = false;
   AppUser? _signedInUser;
   StreamSubscription<AppUser?>? _userSubscription;
 
@@ -398,38 +396,37 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return ResponsiveLayoutBuilder(
-      mobile: (_) => _buildAdaptiveShell(ProtocolFlowWindowClass.mobile),
-      tablet: (_) => _buildAdaptiveShell(ProtocolFlowWindowClass.tablet),
-      desktop: (_) => _buildAdaptiveShell(ProtocolFlowWindowClass.desktop),
-    );
-  }
-
-  Widget _buildAdaptiveShell(ProtocolFlowWindowClass windowClass) {
     return Scaffold(
       backgroundColor: AppColors.scaffoldBackground,
       body: SafeArea(
-        child: Row(
+        child: Stack(
           children: [
-            _buildSidebar(windowClass),
-            Expanded(
-              child: Column(
-                children: [
-                  _buildTopBar(windowClass),
-                  Expanded(child: _buildSelectedPage(windowClass)),
-                ],
-              ),
+            Column(
+              children: [
+                _buildTopBar(),
+                Expanded(child: _buildSelectedPage()),
+              ],
             ),
+            if (_isSidebarOpen) ...[
+              Positioned.fill(
+                child: GestureDetector(
+                  onTap: _toggleSidebar,
+                  child: ColoredBox(
+                    color: Colors.black.withValues(alpha: 0.28),
+                  ),
+                ),
+              ),
+              Align(alignment: Alignment.centerLeft, child: _buildSidebar()),
+            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _buildSidebar(ProtocolFlowWindowClass windowClass) {
-    final isMobile = windowClass == ProtocolFlowWindowClass.mobile;
-    final isExpanded = isMobile ? _isMobileSidebarOpen : _isSidebarExpanded;
-    final width = isExpanded ? 232.0 : 72.0;
+  Widget _buildSidebar() {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final width = (screenWidth * 0.82).clamp(248.0, 320.0).toDouble();
     final items = [
       _DesktopNavItem(
         icon: Icons.home_outlined,
@@ -492,77 +489,59 @@ class _HomeScreenState extends State<HomeScreen> {
           SizedBox(
             height: 72,
             child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: isExpanded ? 16 : 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
-                mainAxisAlignment: isExpanded
-                    ? MainAxisAlignment.spaceBetween
-                    : MainAxisAlignment.center,
                 children: [
-                  if (isExpanded)
-                    const Expanded(
-                      child: Text(
-                        'ProtocolFlow',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: AppColors.onPrimary,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                        ),
+                  const Expanded(
+                    child: Text(
+                      'ProtocolFlow',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: AppColors.onPrimary,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                  if (!isMobile)
-                    IconButton(
-                      tooltip: isExpanded
-                          ? 'Collapse sidebar'
-                          : 'Expand sidebar',
-                      color: AppColors.onPrimary,
-                      onPressed: _toggleSidebar,
-                      icon: Icon(isExpanded ? Icons.menu_open : Icons.menu),
-                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Close sidebar',
+                    color: AppColors.onPrimary,
+                    onPressed: _toggleSidebar,
+                    icon: const Icon(Icons.close),
+                  ),
                 ],
               ),
             ),
           ),
-          for (final item in items) _buildSidebarButton(item, isExpanded),
+          for (final item in items) _buildSidebarButton(item),
           const Spacer(),
           Padding(
-            padding: EdgeInsets.all(isExpanded ? 16 : 10),
-            child: isExpanded
-                ? OutlinedButton.icon(
-                    onPressed: () async {
-                      final result = await Navigator.pushNamed(
-                        context,
-                        '/create',
-                      );
-                      if (result != null) _loadOverview();
-                    },
-                    icon: const Icon(Icons.add),
-                    label: const Text('New protocol'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.onPrimary,
-                      side: const BorderSide(color: AppColors.onPrimary),
-                    ),
-                  )
-                : IconButton(
-                    tooltip: 'New protocol',
-                    color: AppColors.onPrimary,
-                    onPressed: () async {
-                      final result = await Navigator.pushNamed(
-                        context,
-                        '/create',
-                      );
-                      if (result != null) _loadOverview();
-                    },
-                    icon: const Icon(Icons.add),
-                  ),
+            padding: const EdgeInsets.all(16),
+            child: OutlinedButton.icon(
+              onPressed: () async {
+                final result = await Navigator.pushNamed(context, '/create');
+                if (result != null) _loadOverview();
+                if (mounted) setState(() => _isSidebarOpen = false);
+              },
+              icon: const Icon(Icons.add),
+              label: const Text(
+                'New protocol',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.onPrimary,
+                side: const BorderSide(color: AppColors.onPrimary),
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildSidebarButton(_DesktopNavItem item, bool isExpanded) {
+  Widget _buildSidebarButton(_DesktopNavItem item) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
       child: Material(
@@ -574,30 +553,22 @@ class _HomeScreenState extends State<HomeScreen> {
           borderRadius: BorderRadius.circular(10),
           onTap: item.onTap,
           child: Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: isExpanded ? 12 : 10,
-              vertical: 12,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             child: Row(
-              mainAxisAlignment: isExpanded
-                  ? MainAxisAlignment.start
-                  : MainAxisAlignment.center,
               children: [
                 Icon(item.icon, color: AppColors.onPrimary, size: 22),
-                if (isExpanded) ...[
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      item.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppColors.onPrimary,
-                        fontWeight: FontWeight.w600,
-                      ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    item.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.onPrimary,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                ],
+                ),
               ],
             ),
           ),
@@ -606,11 +577,10 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildTopBar(ProtocolFlowWindowClass windowClass) {
-    final isMobile = windowClass == ProtocolFlowWindowClass.mobile;
+  Widget _buildTopBar() {
     return Container(
       height: 72,
-      padding: EdgeInsets.symmetric(horizontal: isMobile ? 8 : 24),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: const BoxDecoration(
         color: AppColors.surface,
         border: Border(bottom: BorderSide(color: AppColors.outlineVariant)),
@@ -618,11 +588,9 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Row(
         children: [
           IconButton(
-            tooltip: isMobile
-                ? (_isMobileSidebarOpen ? 'Collapse sidebar' : 'Expand sidebar')
-                : (_isSidebarExpanded ? 'Collapse sidebar' : 'Expand sidebar'),
+            tooltip: _isSidebarOpen ? 'Close sidebar' : 'Open sidebar',
             onPressed: _toggleSidebar,
-            icon: const Icon(Icons.menu),
+            icon: const Icon(Icons.more_vert),
           ),
           const SizedBox(width: 4),
           Flexible(
@@ -630,42 +598,23 @@ class _HomeScreenState extends State<HomeScreen> {
               _currentPageTitle,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: isMobile ? 18 : 20,
-                fontWeight: FontWeight.w700,
-              ),
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
             ),
           ),
           const Spacer(),
-          if (!isMobile) ...[
-            TextButton.icon(
-              onPressed: _isSyncing
-                  ? null
-                  : () => _runDriveSync(promptIfNecessary: true),
-              icon: _isSyncing
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.cloud_sync_outlined),
-              label: Text(_isSyncing ? 'Syncing' : 'Sync'),
-            ),
-            const SizedBox(width: 8),
-          ] else
-            IconButton(
-              tooltip: _isSyncing ? 'Syncing' : 'Sync',
-              onPressed: _isSyncing
-                  ? null
-                  : () => _runDriveSync(promptIfNecessary: true),
-              icon: _isSyncing
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.cloud_sync_outlined),
-            ),
+          IconButton(
+            tooltip: _isSyncing ? 'Syncing' : 'Sync',
+            onPressed: _isSyncing
+                ? null
+                : () => _runDriveSync(promptIfNecessary: true),
+            icon: _isSyncing
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.cloud_sync_outlined),
+          ),
           PopupMenuButton<String>(
             tooltip: 'Import and export',
             icon: const Icon(Icons.import_export),
@@ -706,7 +655,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ),
-          if (!isMobile) const SizedBox(width: 8),
           IconButton(
             tooltip: 'User profile',
             onPressed: _isSigningIn ? null : _handleProfilePressed,
@@ -724,11 +672,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _toggleSidebar() {
-    if (context.isMobileLayout) {
-      setState(() => _isMobileSidebarOpen = !_isMobileSidebarOpen);
-      return;
-    }
-    setState(() => _isSidebarExpanded = !_isSidebarExpanded);
+    setState(() => _isSidebarOpen = !_isSidebarOpen);
   }
 
   void _selectPage(int index) {
@@ -737,9 +681,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _loadOverview();
       _refreshRunningProtocols();
     }
-    if (context.isMobileLayout && _isMobileSidebarOpen) {
-      setState(() => _isMobileSidebarOpen = false);
-    }
+    if (_isSidebarOpen) setState(() => _isSidebarOpen = false);
   }
 
   String get _currentPageTitle {
@@ -763,7 +705,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Widget _buildSelectedPage(ProtocolFlowWindowClass windowClass) {
+  Widget _buildSelectedPage() {
     if (_selectedDesktopIndex == 1) {
       return const LibraryScreen();
     }
@@ -786,14 +728,8 @@ class _HomeScreenState extends State<HomeScreen> {
       return _buildSettingsWorkspace();
     }
 
-    final padding = windowClass == ProtocolFlowWindowClass.mobile
-        ? const EdgeInsets.fromLTRB(12, 16, 12, 24)
-        : windowClass == ProtocolFlowWindowClass.tablet
-        ? const EdgeInsets.fromLTRB(24, 20, 24, 28)
-        : const EdgeInsets.fromLTRB(28, 24, 28, 32);
-
     return SingleChildScrollView(
-      padding: padding,
+      padding: const EdgeInsets.fromLTRB(12, 16, 12, 24),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 1440),
         child: _buildHomeWorkspace(),
@@ -802,60 +738,34 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildHomeWorkspace() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final useWideLayout = constraints.maxWidth >= 840;
-        final primary = Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildResumeWorkSection(),
-            const SizedBox(height: 20),
-            _buildTasksSection(),
-          ],
-        );
-        final secondary = Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildDataHealthStrip(),
-            const SizedBox(height: 20),
-            _buildSectionTitle('Quick Start'),
-            _buildWorkspaceActions(),
-          ],
-        );
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Operations Today',
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'Resume lab work, start common workflows, and keep your data in sync.',
-              style: TextStyle(color: AppColors.textSecondary),
-            ),
-            const SizedBox(height: 20),
-            if (useWideLayout)
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(flex: 5, child: primary),
-                  const SizedBox(width: 24),
-                  Expanded(flex: 4, child: secondary),
-                ],
-              )
-            else ...[
-              primary,
-              const SizedBox(height: 20),
-              secondary,
-            ],
-            const SizedBox(height: 28),
-            _buildSectionTitle('Overview'),
-            _buildOverviewGrid(),
-          ],
-        );
-      },
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Operations Today',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.headlineSmall,
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Resume lab work, start common workflows, and keep your data in sync.',
+          softWrap: true,
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
+        const SizedBox(height: 20),
+        _buildResumeWorkSection(),
+        const SizedBox(height: 20),
+        _buildTasksSection(),
+        const SizedBox(height: 20),
+        _buildDataHealthStrip(),
+        const SizedBox(height: 20),
+        _buildSectionTitle('Quick Start'),
+        _buildWorkspaceActions(),
+        const SizedBox(height: 28),
+        _buildSectionTitle('Overview'),
+        _buildOverviewGrid(),
+      ],
     );
   }
 
@@ -863,16 +773,13 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            _buildSectionTitle('Resume Work'),
-            IconButton(
-              tooltip: 'Refresh running protocols',
-              onPressed: _refreshRunningProtocols,
-              icon: const Icon(Icons.refresh),
-            ),
-          ],
+        _buildSectionHeader(
+          'Resume Work',
+          trailing: IconButton(
+            tooltip: 'Refresh running protocols',
+            onPressed: _refreshRunningProtocols,
+            icon: const Icon(Icons.refresh),
+          ),
         ),
         if (activeProtocol != null || runningProtocols.isNotEmpty)
           Column(
@@ -903,21 +810,49 @@ class _HomeScreenState extends State<HomeScreen> {
             margin: EdgeInsets.zero,
             child: Padding(
               padding: const EdgeInsets.all(18),
-              child: Row(
-                children: [
-                  const Icon(Icons.play_circle_outline, color: AppColors.info),
-                  const SizedBox(width: 14),
-                  const Expanded(
-                    child: Text(
-                      'No protocols are currently running.',
-                      style: TextStyle(color: AppColors.textSecondary),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final narrow = constraints.maxWidth < 360;
+                  final content = [
+                    const Icon(
+                      Icons.play_circle_outline,
+                      color: AppColors.info,
                     ),
-                  ),
-                  TextButton(
-                    onPressed: () => _selectPage(1),
-                    child: const Text('Open library'),
-                  ),
-                ],
+                    const SizedBox(width: 14, height: 12),
+                    const Expanded(
+                      child: Text(
+                        'No protocols are currently running.',
+                        softWrap: true,
+                        style: TextStyle(color: AppColors.textSecondary),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () => _selectPage(1),
+                      child: const Text(
+                        'Open library',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ];
+
+                  if (!narrow) return Row(children: content);
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(children: content.take(3).toList()),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: TextButton(
+                          onPressed: () => _selectPage(1),
+                          child: const Text('Open library'),
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
             ),
           ),
@@ -929,15 +864,16 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            _buildSectionTitle('Today\'s Tasks'),
-            TextButton(
-              onPressed: () => Navigator.pushNamed(context, '/task_history'),
-              child: const Text('Tasks History'),
+        _buildSectionHeader(
+          'Today\'s Tasks',
+          trailing: TextButton(
+            onPressed: () => Navigator.pushNamed(context, '/task_history'),
+            child: const Text(
+              'Tasks History',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
-          ],
+          ),
         ),
         if (_isLoadingTasks)
           const Center(child: CircularProgressIndicator())
@@ -953,9 +889,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ..._todayTasks.map((task) => _buildTaskItem(task)),
         const SizedBox(height: 8),
         Align(
-          alignment: context.isDesktopLayout
-              ? Alignment.centerLeft
-              : Alignment.center,
+          alignment: Alignment.center,
           child: ElevatedButton.icon(
             onPressed: _showAddTaskDialog,
             icon: const Icon(Icons.add),
@@ -964,9 +898,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         if (_todayTasks.any((t) => t.isDone))
           Align(
-            alignment: context.isDesktopLayout
-                ? Alignment.centerLeft
-                : Alignment.center,
+            alignment: Alignment.center,
             child: TextButton.icon(
               onPressed: _archiveTasks,
               icon: const Icon(Icons.archive_outlined),
@@ -1010,17 +942,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final crossAxisCount = constraints.maxWidth >= 1100 ? 4 : 2;
-        const spacing = 12.0;
-        final width =
-            (constraints.maxWidth - spacing * (crossAxisCount - 1)) /
-            crossAxisCount;
         return Wrap(
-          spacing: spacing,
-          runSpacing: spacing,
+          spacing: 12,
+          runSpacing: 12,
           children: [
             for (final action in actions)
-              SizedBox(width: width, child: _buildWorkspaceAction(action)),
+              SizedBox(
+                width: constraints.maxWidth,
+                child: _buildWorkspaceAction(action),
+              ),
           ],
         );
       },
@@ -1045,13 +975,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     Text(
                       action.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       action.description,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                      softWrap: true,
                       style: const TextStyle(
                         color: AppColors.textSecondary,
                         fontSize: 12,
@@ -1082,30 +1013,58 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Icon(
-                  user == null
-                      ? Icons.cloud_off_outlined
-                      : Icons.cloud_done_outlined,
-                  color: user == null ? AppColors.warning : AppColors.success,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    syncLabel,
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                ),
-                TextButton(
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final narrow = constraints.maxWidth < 360;
+                final status = Row(
+                  children: [
+                    Icon(
+                      user == null
+                          ? Icons.cloud_off_outlined
+                          : Icons.cloud_done_outlined,
+                      color: user == null
+                          ? AppColors.warning
+                          : AppColors.success,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        syncLabel,
+                        maxLines: narrow ? 2 : 1,
+                        overflow: TextOverflow.ellipsis,
+                        softWrap: true,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ],
+                );
+                final action = TextButton(
                   onPressed: _isSyncing
                       ? null
                       : user == null
                       ? _handleProfilePressed
                       : () => _runDriveSync(promptIfNecessary: true),
                   child: Text(user == null ? 'Sign in' : 'Sync'),
-                ),
-              ],
+                );
+
+                if (narrow) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      status,
+                      const SizedBox(height: 8),
+                      SizedBox(width: double.infinity, child: action),
+                    ],
+                  );
+                }
+
+                return Row(
+                  children: [
+                    Expanded(child: status),
+                    action,
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 14),
             Wrap(
@@ -1145,7 +1104,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildSettingsWorkspace() {
     final user = _signedInUser;
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(28, 24, 28, 32),
+      padding: const EdgeInsets.fromLTRB(12, 16, 12, 24),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 900),
         child: Column(
@@ -1156,28 +1115,37 @@ class _HomeScreenState extends State<HomeScreen> {
               margin: EdgeInsets.zero,
               child: Padding(
                 padding: const EdgeInsets.all(20),
-                child: Row(
-                  children: [
-                    _buildUserAvatar(user, size: 52),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            user?.displayName ?? 'Google account',
-                            style: Theme.of(context).textTheme.titleMedium,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final narrow = constraints.maxWidth < 420;
+                    final account = Row(
+                      children: [
+                        _buildUserAvatar(user, size: 52),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                user?.displayName ?? 'Google account',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                              Text(
+                                user?.email ?? 'Not signed in',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ],
                           ),
-                          Text(
-                            user?.email ?? 'Not signed in',
-                            style: const TextStyle(
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    TextButton.icon(
+                        ),
+                      ],
+                    );
+                    final action = TextButton.icon(
                       onPressed: _handleProfilePressed,
                       icon: Icon(
                         user == null
@@ -1185,8 +1153,27 @@ class _HomeScreenState extends State<HomeScreen> {
                             : Icons.manage_accounts_outlined,
                       ),
                       label: Text(user == null ? 'Sign in' : 'Manage'),
-                    ),
-                  ],
+                    );
+
+                    if (narrow) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          account,
+                          const SizedBox(height: 12),
+                          SizedBox(width: double.infinity, child: action),
+                        ],
+                      );
+                    }
+
+                    return Row(
+                      children: [
+                        Expanded(child: account),
+                        const SizedBox(width: 12),
+                        action,
+                      ],
+                    );
+                  },
                 ),
               ),
             ),
@@ -1195,23 +1182,48 @@ class _HomeScreenState extends State<HomeScreen> {
               margin: EdgeInsets.zero,
               child: Padding(
                 padding: const EdgeInsets.all(20),
-                child: Row(
-                  children: [
-                    const Icon(Icons.cloud_sync_outlined),
-                    const SizedBox(width: 16),
-                    const Expanded(
-                      child: Text(
-                        'Google Drive synchronization keeps protocols, tables, and history available across devices.',
-                      ),
-                    ),
-                    ElevatedButton.icon(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final narrow = constraints.maxWidth < 460;
+                    final content = Row(
+                      children: const [
+                        Icon(Icons.cloud_sync_outlined),
+                        SizedBox(width: 16),
+                        Expanded(
+                          child: Text(
+                            'Google Drive synchronization keeps protocols, tables, and history available across devices.',
+                            softWrap: true,
+                          ),
+                        ),
+                      ],
+                    );
+                    final action = ElevatedButton.icon(
                       onPressed: _isSyncing
                           ? null
                           : () => _runDriveSync(promptIfNecessary: true),
                       icon: const Icon(Icons.sync),
                       label: Text(_isSyncing ? 'Syncing' : 'Sync now'),
-                    ),
-                  ],
+                    );
+
+                    if (narrow) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          content,
+                          const SizedBox(height: 14),
+                          SizedBox(width: double.infinity, child: action),
+                        ],
+                      );
+                    }
+
+                    return Row(
+                      children: [
+                        Expanded(child: content),
+                        const SizedBox(width: 12),
+                        action,
+                      ],
+                    );
+                  },
                 ),
               ),
             ),
@@ -1246,8 +1258,36 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.only(bottom: 8.0),
       child: Text(
         title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
       ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title, {required Widget trailing}) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 340) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildSectionTitle(title),
+              Align(alignment: Alignment.centerLeft, child: trailing),
+            ],
+          );
+        }
+
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(child: _buildSectionTitle(title)),
+            Flexible(
+              child: Align(alignment: Alignment.centerRight, child: trailing),
+            ),
+          ],
+        );
+      },
     );
   }
 
