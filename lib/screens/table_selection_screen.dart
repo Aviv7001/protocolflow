@@ -8,6 +8,7 @@ import '../features/serial_dilution/models/serial_dilution_input.dart';
 import '../features/serial_dilution/screens/serial_dilution_manager_screen.dart';
 import '../features/staining_table/screens/staining_table_manager_screen.dart';
 import '../services/storage_service.dart';
+import '../services/generic_table_import_service.dart';
 import 'plate_wizard_samples_screen.dart';
 import 'saved_table_picker_screen.dart';
 import 'table_data_editor_screen.dart';
@@ -16,18 +17,20 @@ class TableSelectionScreen extends StatelessWidget {
   final String title;
   final String subtitle;
   final bool standaloneMode;
+  final bool embedded;
 
   const TableSelectionScreen({
     super.key,
     this.title = 'Add New Table',
     this.subtitle = 'Choose a specialized manager to create your table',
     this.standaloneMode = false,
+    this.embedded = false,
   });
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(title), centerTitle: true),
+      appBar: embedded ? null : AppBar(title: Text(title), centerTitle: true),
       body: Padding(
         padding: const EdgeInsets.all(20.0),
         child: Column(
@@ -104,7 +107,7 @@ class TableSelectionScreen extends StatelessWidget {
                     'From CSV/Excel',
                     Icons.file_upload,
                     Colors.purple,
-                    isAvailable: false,
+                    onTap: () => _importGenericTable(context),
                   ),
                 ],
               ),
@@ -260,10 +263,7 @@ class TableSelectionScreen extends StatelessWidget {
       id: 'table_${DateTime.now().millisecondsSinceEpoch}',
       title: 'Generic Table',
       type: TableType.generic,
-      columnHeaders: List.generate(5, (i) => String.fromCharCode(65 + i)),
-      rowHeaders: List.generate(10, (i) => (i + 1).toString()),
-      data: List.generate(10, (_) => List.generate(5, (_) => '')),
-      cellColors: List.generate(10, (_) => List.generate(5, (_) => '')),
+      metadata: {'needs_dimension_setup': 'true'},
     );
 
     final result = await Navigator.push(
@@ -305,6 +305,24 @@ class TableSelectionScreen extends StatelessWidget {
     if (result != null) {
       Navigator.pop(context, result);
     }
+  }
+
+  Future<void> _importGenericTable(BuildContext context) async {
+    final result = await const GenericTableImportService().importTable();
+    if (!context.mounted) return;
+
+    if (!result.success || result.table == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(result.message)));
+      return;
+    }
+
+    await _handleCreatedTable(context, result.table!);
+    if (!context.mounted || !standaloneMode) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(result.message)));
   }
 
   Future<void> _handleCreatedTable(

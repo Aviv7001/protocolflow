@@ -3,14 +3,16 @@ import 'package:flutter/material.dart';
 import 'table_selection_screen.dart';
 
 class LabToolsScreen extends StatelessWidget {
-  const LabToolsScreen({super.key});
+  final bool embedded;
+  const LabToolsScreen({super.key, this.embedded = false});
 
   @override
   Widget build(BuildContext context) {
-    return const TableSelectionScreen(
+    return TableSelectionScreen(
       title: 'Lab Tools',
       subtitle: 'Build, copy, export, and save standalone lab tables',
       standaloneMode: true,
+      embedded: embedded,
     );
   }
 }

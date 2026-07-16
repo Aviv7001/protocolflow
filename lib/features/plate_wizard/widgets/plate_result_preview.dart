@@ -15,16 +15,7 @@ class PlateResultPreview extends StatefulWidget {
 }
 
 class _PlateResultPreviewState extends State<PlateResultPreview> {
-  final Map<int, ScrollController> _scrollControllers = {};
   final _exportService = const TableExportService();
-
-  @override
-  void dispose() {
-    for (final controller in _scrollControllers.values) {
-      controller.dispose();
-    }
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -45,19 +36,19 @@ class _PlateResultPreviewState extends State<PlateResultPreview> {
         ),
         const SizedBox(height: 16),
         ...tables.asMap().entries.map(
-          (entry) => _buildPlateGrid(entry.key, entry.value),
+          (entry) => _buildPlateGrid(entry.key, entry.value, tables),
         ),
       ],
     );
   }
 
-  Widget _buildPlateGrid(int index, ProtocolTable table) {
+  Widget _buildPlateGrid(
+    int index,
+    ProtocolTable table,
+    List<ProtocolTable> tables,
+  ) {
     final rows = int.tryParse(table.metadata['rows'] ?? '8') ?? 8;
     final cols = int.tryParse(table.metadata['columns'] ?? '12') ?? 12;
-    final controller = _scrollControllers.putIfAbsent(
-      index,
-      () => ScrollController(),
-    );
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 32.0),
@@ -79,7 +70,7 @@ class _PlateResultPreviewState extends State<PlateResultPreview> {
               ),
               IconButton(
                 tooltip: 'Full screen view',
-                onPressed: () => _openFullScreenPlate(table, rows, cols),
+                onPressed: () => _openFullScreenPlate(tables, index),
                 icon: const Icon(Icons.fullscreen),
               ),
             ],
@@ -88,34 +79,57 @@ class _PlateResultPreviewState extends State<PlateResultPreview> {
           TableExportActions(
             table: table,
             includeRowHeaders: true,
-            child: _buildScrollablePlateBoard(controller, table, rows, cols),
+            child: _buildFittedPlateBoard(table, rows, cols),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildScrollablePlateBoard(
-    ScrollController controller,
-    ProtocolTable table,
-    int rows,
-    int cols,
-  ) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: _buildPlateFrame(
-        child: Scrollbar(
-          controller: controller,
-          thumbVisibility: true,
-          trackVisibility: true,
-          child: SingleChildScrollView(
-            controller: controller,
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
-            child: _buildPlateBoard(table, rows, cols),
+  Widget _buildFittedPlateBoard(ProtocolTable table, int rows, int cols) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const framePadding = EdgeInsets.fromLTRB(16, 16, 16, 28);
+        final boardWidth = _plateBoardWidth(
+          cols + 1,
+        ); // +1 so the columns wont over flow the container
+        final boardHeight = _plateBoardHeight(rows);
+        final availableWidth = constraints.hasBoundedWidth
+            ? constraints.maxWidth
+            : boardWidth;
+        final scale = availableWidth < boardWidth
+            ? (availableWidth / boardWidth).clamp(0.2, 1.0).toDouble()
+            : 1.0;
+
+        return Align(
+          alignment: Alignment.centerLeft,
+          child: SizedBox(
+            width: boardWidth * scale,
+            height: boardHeight * scale,
+            child: Transform.scale(
+              scale: scale,
+              alignment: Alignment.topLeft,
+              child: OverflowBox(
+                alignment: Alignment.topLeft,
+                minWidth: boardWidth,
+                maxWidth: boardWidth,
+                minHeight: boardHeight,
+                maxHeight: boardHeight,
+                child: SizedBox(
+                  width: boardWidth,
+                  height: boardHeight,
+                  child: _buildPlateFrame(
+                    child: Padding(
+                      padding: framePadding,
+                      child: _buildPlateBoard(table, rows, cols),
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -150,21 +164,30 @@ class _PlateResultPreviewState extends State<PlateResultPreview> {
     );
   }
 
-  void _openFullScreenPlate(ProtocolTable table, int rows, int cols) {
+  void _openFullScreenPlate(List<ProtocolTable> tables, int initialIndex) {
     Navigator.push(
       context,
       MaterialPageRoute(
         fullscreenDialog: true,
         builder: (context) => _FullScreenPlateView(
-          title: _plateTitle(table),
-          boardWidth: _plateBoardWidth(cols),
-          boardHeight: _plateBoardHeight(rows),
-          child: _buildPlateFrame(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
-              child: _buildPlateBoard(table, rows, cols),
-            ),
-          ),
+          initialIndex: initialIndex,
+          pages: tables.map((table) {
+            final rows = int.tryParse(table.metadata['rows'] ?? '8') ?? 8;
+            final cols = int.tryParse(table.metadata['columns'] ?? '12') ?? 12;
+            return _FullScreenPlatePage(
+              title: _plateTitle(table),
+              rows: rows,
+              cols: cols,
+              boardWidth: _plateBoardWidth(cols + 1),
+              boardHeight: _plateBoardHeight(rows),
+              child: _buildPlateFrame(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+                  child: _buildPlateBoard(table, rows, cols),
+                ),
+              ),
+            );
+          }).toList(),
         ),
       ),
     );
@@ -221,8 +244,8 @@ class _PlateResultPreviewState extends State<PlateResultPreview> {
   }
 
   Widget _buildWell(ProtocolTable table, int rowIndex, int colIndex) {
-    final content = table.data[rowIndex][colIndex].toString();
-    final colorHex = table.cellColors[rowIndex][colIndex];
+    final content = _cellText(table, rowIndex, colIndex);
+    final colorHex = _cellColor(table, rowIndex, colIndex);
     var bgColor = Colors.grey.shade50;
     if (colorHex.isNotEmpty) {
       bgColor = Color(
@@ -290,6 +313,26 @@ class _PlateResultPreviewState extends State<PlateResultPreview> {
     );
   }
 
+  String _cellText(ProtocolTable table, int rowIndex, int colIndex) {
+    if (rowIndex < 0 ||
+        colIndex < 0 ||
+        rowIndex >= table.data.length ||
+        colIndex >= table.data[rowIndex].length) {
+      return '';
+    }
+    return table.data[rowIndex][colIndex]?.toString() ?? '';
+  }
+
+  String _cellColor(ProtocolTable table, int rowIndex, int colIndex) {
+    if (rowIndex < 0 ||
+        colIndex < 0 ||
+        rowIndex >= table.cellColors.length ||
+        colIndex >= table.cellColors[rowIndex].length) {
+      return '';
+    }
+    return table.cellColors[rowIndex][colIndex];
+  }
+
   String _plateTitle(ProtocolTable table) {
     final plateNumber =
         table.metadata['plateNumber'] ??
@@ -314,18 +357,29 @@ class _PlateResultPreviewState extends State<PlateResultPreview> {
   }
 }
 
-class _FullScreenPlateView extends StatefulWidget {
-  const _FullScreenPlateView({
+class _FullScreenPlatePage {
+  const _FullScreenPlatePage({
     required this.title,
+    required this.rows,
+    required this.cols,
     required this.boardWidth,
     required this.boardHeight,
     required this.child,
   });
 
   final String title;
+  final int rows;
+  final int cols;
   final double boardWidth;
   final double boardHeight;
   final Widget child;
+}
+
+class _FullScreenPlateView extends StatefulWidget {
+  const _FullScreenPlateView({required this.pages, required this.initialIndex});
+
+  final List<_FullScreenPlatePage> pages;
+  final int initialIndex;
 
   @override
   State<_FullScreenPlateView> createState() => _FullScreenPlateViewState();
@@ -337,6 +391,26 @@ class _FullScreenPlateViewState extends State<_FullScreenPlateView> {
   final ScrollController _verticalController = ScrollController();
   double _fitScale = 1;
   Size? _lastViewportSize;
+  late int _plateIndex;
+
+  _FullScreenPlatePage get _page => widget.pages[_plateIndex];
+
+  @override
+  void initState() {
+    super.initState();
+    _plateIndex = widget.pages.isEmpty
+        ? 0
+        : widget.initialIndex.clamp(0, widget.pages.length - 1);
+  }
+
+  @override
+  void didUpdateWidget(covariant _FullScreenPlateView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_plateIndex >= widget.pages.length) {
+      _plateIndex = widget.pages.isEmpty ? 0 : widget.pages.length - 1;
+      _lastViewportSize = null;
+    }
+  }
 
   @override
   void dispose() {
@@ -348,10 +422,12 @@ class _FullScreenPlateViewState extends State<_FullScreenPlateView> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.pages.isEmpty) return const SizedBox.shrink();
+
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 0,
-        title: Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+        title: Text(_page.title, maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
           IconButton(
             tooltip: 'Zoom out',
@@ -373,54 +449,129 @@ class _FullScreenPlateViewState extends State<_FullScreenPlateView> {
       body: LayoutBuilder(
         builder: (context, constraints) {
           _scheduleAutoFit(constraints.biggest);
-          final contentWidth = widget.boardWidth > constraints.maxWidth
-              ? widget.boardWidth
+          final contentWidth = _page.boardWidth > constraints.maxWidth
+              ? _page.boardWidth
               : constraints.maxWidth;
-          final contentHeight = widget.boardHeight > constraints.maxHeight
-              ? widget.boardHeight
+          final contentHeight = _page.boardHeight > constraints.maxHeight
+              ? _page.boardHeight
               : constraints.maxHeight;
 
-          return Scrollbar(
-            controller: _verticalController,
-            thumbVisibility: true,
-            trackVisibility: true,
-            notificationPredicate: (notification) =>
-                notification.metrics.axis == Axis.vertical,
-            child: SingleChildScrollView(
-              controller: _verticalController,
-              padding: const EdgeInsets.fromLTRB(12, 12, 20, 20),
-              child: Scrollbar(
-                controller: _horizontalController,
+          return Stack(
+            children: [
+              Scrollbar(
+                controller: _verticalController,
                 thumbVisibility: true,
                 trackVisibility: true,
                 notificationPredicate: (notification) =>
-                    notification.metrics.axis == Axis.horizontal,
+                    notification.metrics.axis == Axis.vertical,
                 child: SingleChildScrollView(
-                  controller: _horizontalController,
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.only(right: 12, bottom: 12),
-                  child: SizedBox(
-                    width: contentWidth,
-                    height: contentHeight,
-                    child: Center(
-                      child: InteractiveViewer(
-                        transformationController: _controller,
-                        minScale: 0.45,
-                        maxScale: 4,
-                        boundaryMargin: const EdgeInsets.all(80),
-                        constrained: false,
-                        trackpadScrollCausesScale: true,
-                        child: widget.child,
+                  controller: _verticalController,
+                  padding: const EdgeInsets.fromLTRB(12, 12, 20, 20),
+                  child: Scrollbar(
+                    controller: _horizontalController,
+                    thumbVisibility: true,
+                    trackVisibility: true,
+                    notificationPredicate: (notification) =>
+                        notification.metrics.axis == Axis.horizontal,
+                    child: SingleChildScrollView(
+                      controller: _horizontalController,
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.only(right: 12, bottom: 12),
+                      child: SizedBox(
+                        width: contentWidth,
+                        height: contentHeight,
+                        child: Center(
+                          child: InteractiveViewer(
+                            transformationController: _controller,
+                            minScale: 0.45,
+                            maxScale: 4,
+                            boundaryMargin: const EdgeInsets.all(80),
+                            constrained: false,
+                            trackpadScrollCausesScale: true,
+                            child: _page.child,
+                          ),
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
+              if (widget.pages.length > 1)
+                Positioned(right: 16, bottom: 16, child: _buildPlatePager()),
+            ],
           );
         },
       ),
     );
+  }
+
+  Widget _buildPlatePager() {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(999),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Plate ${_plateIndex + 1}/${widget.pages.length}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+            ),
+            _pagerButton(
+              tooltip: 'Previous plate',
+              icon: Icons.chevron_left,
+              onPressed: _plateIndex > 0
+                  ? () => _setPlateIndex(_plateIndex - 1)
+                  : null,
+            ),
+            _pagerButton(
+              tooltip: 'Next plate',
+              icon: Icons.chevron_right,
+              onPressed: _plateIndex < widget.pages.length - 1
+                  ? () => _setPlateIndex(_plateIndex + 1)
+                  : null,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _pagerButton({
+    required String tooltip,
+    required IconData icon,
+    required VoidCallback? onPressed,
+  }) {
+    return IconButton(
+      tooltip: tooltip,
+      onPressed: onPressed,
+      icon: Icon(icon, size: 20),
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(width: 30, height: 30),
+    );
+  }
+
+  void _setPlateIndex(int index) {
+    setState(() {
+      _plateIndex = index;
+      _lastViewportSize = null;
+      if (_horizontalController.hasClients) _horizontalController.jumpTo(0);
+      if (_verticalController.hasClients) _verticalController.jumpTo(0);
+    });
   }
 
   void _scaleBy(double factor) {
@@ -456,9 +607,9 @@ class _FullScreenPlateViewState extends State<_FullScreenPlateView> {
       1.0,
       double.infinity,
     );
-    final scaleX = availableWidth / widget.boardWidth;
-    final scaleY = availableHeight / widget.boardHeight;
-    final fitScale = widget.boardWidth >= widget.boardHeight ? scaleX : scaleY;
+    final scaleX = availableWidth / _page.boardWidth;
+    final scaleY = availableHeight / _page.boardHeight;
+    final fitScale = _page.cols >= _page.rows ? scaleX : scaleY;
     return fitScale.clamp(0.45, 1.6).toDouble();
   }
 

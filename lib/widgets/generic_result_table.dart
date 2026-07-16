@@ -13,6 +13,13 @@ class GenericResultTable extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (table.data.isEmpty) return const SizedBox.shrink();
+    final columnCount = table.columnHeaders.isNotEmpty
+        ? table.columnHeaders.length
+        : table.data.fold<int>(
+            0,
+            (max, row) => row.length > max ? row.length : max,
+          );
+    if (columnCount == 0) return const SizedBox.shrink();
 
     return TableExportActions(
       table: table,
@@ -33,10 +40,13 @@ class GenericResultTable extends StatelessWidget {
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
                 ),
               ),
-              ...table.columnHeaders.map(
-                (h) => DataColumn(
+              ...List.generate(
+                columnCount,
+                (index) => DataColumn(
                   label: Text(
-                    h,
+                    index < table.columnHeaders.length
+                        ? table.columnHeaders[index]
+                        : _columnName(index),
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 11,
@@ -53,7 +63,9 @@ class GenericResultTable extends StatelessWidget {
                 cells: [
                   DataCell(
                     Text(
-                      table.rowHeaders[rIdx],
+                      rIdx < table.rowHeaders.length
+                          ? table.rowHeaders[rIdx]
+                          : '${rIdx + 1}',
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 11,
@@ -61,9 +73,8 @@ class GenericResultTable extends StatelessWidget {
                       ),
                     ),
                   ),
-                  ...row.asMap().entries.map((cellEntry) {
-                    final cellIndex = cellEntry.key;
-                    final cell = cellEntry.value;
+                  ...List.generate(columnCount, (cellIndex) {
+                    final cell = cellIndex < row.length ? row[cellIndex] : '';
                     final isStatusColumn =
                         cellIndex < table.columnHeaders.length &&
                         table.columnHeaders[cellIndex] == 'Status';
@@ -87,5 +98,16 @@ class GenericResultTable extends StatelessWidget {
 
   Widget _statusIcons(String status) {
     return TransferStatusIcons(statusText: status);
+  }
+
+  String _columnName(int index) {
+    var value = index + 1;
+    final chars = <String>[];
+    while (value > 0) {
+      value--;
+      chars.insert(0, String.fromCharCode(65 + (value % 26)));
+      value ~/= 26;
+    }
+    return chars.join();
   }
 }

@@ -340,16 +340,52 @@ class DocxExportService {
 
   String _protocolTableXml(ProtocolTable table) {
     final hasRowHeaders = table.rowHeaders.isNotEmpty;
-    final headers = <String>[if (hasRowHeaders) '', ...table.columnHeaders];
+    final columnCount = _tableColumnCount(table);
+    final headers = <String>[
+      if (hasRowHeaders) '',
+      ..._normalizedHeaders(table),
+    ];
     final rows = <List<String>>[];
     for (var rowIndex = 0; rowIndex < table.data.length; rowIndex++) {
+      final row = table.data[rowIndex];
       rows.add([
         if (hasRowHeaders)
           rowIndex < table.rowHeaders.length ? table.rowHeaders[rowIndex] : '',
-        ...table.data[rowIndex].map(_cellText),
+        ...List<String>.generate(
+          columnCount,
+          (index) => index < row.length ? _cellText(row[index]) : '',
+        ),
       ]);
     }
     return _heading(table.title, 3) + _table(headers, rows);
+  }
+
+  int _tableColumnCount(ProtocolTable table) {
+    return table.data.fold<int>(
+      table.columnHeaders.length,
+      (max, row) => row.length > max ? row.length : max,
+    );
+  }
+
+  List<String> _normalizedHeaders(ProtocolTable table) {
+    final count = _tableColumnCount(table);
+    return List<String>.generate(
+      count,
+      (index) => index < table.columnHeaders.length
+          ? table.columnHeaders[index]
+          : _columnName(index),
+    );
+  }
+
+  String _columnName(int index) {
+    var value = index + 1;
+    final chars = <String>[];
+    while (value > 0) {
+      value--;
+      chars.insert(0, String.fromCharCode(65 + (value % 26)));
+      value ~/= 26;
+    }
+    return chars.join();
   }
 
   String _table(List<String> headers, List<List<String>> rows) {

@@ -547,6 +547,9 @@ class PdfService {
     if (table.type == TableType.plateLayout) {
       return _pwPlateLayout(table);
     }
+    final hasRowHeaders = table.rowHeaders.isNotEmpty;
+    final columnCount = _tableColumnCount(table);
+    final columnHeaders = _normalizedHeaders(table);
 
     return pw.Container(
       width: 250, // Default width for standard tables
@@ -585,7 +588,7 @@ class PdfService {
                 pw.TableRow(
                   decoration: const pw.BoxDecoration(color: PdfColors.grey50),
                   children: <pw.Widget>[
-                    if (table.rowHeaders.isNotEmpty)
+                    if (hasRowHeaders)
                       pw.Padding(
                         padding: const pw.EdgeInsets.all(3),
                         child: pw.Text(
@@ -596,7 +599,7 @@ class PdfService {
                           ),
                         ),
                       ),
-                    ...table.columnHeaders.map(
+                    ...columnHeaders.map(
                       (h) => pw.Padding(
                         padding: const pw.EdgeInsets.all(3),
                         child: pw.Text(
@@ -616,21 +619,22 @@ class PdfService {
                       : <String>[];
                   return pw.TableRow(
                     children: <pw.Widget>[
-                      if (table.rowHeaders.isNotEmpty)
+                      if (hasRowHeaders)
                         pw.Padding(
                           padding: const pw.EdgeInsets.all(3),
                           child: pw.Text(
-                            table.rowHeaders[rowIndex],
+                            rowIndex < table.rowHeaders.length
+                                ? table.rowHeaders[rowIndex]
+                                : (rowIndex + 1).toString(),
                             style: pw.TextStyle(
                               fontWeight: pw.FontWeight.bold,
                               fontSize: 8,
                             ),
                           ),
                         ),
-                      ...List<pw.Widget>.generate(table.data[rowIndex].length, (
-                        colIndex,
-                      ) {
-                        final cell = table.data[rowIndex][colIndex];
+                      ...List<pw.Widget>.generate(columnCount, (colIndex) {
+                        final row = table.data[rowIndex];
+                        final cell = colIndex < row.length ? row[colIndex] : '';
                         final colorHex = colIndex < rowColors.length
                             ? rowColors[colIndex]
                             : '';
@@ -766,8 +770,8 @@ class PdfService {
                         ),
                       ),
                       ...List.generate(cols, (cIdx) {
-                        final content = table.data[rIdx][cIdx].toString();
-                        final colorHex = table.cellColors[rIdx][cIdx];
+                        final content = _tableCell(table, rIdx, cIdx);
+                        final colorHex = _tableColor(table, rIdx, cIdx);
                         PdfColor bgColor = PdfColors.grey100;
                         if (colorHex.isNotEmpty) {
                           try {
@@ -899,5 +903,53 @@ class PdfService {
         ),
       ],
     ];
+  }
+
+  static int _tableColumnCount(ProtocolTable table) {
+    return table.data.fold<int>(
+      table.columnHeaders.length,
+      (max, row) => row.length > max ? row.length : max,
+    );
+  }
+
+  static List<String> _normalizedHeaders(ProtocolTable table) {
+    final count = _tableColumnCount(table);
+    return List<String>.generate(
+      count,
+      (index) => index < table.columnHeaders.length
+          ? table.columnHeaders[index]
+          : _columnName(index),
+    );
+  }
+
+  static String _tableCell(ProtocolTable table, int row, int col) {
+    if (row < 0 ||
+        col < 0 ||
+        row >= table.data.length ||
+        col >= table.data[row].length) {
+      return '';
+    }
+    return table.data[row][col]?.toString() ?? '';
+  }
+
+  static String _tableColor(ProtocolTable table, int row, int col) {
+    if (row < 0 ||
+        col < 0 ||
+        row >= table.cellColors.length ||
+        col >= table.cellColors[row].length) {
+      return '';
+    }
+    return table.cellColors[row][col];
+  }
+
+  static String _columnName(int index) {
+    var value = index + 1;
+    final chars = <String>[];
+    while (value > 0) {
+      value--;
+      chars.insert(0, String.fromCharCode(65 + (value % 26)));
+      value ~/= 26;
+    }
+    return chars.join();
   }
 }

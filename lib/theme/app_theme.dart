@@ -35,6 +35,7 @@ class ProtocolFlowTheme {
       scaffoldBackgroundColor: AppColors.scaffoldBackground,
       extensions: const [ProtocolFlowColors.light()],
       appBarTheme: const AppBarTheme(
+        toolbarHeight: 40,
         backgroundColor: AppColors.primary,
         foregroundColor: AppColors.onPrimary,
         surfaceTintColor: Colors.transparent,

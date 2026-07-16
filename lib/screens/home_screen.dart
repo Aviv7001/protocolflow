@@ -396,29 +396,42 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.scaffoldBackground,
-      body: SafeArea(
-        child: Stack(
-          children: [
-            Column(
-              children: [
-                _buildTopBar(),
-                Expanded(child: _buildSelectedPage()),
-              ],
-            ),
-            if (_isSidebarOpen) ...[
-              Positioned.fill(
-                child: GestureDetector(
-                  onTap: _toggleSidebar,
-                  child: ColoredBox(
-                    color: Colors.black.withValues(alpha: 0.28),
+    return PopScope(
+      canPop: _selectedDesktopIndex == 0 && !_isSidebarOpen,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        if (_isSidebarOpen) {
+          setState(() => _isSidebarOpen = false);
+          return;
+        }
+        if (_selectedDesktopIndex != 0) {
+          _selectPage(0);
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.scaffoldBackground,
+        body: SafeArea(
+          child: Stack(
+            children: [
+              Column(
+                children: [
+                  _buildTopBar(),
+                  Expanded(child: _buildSelectedPage()),
+                ],
+              ),
+              if (_isSidebarOpen) ...[
+                Positioned.fill(
+                  child: GestureDetector(
+                    onTap: _toggleSidebar,
+                    child: ColoredBox(
+                      color: Colors.black.withValues(alpha: 0.28),
+                    ),
                   ),
                 ),
-              ),
-              Align(alignment: Alignment.centerLeft, child: _buildSidebar()),
+                Align(alignment: Alignment.centerLeft, child: _buildSidebar()),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -426,7 +439,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildSidebar() {
     final screenWidth = MediaQuery.sizeOf(context).width;
-    final width = (screenWidth * 0.82).clamp(248.0, 320.0).toDouble();
+    final width = ((screenWidth * 0.82).clamp(248.0, 320.0) * 0.8).toDouble();
     final items = [
       _DesktopNavItem(
         icon: Icons.home_outlined,
@@ -516,26 +529,27 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           for (final item in items) _buildSidebarButton(item),
           const Spacer(),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: OutlinedButton.icon(
-              onPressed: () async {
-                final result = await Navigator.pushNamed(context, '/create');
-                if (result != null) _loadOverview();
-                if (mounted) setState(() => _isSidebarOpen = false);
-              },
-              icon: const Icon(Icons.add),
-              label: const Text(
-                'New protocol',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.onPrimary,
-                side: const BorderSide(color: AppColors.onPrimary),
-              ),
-            ),
+          const Divider(color: AppColors.onPrimary),
+          _buildSidebarAction(
+            icon: _isSyncing
+                ? Icons.hourglass_empty
+                : Icons.cloud_sync_outlined,
+            label: _isSyncing ? 'Syncing' : 'Sync',
+            onTap: _isSyncing
+                ? null
+                : () => _runDriveSync(promptIfNecessary: true),
           ),
+          _buildSidebarAction(
+            icon: Icons.import_export,
+            label: 'Import / Export',
+            onTap: _showImportExportMenu,
+          ),
+          _buildSidebarAction(
+            icon: Icons.account_circle_outlined,
+            label: _signedInUser == null ? 'Sign in' : 'Account',
+            onTap: _isSigningIn ? null : _handleProfilePressed,
+          ),
+          const SizedBox(height: 12),
         ],
       ),
     );
@@ -577,9 +591,52 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _buildSidebarAction({
+    required IconData icon,
+    required String label,
+    required VoidCallback? onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: onTap == null
+              ? null
+              : () {
+                  setState(() => _isSidebarOpen = false);
+                  onTap();
+                },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            child: Row(
+              children: [
+                Icon(icon, color: AppColors.onPrimary, size: 22),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.onPrimary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildTopBar() {
     return Container(
-      height: 72,
+      height: 40,
       padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: const BoxDecoration(
         color: AppColors.surface,
@@ -590,7 +647,7 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             tooltip: _isSidebarOpen ? 'Close sidebar' : 'Open sidebar',
             onPressed: _toggleSidebar,
-            icon: const Icon(Icons.more_vert),
+            icon: const Icon(Icons.menu),
           ),
           const SizedBox(width: 4),
           Flexible(
@@ -602,70 +659,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           const Spacer(),
-          IconButton(
-            tooltip: _isSyncing ? 'Syncing' : 'Sync',
-            onPressed: _isSyncing
-                ? null
-                : () => _runDriveSync(promptIfNecessary: true),
-            icon: _isSyncing
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.cloud_sync_outlined),
-          ),
-          PopupMenuButton<String>(
-            tooltip: 'Import and export',
-            icon: const Icon(Icons.import_export),
-            onSelected: _handleImportExportAction,
-            itemBuilder: (context) => const [
-              PopupMenuItem(
-                value: 'import',
-                child: ListTile(
-                  leading: Icon(Icons.file_upload),
-                  title: Text('Import JSON'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-              PopupMenuDivider(),
-              PopupMenuItem(
-                value: 'export_all',
-                child: ListTile(
-                  leading: Icon(Icons.backup),
-                  title: Text('Export All Data'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-              PopupMenuItem(
-                value: 'export_templates',
-                child: ListTile(
-                  leading: Icon(Icons.description),
-                  title: Text('Export Templates'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-              PopupMenuItem(
-                value: 'export_history',
-                child: ListTile(
-                  leading: Icon(Icons.history),
-                  title: Text('Export History'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-            ],
-          ),
-          IconButton(
-            tooltip: 'User profile',
-            onPressed: _isSigningIn ? null : _handleProfilePressed,
-            icon: _isSigningIn
-                ? const SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : _buildUserAvatar(_signedInUser, size: 32),
-          ),
         ],
       ),
     );
@@ -707,22 +700,22 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildSelectedPage() {
     if (_selectedDesktopIndex == 1) {
-      return const LibraryScreen();
+      return const LibraryScreen(embedded: true);
     }
     if (_selectedDesktopIndex == 2) {
-      return const LibraryScreen(initialTabIndex: 2);
+      return const LibraryScreen(initialTabIndex: 2, embedded: true);
     }
     if (_selectedDesktopIndex == 3) {
-      return const SavedTablesScreen();
+      return const SavedTablesScreen(embedded: true);
     }
     if (_selectedDesktopIndex == 4) {
-      return const LabToolsScreen();
+      return const LabToolsScreen(embedded: true);
     }
     if (_selectedDesktopIndex == 5) {
-      return const MeasuringToolsManagerScreen();
+      return const MeasuringToolsManagerScreen(embedded: true);
     }
     if (_selectedDesktopIndex == 6) {
-      return const LibraryScreen(initialTabIndex: 3);
+      return const LibraryScreen(initialTabIndex: 3, embedded: true);
     }
     if (_selectedDesktopIndex == 7) {
       return _buildSettingsWorkspace();
@@ -1251,6 +1244,41 @@ class _HomeScreenState extends State<HomeScreen> {
         await _refreshRunningProtocols();
       }
     }
+  }
+
+  Future<void> _showImportExportMenu() async {
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.file_upload),
+              title: const Text('Import JSON'),
+              onTap: () => Navigator.pop(context, 'import'),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.backup),
+              title: const Text('Export All Data'),
+              onTap: () => Navigator.pop(context, 'export_all'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.description),
+              title: const Text('Export Templates'),
+              onTap: () => Navigator.pop(context, 'export_templates'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.history),
+              title: const Text('Export History'),
+              onTap: () => Navigator.pop(context, 'export_history'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (selected != null) await _handleImportExportAction(selected);
   }
 
   Widget _buildSectionTitle(String title) {

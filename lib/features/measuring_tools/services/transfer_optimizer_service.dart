@@ -108,7 +108,6 @@ class AutoExtraVolumeResult {
 class TransferOptimizerService {
   static const double tolerance = 0.000001;
   static const int maxRepeats = 3;
-  static const double lowRangeThreshold = 0.20;
   static const List<int> preferredIntermediateFactors = [10, 20, 50, 100];
 
   const TransferOptimizerService();
@@ -147,7 +146,8 @@ class TransferOptimizerService {
         final comfortScore = denominator <= 0
             ? 1.0
             : ((perRepeat - tool.minVolumeUl) / denominator).clamp(0.0, 1.0);
-        final lowRangeCaution = comfortScore <= lowRangeThreshold;
+        final lowRangeCaution =
+            perRepeat <= tool.minVolumeUl + tool.incrementUl + tolerance;
         final option = TransferOption(
           tool: tool,
           requiredVolumeUl: volumeUl,
@@ -283,34 +283,26 @@ class TransferOptimizerService {
     evaluateForExtraPercent,
     double? currentExtraPercent,
   }) {
-    MixEvaluationSummary? bestEvaluation;
-    double bestExtraPercent = currentExtraPercent ?? 10;
+    final baselineExtraPercent = currentExtraPercent ?? 10.0;
+    final baselineEvaluation = evaluateForExtraPercent(baselineExtraPercent);
+    var bestEvaluation = baselineEvaluation;
+    var bestExtraPercent = baselineExtraPercent;
 
     for (var extraPercent = 10; extraPercent <= 30; extraPercent++) {
       final evaluation = evaluateForExtraPercent(extraPercent.toDouble());
-      if (bestEvaluation == null ||
-          _isBetterCandidate(
-            candidate: evaluation,
-            candidateExtraPercent: extraPercent.toDouble(),
-            current: bestEvaluation,
-            currentExtraPercent: bestExtraPercent,
-          )) {
+      if (_isBetterAutoExtraCandidate(
+        candidate: evaluation,
+        candidateExtraPercent: extraPercent.toDouble(),
+        current: bestEvaluation,
+        currentExtraPercent: bestExtraPercent,
+      )) {
         bestEvaluation = evaluation;
         bestExtraPercent = extraPercent.toDouble();
       }
     }
 
-    final baselineExtraPercent = currentExtraPercent ?? 10.0;
-    final baselineEvaluation = evaluateForExtraPercent(baselineExtraPercent);
     final improved =
-        bestEvaluation != null &&
-        _isBetterCandidate(
-          candidate: bestEvaluation,
-          candidateExtraPercent: bestExtraPercent,
-          current: baselineEvaluation,
-          currentExtraPercent: baselineExtraPercent,
-        );
-
+        bestEvaluation.warningCount < baselineEvaluation.warningCount;
     final selectedEvaluation = improved ? bestEvaluation : baselineEvaluation;
     final selectedPercent = improved ? bestExtraPercent : baselineExtraPercent;
     final reason = improved
@@ -319,7 +311,9 @@ class TransferOptimizerService {
             selected: selectedEvaluation,
             extraPercent: selectedPercent,
           )
-        : 'Auto extra volume did not improve the pipetting score. Using ${LabCalculation.formatNumber(selectedPercent)}%.';
+        : baselineEvaluation.warningCount == 0
+        ? 'Auto extra volume kept at ${LabCalculation.formatNumber(selectedPercent)}%. Existing volumes already fit the active measuring tools.'
+        : 'Auto extra volume did not reduce warnings. Using ${LabCalculation.formatNumber(selectedPercent)}%.';
 
     return AutoExtraVolumeResult(
       selectedAutoMode: improved,
@@ -363,20 +357,12 @@ class TransferOptimizerService {
     return 'Consider preparing an intermediate dilution of this reagent.';
   }
 
-  bool _isBetterCandidate({
+  bool _isBetterAutoExtraCandidate({
     required MixEvaluationSummary candidate,
     required double candidateExtraPercent,
     required MixEvaluationSummary current,
     required double currentExtraPercent,
   }) {
-    if ((candidate.minComponentScore - current.minComponentScore).abs() >
-        tolerance) {
-      return candidate.minComponentScore > current.minComponentScore;
-    }
-    if ((candidate.avgComponentScore - current.avgComponentScore).abs() >
-        tolerance) {
-      return candidate.avgComponentScore > current.avgComponentScore;
-    }
     if (candidate.warningCount != current.warningCount) {
       return candidate.warningCount < current.warningCount;
     }

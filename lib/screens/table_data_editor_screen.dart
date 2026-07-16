@@ -32,6 +32,9 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
   late String _title;
   late TableType _type;
   bool _isGridView = false;
+  bool _genericGridGenerated = true;
+  int _genericTotalRows = 6;
+  int _genericColumns = 4;
 
   late PlateLayoutWizard _plateWizard;
   late MasterMixWizard _masterMixWizard;
@@ -58,25 +61,64 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
 
   void _loadTable(int index) {
     final table = _allTables[index];
+    final needsDimensionSetup =
+        table.type == TableType.generic &&
+        table.metadata['needs_dimension_setup'] == 'true';
     _data = table.data
         .map<List<dynamic>>((row) => List<dynamic>.from(row))
         .toList();
+    final columnCount = _resolvedColumnCount(table);
+    if (_data.isEmpty && !needsDimensionSetup) {
+      _data = List.generate(1, (_) => List.generate(columnCount, (_) => ''));
+    } else {
+      _data = _data.map((row) {
+        return List<dynamic>.generate(
+          columnCount,
+          (index) => index < row.length ? row[index] : '',
+        );
+      }).toList();
+    }
     _cellColors = table.cellColors
         .map<List<String>>((row) => List<String>.from(row))
         .toList();
-
-    if (_cellColors.length != _data.length ||
-        (_data.isNotEmpty && _cellColors[0].length != _data[0].length)) {
-      _cellColors = List.generate(
-        _data.length,
-        (r) => List.generate(_data.isNotEmpty ? _data[0].length : 0, (c) => ''),
+    _cellColors = List.generate(_data.length, (rowIndex) {
+      final colors = rowIndex < _cellColors.length
+          ? _cellColors[rowIndex]
+          : const <String>[];
+      return List<String>.generate(
+        columnCount,
+        (index) => index < colors.length ? colors[index] : '',
       );
-    }
+    });
 
-    _colHeaders = List<String>.from(table.columnHeaders);
-    _rowHeaders = List<String>.from(table.rowHeaders);
+    _colHeaders = List<String>.generate(
+      columnCount,
+      (index) => index < table.columnHeaders.length
+          ? table.columnHeaders[index]
+          : _columnName(index),
+    );
+    _rowHeaders = List<String>.generate(
+      _data.length,
+      (index) => index < table.rowHeaders.length
+          ? table.rowHeaders[index]
+          : '${index + 1}',
+    );
     _title = table.title;
     _type = table.type;
+    if (_type == TableType.generic) {
+      _genericGridGenerated =
+          !needsDimensionSetup ||
+          table.data.isNotEmpty ||
+          table.columnHeaders.isNotEmpty;
+      _genericTotalRows =
+          int.tryParse(table.metadata['generic_total_rows'] ?? '') ??
+          (needsDimensionSetup ? 6 : (_data.isNotEmpty ? _data.length + 1 : 6));
+      _genericColumns =
+          int.tryParse(table.metadata['generic_columns'] ?? '') ??
+          (needsDimensionSetup
+              ? 4
+              : (_colHeaders.isNotEmpty ? _colHeaders.length : 4));
+    }
 
     // Initialize Wizards from metadata if available
     if (_type == TableType.plateLayout) {
@@ -141,6 +183,14 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
     _stainingWizard = StainingWizard(samples: []);
   }
 
+  int _resolvedColumnCount(ProtocolTable table) {
+    final maxDataColumns = table.data.fold<int>(
+      table.columnHeaders.length,
+      (max, row) => row.length > max ? row.length : max,
+    );
+    return maxDataColumns > 0 ? maxDataColumns : 1;
+  }
+
   void _saveCurrentTable() {
     _allTables[_currentTableIndex] = _allTables[_currentTableIndex].copyWith(
       title: _title,
@@ -157,6 +207,12 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
           'wizard_state': jsonEncode(_masterMixWizard.toJson()),
         if (_type == TableType.staining)
           'wizard_state': jsonEncode(_stainingWizard.toJson()),
+        if (_type == TableType.generic) ...{
+          'needs_dimension_setup': 'false',
+          'generic_total_rows': (_data.length + 1).toString(),
+          'generic_columns': _colHeaders.length.toString(),
+          'generic_grid_generated': 'true',
+        },
       },
     );
   }
@@ -201,7 +257,12 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
     setState(() {
       _data.add(List.generate(_colHeaders.length, (_) => ''));
       _cellColors.add(List.generate(_colHeaders.length, (_) => ''));
-      _rowHeaders.add((_rowHeaders.length + 1).toString());
+      _rowHeaders.add(
+        _type == TableType.generic
+            ? (_rowHeaders.length + 2).toString()
+            : (_rowHeaders.length + 1).toString(),
+      );
+      if (_type == TableType.generic) _genericTotalRows = _data.length + 1;
     });
   }
 
@@ -214,9 +275,12 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
         // Renumber rows if they are just numbers
         for (int i = 0; i < _rowHeaders.length; i++) {
           if (int.tryParse(_rowHeaders[i]) != null) {
-            _rowHeaders[i] = (i + 1).toString();
+            _rowHeaders[i] = _type == TableType.generic
+                ? (i + 2).toString()
+                : (i + 1).toString();
           }
         }
+        if (_type == TableType.generic) _genericTotalRows = _data.length + 1;
       });
     }
   }
@@ -229,8 +293,20 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
       for (var row in _cellColors) {
         row.add('');
       }
-      _colHeaders.add(String.fromCharCode(65 + _colHeaders.length));
+      _colHeaders.add(_columnName(_colHeaders.length));
+      if (_type == TableType.generic) _genericColumns = _colHeaders.length;
     });
+  }
+
+  String _columnName(int index) {
+    var value = index + 1;
+    final chars = <String>[];
+    while (value > 0) {
+      value--;
+      chars.insert(0, String.fromCharCode(65 + (value % 26)));
+      value ~/= 26;
+    }
+    return chars.join();
   }
 
   void _resetView() {
@@ -268,15 +344,10 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
             _type == TableType.generic ? 'Generic Table Editor' : 'Edit Table',
           ),
           actions: [
-            TextButton(
+            IconButton(
+              tooltip: 'Save table',
               onPressed: () => _handleDone(context),
-              child: const Text(
-                'DONE',
-                style: TextStyle(
-                  color: Colors.blue,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              icon: const Icon(Icons.save),
             ),
           ],
         ),
@@ -287,7 +358,9 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
             const Divider(height: 1),
             Expanded(
               child: _type == TableType.generic
-                  ? _buildExcelSheet()
+                  ? (_genericGridGenerated
+                        ? _buildGenericGrid()
+                        : _buildGenericSetupCard())
                   : (_isGridView ? _buildZoomableGrid() : _buildSpreadsheet()),
             ),
           ],
@@ -556,8 +629,15 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
   }
 
   void _handleDone(BuildContext context) async {
+    if (_type == TableType.generic && !_genericGridGenerated) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Generate the table grid before saving.')),
+      );
+      return;
+    }
+
     final String suggestedName = _type == TableType.generic
-        ? 'Generic Table'
+        ? (_title.isEmpty ? 'Generic Table' : _title)
         : _title;
     final String? name = await _showSaveDialog(context, suggestedName);
     if (name != null) {
@@ -608,48 +688,151 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
     );
   }
 
-  Widget _buildExcelSheet() {
+  Widget _buildGenericSetupCard() {
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: Card(
+            clipBehavior: Clip.antiAlias,
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Generic table size',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildStepperRow(
+                    label: 'Rows',
+                    value: _genericTotalRows,
+                    min: 1,
+                    onChanged: (value) =>
+                        setState(() => _genericTotalRows = value),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildStepperRow(
+                    label: 'Columns',
+                    value: _genericColumns,
+                    min: 1,
+                    onChanged: (value) =>
+                        setState(() => _genericColumns = value),
+                  ),
+                  const SizedBox(height: 20),
+                  FilledButton.icon(
+                    onPressed: _generateGenericGrid,
+                    icon: const Icon(Icons.table_chart),
+                    label: const Text('Generate table'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStepperRow({
+    required String label,
+    required int value,
+    required int min,
+    required ValueChanged<int> onChanged,
+  }) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+        ),
+        IconButton.outlined(
+          tooltip: 'Decrease $label',
+          onPressed: value > min ? () => onChanged(value - 1) : null,
+          icon: const Icon(Icons.remove),
+        ),
+        SizedBox(
+          width: 56,
+          child: Text(
+            value.toString(),
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ),
+        IconButton.outlined(
+          tooltip: 'Increase $label',
+          onPressed: () => onChanged(value + 1),
+          icon: const Icon(Icons.add),
+        ),
+      ],
+    );
+  }
+
+  void _generateGenericGrid() {
+    final dataRows = (_genericTotalRows - 1).clamp(0, 10000).toInt();
+    setState(() {
+      _colHeaders = List.generate(_genericColumns, (_) => '');
+      _data = List.generate(
+        dataRows,
+        (_) => List.generate(_genericColumns, (_) => ''),
+      );
+      _cellColors = List.generate(
+        dataRows,
+        (_) => List.generate(_genericColumns, (_) => ''),
+      );
+      _rowHeaders = List.generate(dataRows, (index) => '${index + 2}');
+      _genericGridGenerated = true;
+    });
+  }
+
+  Widget _buildGenericGrid() {
     return Padding(
       padding: const EdgeInsets.all(8.0),
-      child: HorizontalTableScroll(
-        minWidth: 720,
-        child: InteractiveViewer(
-          transformationController: _transformationController,
-          constrained: false,
-          boundaryMargin: const EdgeInsets.all(500),
-          minScale: 0.1,
-          maxScale: 2.0,
+      child: SingleChildScrollView(
+        child: HorizontalTableScroll(
+          minWidth: 720,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header Row (A, B, C...)
               Row(
                 children: [
                   Container(
                     width: 40,
-                    height: 30,
+                    height: 56,
                     decoration: BoxDecoration(
                       color: Colors.grey.shade200,
                       border: Border.all(color: Colors.grey.shade400),
+                    ),
+                    child: const Center(
+                      child: Text(
+                        '1',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
                     ),
                   ),
                   ...List.generate(
                     _colHeaders.length,
                     (index) => Container(
                       width: 150,
-                      height: 30,
+                      height: 56,
                       decoration: BoxDecoration(
-                        color: Colors.grey.shade200,
+                        color: Colors.grey.shade50,
                         border: Border.all(color: Colors.grey.shade400),
                       ),
-                      child: Center(
-                        child: Text(
-                          String.fromCharCode(65 + index),
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
-                        ),
+                      child: _ExcelCell(
+                        initialValue: _colHeaders[index],
+                        hintText: 'Header ${_columnName(index)}',
+                        onChanged: (value) => _colHeaders[index] = value,
                       ),
                     ),
                   ),
@@ -663,29 +846,24 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
                   ),
                 ],
               ),
-              // Data Rows
               ...List.generate(
                 _data.length,
                 (rIdx) => Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Row Number (1, 2, 3...)
                     Container(
                       width: 40,
-                      constraints: const BoxConstraints(minHeight: 50),
-                      height: null, // Allow expanding
+                      height: 56,
                       decoration: BoxDecoration(
                         color: Colors.grey.shade200,
                         border: Border.all(color: Colors.grey.shade400),
                       ),
-                      child: IntrinsicHeight(
-                        child: Center(
-                          child: Text(
-                            _rowHeaders[rIdx],
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
+                      child: Center(
+                        child: Text(
+                          _rowHeaders[rIdx],
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
                           ),
                         ),
                       ),
@@ -694,7 +872,7 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
                       _colHeaders.length,
                       (cIdx) => Container(
                         width: 150,
-                        constraints: const BoxConstraints(minHeight: 50),
+                        height: 56,
                         decoration: BoxDecoration(
                           border: Border.all(color: Colors.grey.shade300),
                           color: _parseHexColor(_cellColors[rIdx][cIdx]),
@@ -737,9 +915,14 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
 
 class _ExcelCell extends StatefulWidget {
   final String initialValue;
+  final String? hintText;
   final Function(String) onChanged;
 
-  const _ExcelCell({required this.initialValue, required this.onChanged});
+  const _ExcelCell({
+    required this.initialValue,
+    required this.onChanged,
+    this.hintText,
+  });
 
   @override
   State<_ExcelCell> createState() => _ExcelCellState();
@@ -781,11 +964,12 @@ class _ExcelCellState extends State<_ExcelCell> {
     return TextField(
       controller: _controller,
       focusNode: _focusNode,
-      maxLines: null,
+      minLines: 1,
+      maxLines: 2,
       style: const TextStyle(fontSize: 13),
-      decoration: const InputDecoration(
-        border: InputBorder.none,
-        contentPadding: EdgeInsets.all(8),
+      decoration: InputDecoration(
+        hintText: widget.hintText,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
         isDense: true,
       ),
       onChanged: (v) => widget.onChanged(v),

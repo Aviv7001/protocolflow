@@ -114,18 +114,23 @@ class TableExportService {
     ProtocolTable table, {
     required bool includeRowHeaders,
   }) {
-    if (!includeRowHeaders) return table.columnHeaders;
-    return ['#', ...table.columnHeaders];
+    final headers = _normalizedHeaders(table);
+    if (!includeRowHeaders) return headers;
+    return ['#', ...headers];
   }
 
   List<List<String>> _rows(
     ProtocolTable table, {
     required bool includeRowHeaders,
   }) {
+    final columnCount = _columnCount(table);
     return table.data.asMap().entries.map((entry) {
-      final row = entry.value
-          .map((cell) => _cellText(cell).replaceAll('\t', ' '))
-          .toList();
+      final sourceRow = entry.value;
+      final row = List<String>.generate(columnCount, (index) {
+        return index < sourceRow.length
+            ? _cellText(sourceRow[index]).replaceAll('\t', ' ')
+            : '';
+      });
       if (!includeRowHeaders) return row;
 
       final rowHeader = entry.key < table.rowHeaders.length
@@ -133,6 +138,34 @@ class TableExportService {
           : (entry.key + 1).toString();
       return [rowHeader, ...row];
     }).toList();
+  }
+
+  int _columnCount(ProtocolTable table) {
+    return table.data.fold<int>(
+      table.columnHeaders.length,
+      (max, row) => row.length > max ? row.length : max,
+    );
+  }
+
+  List<String> _normalizedHeaders(ProtocolTable table) {
+    final count = _columnCount(table);
+    return List<String>.generate(
+      count,
+      (index) => index < table.columnHeaders.length
+          ? table.columnHeaders[index]
+          : _columnName(index),
+    );
+  }
+
+  String _columnName(int index) {
+    var value = index + 1;
+    final chars = <String>[];
+    while (value > 0) {
+      value--;
+      chars.insert(0, String.fromCharCode(65 + (value % 26)));
+      value ~/= 26;
+    }
+    return chars.join();
   }
 
   String _cellText(Object? value) => value?.toString() ?? '';

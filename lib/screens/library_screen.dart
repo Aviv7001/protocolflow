@@ -13,7 +13,12 @@ import 'run_protocol_screen.dart';
 
 class LibraryScreen extends StatefulWidget {
   final int initialTabIndex;
-  const LibraryScreen({super.key, this.initialTabIndex = 0});
+  final bool embedded;
+  const LibraryScreen({
+    super.key,
+    this.initialTabIndex = 0,
+    this.embedded = false,
+  });
 
   @override
   State<LibraryScreen> createState() => _LibraryScreenState();
@@ -58,111 +63,118 @@ class _LibraryScreenState extends State<LibraryScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Library'),
-        actions: [
-          PopupMenuButton<String>(
-            onSelected: (value) async {
-              if (value == 'export_all') {
-                await _exportService.exportAllData();
-              } else if (value == 'export_templates') {
-                await _exportService.exportTemplates();
-              } else if (value == 'export_history') {
-                await _exportService.exportHistory();
-              } else if (value == 'import') {
-                final result = await _importService.importJson();
-                if (!context.mounted) return;
-                if (mounted) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(SnackBar(content: Text(result.message)));
-                  if (result.success) _loadData();
-                }
-              }
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'import',
-                child: ListTile(
-                  leading: Icon(Icons.file_upload),
-                  title: Text('Import JSON'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-              const PopupMenuDivider(),
-              const PopupMenuItem(
-                value: 'export_all',
-                child: ListTile(
-                  leading: Icon(Icons.backup),
-                  title: Text('Export All Data'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'export_templates',
-                child: ListTile(
-                  leading: Icon(Icons.description),
-                  title: Text('Export Templates'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'export_history',
-                child: ListTile(
-                  leading: Icon(Icons.history),
-                  title: Text('Export History'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-            ],
-          ),
+    final tabBar = ColoredBox(
+      color: AppColors.scaffoldBackground,
+      child: TabBar(
+        controller: _tabController,
+        isScrollable: false,
+        indicatorSize: TabBarIndicatorSize.tab,
+        indicatorColor: AppColors.primary,
+        dividerColor: AppColors.outlineVariant,
+        labelColor: AppColors.primary,
+        unselectedLabelColor: AppColors.primary,
+        labelPadding: const EdgeInsets.symmetric(horizontal: 2),
+        labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+        unselectedLabelStyle: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+        ),
+        tabs: const [
+          Tab(text: 'Templates', icon: Icon(Icons.copy_all, size: 20)),
+          Tab(text: 'Protocols', icon: Icon(Icons.description, size: 20)),
+          Tab(text: 'Running', icon: Icon(Icons.play_circle_outline, size: 20)),
+          Tab(text: 'History', icon: Icon(Icons.history, size: 20)),
         ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(72),
-          child: ColoredBox(
-            color: AppColors.scaffoldBackground,
-            child: TabBar(
+      ),
+    );
+    final body = SafeArea(
+      top: false,
+      child: Column(
+        children: [
+          if (widget.embedded) tabBar,
+          Expanded(
+            child: TabBarView(
               controller: _tabController,
-              isScrollable: false,
-              indicatorSize: TabBarIndicatorSize.tab,
-              indicatorColor: AppColors.primary,
-              dividerColor: AppColors.outlineVariant,
-              labelColor: AppColors.primary,
-              unselectedLabelColor: AppColors.primary,
-              labelPadding: const EdgeInsets.symmetric(horizontal: 2),
-              labelStyle: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-              ),
-              unselectedLabelStyle: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-              ),
-              tabs: const [
-                Tab(text: 'Templates', icon: Icon(Icons.copy_all, size: 20)),
-                Tab(text: 'Protocols', icon: Icon(Icons.description, size: 20)),
-                Tab(
-                  text: 'Running',
-                  icon: Icon(Icons.play_circle_outline, size: 20),
-                ),
-                Tab(text: 'History', icon: Icon(Icons.history, size: 20)),
+              children: [
+                _buildProtocolsTab(isTemplate: true),
+                _buildProtocolsTab(isTemplate: false),
+                _buildRunningTab(),
+                _buildHistoryTab(),
               ],
             ),
           ),
-        ),
+        ],
       ),
-      body: SafeArea(
-        child: TabBarView(
-          controller: _tabController,
-          children: [
-            _buildProtocolsTab(isTemplate: true),
-            _buildProtocolsTab(isTemplate: false),
-            _buildRunningTab(),
-            _buildHistoryTab(),
-          ],
-        ),
-      ),
+    );
+
+    return Scaffold(
+      appBar: widget.embedded
+          ? null
+          : AppBar(
+              title: const Text('Library'),
+              actions: [
+                PopupMenuButton<String>(
+                  onSelected: (value) async {
+                    if (value == 'export_all') {
+                      await _exportService.exportAllData();
+                    } else if (value == 'export_templates') {
+                      await _exportService.exportTemplates();
+                    } else if (value == 'export_history') {
+                      await _exportService.exportHistory();
+                    } else if (value == 'import') {
+                      final result = await _importService.importJson();
+                      if (!context.mounted) return;
+                      if (mounted) {
+                        ScaffoldMessenger.of(
+                          context,
+                        ).showSnackBar(SnackBar(content: Text(result.message)));
+                        if (result.success) _loadData();
+                      }
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(
+                      value: 'import',
+                      child: ListTile(
+                        leading: Icon(Icons.file_upload),
+                        title: Text('Import JSON'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    const PopupMenuDivider(),
+                    const PopupMenuItem(
+                      value: 'export_all',
+                      child: ListTile(
+                        leading: Icon(Icons.backup),
+                        title: Text('Export All Data'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'export_templates',
+                      child: ListTile(
+                        leading: Icon(Icons.description),
+                        title: Text('Export Templates'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'export_history',
+                      child: ListTile(
+                        leading: Icon(Icons.history),
+                        title: Text('Export History'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              bottom: PreferredSize(
+                preferredSize: const Size.fromHeight(72),
+                child: tabBar,
+              ),
+            ),
+      body: body,
       floatingActionButton:
           (_tabController.index == 0 || _tabController.index == 1)
           ? FloatingActionButton(

@@ -134,9 +134,17 @@ class ProtocolTableWidget extends StatelessWidget {
         ),
       );
     } else if (table.type == TableType.plateLayout) {
-      final wizard = wizardState != null
-          ? PlateLayoutWizard.fromJson(jsonDecode(wizardState))
-          : PlateLayoutWizard();
+      late final PlateLayoutWizard wizard;
+      try {
+        wizard = wizardState != null
+            ? PlateLayoutWizard.fromJson(jsonDecode(wizardState))
+            : PlateLayoutWizard(importedTables: [table]);
+      } catch (_) {
+        wizard = PlateLayoutWizard(
+          title: table.title.isEmpty ? 'Plate Layout' : table.title,
+          importedTables: [table],
+        );
+      }
       Navigator.push(
         context,
         MaterialPageRoute(

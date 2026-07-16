@@ -4,7 +4,8 @@ import '../models/measuring_tool.dart';
 import '../services/measuring_tool_service.dart';
 
 class MeasuringToolsManagerScreen extends StatefulWidget {
-  const MeasuringToolsManagerScreen({super.key});
+  final bool embedded;
+  const MeasuringToolsManagerScreen({super.key, this.embedded = false});
 
   @override
   State<MeasuringToolsManagerScreen> createState() =>
@@ -59,98 +60,120 @@ class _MeasuringToolsManagerScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Measuring Tools'),
-        actions: [
-          IconButton(
-            tooltip: 'Reset to default tools',
-            onPressed: () async {
-              await _service.resetToDefaults();
-              await _loadTools();
-            },
-            icon: const Icon(Icons.restart_alt),
-          ),
-        ],
-      ),
+      appBar: widget.embedded
+          ? null
+          : AppBar(
+              title: const Text('Measuring Tools'),
+              actions: [_buildResetAction()],
+            ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _editTool(),
         icon: const Icon(Icons.add),
         label: const Text('Add Tool'),
       ),
-      body: ListView.separated(
-        padding: const EdgeInsets.all(16),
-        itemCount: _tools.length,
-        separatorBuilder: (_, _) => const SizedBox(height: 12),
-        itemBuilder: (context, index) {
-          final tool = _tools[index];
-          return Card(
-            child: Padding(
+      body: Column(
+        children: [
+          if (widget.embedded)
+            Align(
+              alignment: Alignment.centerRight,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: _buildResetAction(),
+              ),
+            ),
+          Expanded(
+            child: ListView.separated(
               padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+              itemCount: _tools.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 12),
+              itemBuilder: (context, index) {
+                final tool = _tools[index];
+                return Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
                           children: [
-                            Text(
-                              tool.toolName,
-                              style: Theme.of(context).textTheme.titleMedium,
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    tool.toolName,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleMedium,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '${tool.toolType} • rank ${tool.accuracyRank}',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                  ),
+                                ],
+                              ),
                             ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${tool.toolType} • rank ${tool.accuracyRank}',
-                              style: Theme.of(context).textTheme.bodySmall,
+                            Switch(
+                              value: tool.active,
+                              onChanged: (value) async {
+                                await _saveTools([
+                                  for (final item in _tools)
+                                    if (item.id == tool.id)
+                                      item.copyWith(active: value)
+                                    else
+                                      item,
+                                ]);
+                              },
                             ),
                           ],
                         ),
-                      ),
-                      Switch(
-                        value: tool.active,
-                        onChanged: (value) async {
-                          await _saveTools([
-                            for (final item in _tools)
-                              if (item.id == tool.id)
-                                item.copyWith(active: value)
-                              else
-                                item,
-                          ]);
-                        },
-                      ),
-                    ],
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 12,
+                          runSpacing: 8,
+                          children: [
+                            _infoChip('Min', '${tool.minVolumeUl} uL'),
+                            _infoChip('Max', '${tool.maxVolumeUl} uL'),
+                            _infoChip('Increment', '${tool.incrementUl} uL'),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            TextButton(
+                              onPressed: () => _editTool(existing: tool),
+                              child: const Text('Edit'),
+                            ),
+                            TextButton(
+                              onPressed: () => _deleteTool(tool),
+                              child: const Text('Delete'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 8,
-                    children: [
-                      _infoChip('Min', '${tool.minVolumeUl} uL'),
-                      _infoChip('Max', '${tool.maxVolumeUl} uL'),
-                      _infoChip('Increment', '${tool.incrementUl} uL'),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: () => _editTool(existing: tool),
-                        child: const Text('Edit'),
-                      ),
-                      TextButton(
-                        onPressed: () => _deleteTool(tool),
-                        child: const Text('Delete'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+                );
+              },
             ),
-          );
-        },
+          ),
+        ],
       ),
+    );
+  }
+
+  Widget _buildResetAction() {
+    return IconButton(
+      tooltip: 'Reset to default tools',
+      onPressed: () async {
+        await _service.resetToDefaults();
+        await _loadTools();
+      },
+      icon: const Icon(Icons.restart_alt),
     );
   }
 

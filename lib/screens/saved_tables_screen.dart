@@ -5,7 +5,8 @@ import '../services/storage_service.dart';
 import '../widgets/protocol_table_widget.dart';
 
 class SavedTablesScreen extends StatefulWidget {
-  const SavedTablesScreen({super.key});
+  final bool embedded;
+  const SavedTablesScreen({super.key, this.embedded = false});
 
   @override
   State<SavedTablesScreen> createState() => _SavedTablesScreenState();
@@ -71,8 +72,11 @@ class _SavedTablesScreenState extends State<SavedTablesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Saved Tables')),
+      appBar: widget.embedded
+          ? null
+          : AppBar(title: const Text('Saved Tables')),
       body: SafeArea(
+        top: !widget.embedded,
         child: _isLoading
             ? const Center(child: CircularProgressIndicator())
             : _tables.isEmpty
