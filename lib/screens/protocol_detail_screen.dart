@@ -14,9 +14,9 @@ import '../services/docx_export_service.dart';
 import '../services/pdf_service.dart';
 import '../services/export_service.dart';
 import '../theme/app_colors.dart';
+import '../widgets/protocol_step_actions_table.dart';
 import '../widgets/protocol_step_notes_table.dart';
 import '../widgets/protocol_table_preview.dart';
-import '../widgets/horizontal_table_scroll.dart';
 import 'run_protocol_screen.dart';
 import 'create_protocol_screen.dart';
 
@@ -140,7 +140,7 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
             ),
             ListTile(
               leading: const Icon(Icons.code),
-              title: const Text('Export as JSON'),
+              title: const Text('Export as ProtocolFlow file'),
               onTap: () {
                 Navigator.pop(context);
                 ExportService().exportSingleTemplate(protocol);
@@ -333,37 +333,12 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 8),
-            if (protocol.materials.isEmpty)
-              const Text('No materials listed.')
-            else
-              HorizontalTableScroll(
-                minWidth: 620,
-                child: DataTable(
-                  columnSpacing: 24,
-                  columns: const [
-                    DataColumn(label: Text('Name')),
-                    DataColumn(label: Text('Quantity')),
-                    DataColumn(label: Text('Catalog #')),
-                    DataColumn(label: Text('Manufacturer')),
-                    DataColumn(label: Text('Location')),
-                    DataColumn(label: Text('Stock Conc.')),
-                  ],
-                  rows: protocol.materials
-                      .map(
-                        (m) => DataRow(
-                          cells: [
-                            DataCell(Text(m.name)),
-                            DataCell(Text(m.quantity)),
-                            DataCell(Text(m.catalogNumber)),
-                            DataCell(Text(m.manufacturer)),
-                            DataCell(Text(m.location)),
-                            DataCell(Text(m.stockConcentration)),
-                          ],
-                        ),
-                      )
-                      .toList(),
-                ),
+            if (protocol.materialListTable != null)
+              LinkedProtocolTablesSection(
+                tables: [protocol.materialListTable!],
               ),
+            if (protocol.materialListTable == null)
+              const Text('No material list table linked.'),
 
             const SizedBox(height: 24),
             Row(
@@ -684,27 +659,23 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
             ),
             if (step.actionItems.isNotEmpty) ...[
               const SizedBox(height: 8),
-              ...step.actionItems.asMap().entries.map((aEntry) {
-                final item = aEntry.value;
-                final timer = step.actionTimers[aEntry.key];
-                String timerStr = '';
-                if (timer != null) {
-                  if (timer >= 3600) {
-                    timerStr = ' (${timer ~/ 3600}h)';
-                  } else if (timer >= 60) {
-                    timerStr = ' (${timer ~/ 60}m)';
-                  } else {
-                    timerStr = ' (${timer}s)';
-                  }
-                }
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('  - '),
-                    Expanded(child: Text('$item$timerStr')),
-                  ],
-                );
-              }),
+              ProtocolStepActionsTable(
+                actions: step.actionItems,
+                trailingBuilder: (context, actionIndex) {
+                  final timer = step.actionTimers[actionIndex];
+                  if (timer == null) return null;
+                  final timerLabel = timer >= 3600
+                      ? '${timer ~/ 3600}h'
+                      : timer >= 60
+                      ? '${timer ~/ 60}m'
+                      : '${timer}s';
+                  return Chip(
+                    avatar: const Icon(Icons.timer_outlined, size: 16),
+                    label: Text(timerLabel),
+                    visualDensity: VisualDensity.compact,
+                  );
+                },
+              ),
             ],
             if (step.notes.isNotEmpty) ...[
               const SizedBox(height: 8),
@@ -748,7 +719,11 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
   Widget _buildSupplementarySection(BuildContext context) {
     final assignedTableIds = protocol.steps.expand((s) => s.tableIds).toSet();
     final unassignedTables = protocol.tables
-        .where((t) => !assignedTableIds.contains(t.id))
+        .where(
+          (t) =>
+              t.type != TableType.materialList &&
+              !assignedTableIds.contains(t.id),
+        )
         .toList();
 
     if (protocol.files.isEmpty &&

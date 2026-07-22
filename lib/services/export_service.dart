@@ -4,21 +4,31 @@ import '../models/completed_protocol.dart';
 import 'storage_service.dart';
 import 'json_file_saver.dart';
 import 'protocol_export_filename.dart';
+import 'dashboard_activity_service.dart';
 
 class ExportService {
   final StorageService _storageService = StorageService();
+  final DashboardActivityService _activityService = DashboardActivityService();
 
   Future<void> exportTemplates() async {
     final protocols = await _storageService.loadProtocols();
     final templates = protocols.where((p) => p.isTemplate).toList();
     final jsonString = jsonEncode(templates.map((p) => p.toJson()).toList());
     await _saveFile(jsonString, 'protocol_templates.json');
+    await _activityService.recordExport(
+      'Protocol templates',
+      'ProtocolFlow file',
+    );
   }
 
   Future<void> exportHistory() async {
     final completed = await _storageService.loadCompletedProtocols();
     final jsonString = jsonEncode(completed.map((p) => p.toJson()).toList());
     await _saveFile(jsonString, 'completed_protocols.json');
+    await _activityService.recordExport(
+      'Completed protocols',
+      'ProtocolFlow file',
+    );
   }
 
   Future<void> exportSingleCompletedProtocol(
@@ -35,6 +45,10 @@ class ExportService {
         'json',
       ),
     );
+    await _activityService.recordExport(
+      completed.protocol.title,
+      'ProtocolFlow file',
+    );
   }
 
   Future<void> exportSingleTemplate(Protocol protocol) async {
@@ -45,6 +59,7 @@ class ExportService {
       jsonString,
       ProtocolExportFilename.protocol(protocol, 'json'),
     );
+    await _activityService.recordExport(protocol.title, 'ProtocolFlow file');
   }
 
   Future<void> exportAllData() async {
@@ -59,6 +74,10 @@ class ExportService {
 
     final jsonString = const JsonEncoder.withIndent('  ').convert(allData);
     await _saveFile(jsonString, 'protocolflow_backup.json');
+    await _activityService.recordExport(
+      'ProtocolFlow backup',
+      'ProtocolFlow file',
+    );
   }
 
   Future<void> _saveFile(String content, String fileName) async {

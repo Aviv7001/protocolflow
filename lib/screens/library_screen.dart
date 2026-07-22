@@ -55,6 +55,21 @@ class _LibraryScreenState extends State<LibraryScreen>
     setState(() => _isLoading = false);
   }
 
+  Future<void> _refreshData() async {
+    await loadPersistentProtocols();
+    await _loadData();
+  }
+
+  Widget _refreshableEmpty(String message) {
+    return RefreshIndicator(
+      onRefresh: _refreshData,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [SizedBox(height: 320, child: Center(child: Text(message)))],
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _tabController.dispose();
@@ -137,7 +152,7 @@ class _LibraryScreenState extends State<LibraryScreen>
                       value: 'import',
                       child: ListTile(
                         leading: Icon(Icons.file_upload),
-                        title: Text('Import JSON'),
+                        title: Text('Import ProtocolFlow file'),
                         contentPadding: EdgeInsets.zero,
                       ),
                     ),
@@ -196,87 +211,95 @@ class _LibraryScreenState extends State<LibraryScreen>
         .toList();
 
     if (filteredProtocols.isEmpty) {
-      return Center(
-        child: Text(isTemplate ? 'No templates found.' : 'No protocols found.'),
+      return _refreshableEmpty(
+        isTemplate ? 'No templates found.' : 'No protocols found.',
       );
     }
 
-    return ListView.builder(
-      itemCount: filteredProtocols.length,
-      itemBuilder: (context, index) {
-        final protocol = filteredProtocols[index];
-        return ListTile(
-          leading: Icon(
-            isTemplate ? Icons.copy_all : Icons.article_outlined,
-            color: isTemplate ? Colors.purple : Colors.blue,
-          ),
-          title: Text(protocol.title),
-          subtitle: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                protocol.objective,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 4),
-              SyncStatusChip(status: protocol.syncStatus, compact: true),
-            ],
-          ),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => ProtocolDetailScreen(protocol: protocol),
+    return RefreshIndicator(
+      onRefresh: _refreshData,
+      child: ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
+        itemCount: filteredProtocols.length,
+        itemBuilder: (context, index) {
+          final protocol = filteredProtocols[index];
+          return ListTile(
+            leading: Icon(
+              isTemplate ? Icons.copy_all : Icons.article_outlined,
+              color: isTemplate ? Colors.purple : Colors.blue,
             ),
-          ).then((_) => _loadData()),
-        );
-      },
+            title: Text(protocol.title),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  protocol.objective,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                SyncStatusChip(status: protocol.syncStatus, compact: true),
+              ],
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => ProtocolDetailScreen(protocol: protocol),
+              ),
+            ).then((_) => _loadData()),
+          );
+        },
+      ),
     );
   }
 
   Widget _buildRunningTab() {
     if (activeProtocol == null && runningProtocols.isEmpty) {
-      return const Center(child: Text('No protocols currently running.'));
+      return _refreshableEmpty('No protocols currently running.');
     }
 
-    return ListView(
-      children: [
-        if (activeProtocol != null) ...[
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text(
-              'ACTIVE SESSION',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 12,
-                color: Colors.grey,
+    return RefreshIndicator(
+      onRefresh: _refreshData,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          if (activeProtocol != null) ...[
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Text(
+                'ACTIVE SESSION',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                  color: Colors.grey,
+                ),
               ),
             ),
-          ),
-          _buildActiveProtocolItem(),
-        ],
-        if (runningProtocols.isNotEmpty) ...[
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text(
-              'IN PROGRESS',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 12,
-                color: Colors.grey,
+            _buildActiveProtocolItem(),
+          ],
+          if (runningProtocols.isNotEmpty) ...[
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Text(
+                'IN PROGRESS',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                  color: Colors.grey,
+                ),
               ),
             ),
-          ),
-          ...runningProtocols
-              .where(
-                (p) =>
-                    activeProtocol == null ||
-                    p.protocol.id != activeProtocol!.protocol.id,
-              )
-              .map((p) => _buildRunningProtocolItem(p)),
+            ...runningProtocols
+                .where(
+                  (p) =>
+                      activeProtocol == null ||
+                      p.protocol.id != activeProtocol!.protocol.id,
+                )
+                .map((p) => _buildRunningProtocolItem(p)),
+          ],
         ],
-      ],
+      ),
     );
   }
 
@@ -429,30 +452,34 @@ class _LibraryScreenState extends State<LibraryScreen>
 
   Widget _buildHistoryTab() {
     if (completedProtocols.isEmpty) {
-      return const Center(child: Text('No history found.'));
+      return _refreshableEmpty('No history found.');
     }
 
-    return ListView.builder(
-      itemCount: completedProtocols.length,
-      itemBuilder: (context, index) {
-        final completed = completedProtocols[index];
-        final date = completed.completedAt;
-        final dateStr = '${date.year}-${date.month}-${date.day}';
+    return RefreshIndicator(
+      onRefresh: _refreshData,
+      child: ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
+        itemCount: completedProtocols.length,
+        itemBuilder: (context, index) {
+          final completed = completedProtocols[index];
+          final date = completed.completedAt;
+          final dateStr = '${date.year}-${date.month}-${date.day}';
 
-        return ListTile(
-          leading: const Icon(Icons.check_circle, color: AppColors.success),
-          title: Text(completed.protocol.title),
-          subtitle: Text('Completed on: $dateStr'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) =>
-                  CompletedProtocolDetailScreen(completedProtocol: completed),
-            ),
-          ).then((_) => setState(() {})),
-        );
-      },
+          return ListTile(
+            leading: const Icon(Icons.check_circle, color: AppColors.success),
+            title: Text(completed.protocol.title),
+            subtitle: Text('Completed on: $dateStr'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) =>
+                    CompletedProtocolDetailScreen(completedProtocol: completed),
+              ),
+            ).then((_) => setState(() {})),
+          );
+        },
+      ),
     );
   }
 }

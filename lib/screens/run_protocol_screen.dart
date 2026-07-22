@@ -14,8 +14,8 @@ import 'package:protocolflow/data/completed_protocols_data.dart';
 import 'package:protocolflow/services/picked_image_store.dart';
 import 'package:protocolflow/theme/app_colors.dart';
 import 'package:protocolflow/widgets/action_timer_wrapper.dart';
-import 'package:protocolflow/widgets/horizontal_table_scroll.dart';
 import 'package:protocolflow/widgets/local_image.dart';
+import 'package:protocolflow/widgets/protocol_step_actions_table.dart';
 import 'package:protocolflow/widgets/protocol_step_notes_table.dart';
 import 'package:protocolflow/widgets/protocol_table_preview.dart';
 import 'package:protocolflow/widgets/protocol_table_widget.dart';
@@ -267,6 +267,7 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
                   id: DateTime.now().millisecondsSinceEpoch.toString(),
                   protocol: protocol,
                   notes: List.from(_notes),
+                  startedAt: activeProtocol?.startedAt,
                   completedAt: DateTime.now(),
                 ),
               );
@@ -611,6 +612,8 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
     );
   }
 
+  // Retained for a future step-edit route; run navigation no longer exposes it.
+  // ignore: unused_element
   void _editStep() {
     if (currentStepIndex < 0) {
       ScaffoldMessenger.of(
@@ -753,16 +756,10 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
   }
 
   void _openFiles() {
-    final currentStepTableIds = currentStep?.tableIds.toSet() ?? <String>{};
-    final currentStepTables = protocol.tables
-        .where((t) => currentStepTableIds.contains(t.id))
-        .toList();
-    // Get all tables assigned to any step
-    final assignedTableIds = protocol.steps.expand((s) => s.tableIds).toSet();
-    // Filter tables that are NOT assigned to any step
-    final unassignedTables = protocol.tables
-        .where((t) => !assignedTableIds.contains(t.id))
-        .toList();
+    final attachedFiles = <String>{
+      ...protocol.files,
+      ...protocol.steps.expand((step) => step.attachedFiles),
+    }.toList();
     final additionalData = protocol.additionalData;
 
     showModalBottomSheet<void>(
@@ -786,46 +783,19 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
                     const SizedBox(height: 12),
-                    if (protocol.files.isEmpty &&
-                        currentStepTables.isEmpty &&
-                        unassignedTables.isEmpty &&
-                        additionalData.isEmpty)
-                      const Text('No files or detached tables found.')
+                    if (attachedFiles.isEmpty && additionalData.isEmpty)
+                      const Text('No files or additional data attached.')
                     else ...[
-                      if (currentStepTables.isNotEmpty) ...[
+                      if (attachedFiles.isNotEmpty) ...[
                         const Text(
-                          'Current Step Tables',
+                          'Protocol Files',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             color: Colors.grey,
                           ),
                         ),
                         const SizedBox(height: 8),
-                        _buildTableGrid(currentStepTables),
-                        const SizedBox(height: 16),
-                      ],
-                      if (protocol.files.isNotEmpty) ...[
-                        const Text(
-                          'Documents',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.grey,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        _buildFileGrid(protocol.files),
-                        const SizedBox(height: 16),
-                      ],
-                      if (unassignedTables.isNotEmpty) ...[
-                        const Text(
-                          'Reference Tables',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.grey,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        _buildTableGrid(unassignedTables),
+                        _buildFileGrid(attachedFiles),
                         const SizedBox(height: 16),
                       ],
                       if (additionalData.isNotEmpty) ...[
@@ -850,6 +820,7 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _buildTableGrid(List<ProtocolTable> tables) {
     return GridView.builder(
       shrinkWrap: true,
@@ -1045,11 +1016,6 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
                 tooltip: 'Note',
               ),
               IconButton(
-                onPressed: _editStep,
-                icon: const Icon(Icons.edit),
-                tooltip: 'Edit',
-              ),
-              IconButton(
                 onPressed: _goToNextStep,
                 icon: Icon(
                   currentStepIndex ==
@@ -1092,39 +1058,13 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
         const Text('Ensure you have everything ready before starting.'),
         const SizedBox(height: 16),
         Expanded(
-          child: protocol.materials.isEmpty
-              ? const Center(child: Text('No materials listed.'))
-              : SingleChildScrollView(
-                  scrollDirection: Axis.vertical,
-                  child: HorizontalTableScroll(
-                    minWidth: 620,
-                    child: DataTable(
-                      columnSpacing: 24,
-                      columns: const [
-                        DataColumn(label: Text('Name')),
-                        DataColumn(label: Text('Quantity')),
-                        DataColumn(label: Text('Catalog #')),
-                        DataColumn(label: Text('Manufacturer')),
-                        DataColumn(label: Text('Location')),
-                        DataColumn(label: Text('Stock Conc.')),
-                      ],
-                      rows: protocol.materials
-                          .map(
-                            (m) => DataRow(
-                              cells: [
-                                DataCell(Text(m.name)),
-                                DataCell(Text(m.quantity)),
-                                DataCell(Text(m.catalogNumber)),
-                                DataCell(Text(m.manufacturer)),
-                                DataCell(Text(m.location)),
-                                DataCell(Text(m.stockConcentration)),
-                              ],
-                            ),
-                          )
-                          .toList(),
-                    ),
+          child: SingleChildScrollView(
+            child: protocol.materialListTable == null
+                ? const Center(child: Text('No material list table linked.'))
+                : LinkedProtocolTablesSection(
+                    tables: [protocol.materialListTable!],
                   ),
-                ),
+          ),
         ),
         _buildNotesList(),
       ],
@@ -1141,11 +1081,11 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
         Text(step.instructions),
         const SizedBox(height: 16),
         if (step.actionItems.isNotEmpty) ...[
-          Text('Actions', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          ...step.actionItems.asMap().entries.map((entry) {
-            return _buildActionCard(step, entry.key, entry.value);
-          }),
+          ProtocolStepActionsTable(
+            actions: step.actionItems,
+            rowWrapperBuilder: (context, index, child) =>
+                _buildActionTimer(step, index, child),
+          ),
         ],
         if (step.notes.isNotEmpty) ...[
           const SizedBox(height: 16),
@@ -1162,20 +1102,11 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
     );
   }
 
-  Widget _buildActionCard(ProtocolStep step, int index, String actionText) {
+  Widget _buildActionTimer(ProtocolStep step, int index, Widget child) {
     final int? actionTimer = step.actionTimers[index];
-
-    Widget cardContent = ListTile(
-      leading: CircleAvatar(
-        radius: 14,
-        child: Text('${index + 1}', style: const TextStyle(fontSize: 12)),
-      ),
-      title: Text(actionText),
-    );
-
     if (actionTimer != null) {
       final timerKey = '${step.id}_$index';
-      cardContent = ActionTimerWrapper(
+      return ActionTimerWrapper(
         totalSeconds: actionTimer,
         startTime: activeProtocol?.timerStartTimes[timerKey],
         remainingSeconds: activeProtocol?.pausedSeconds[timerKey],
@@ -1247,7 +1178,7 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
           _updateActiveProtocol();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Action "$actionText" finished!'),
+              content: Text('Action "${step.actionItems[index]}" finished!'),
               duration: const Duration(seconds: 3),
               backgroundColor: AppColors.success,
               action: SnackBarAction(
@@ -1258,11 +1189,10 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
             ),
           );
         },
-        child: cardContent,
+        child: child,
       );
     }
-
-    return Card(clipBehavior: Clip.antiAlias, child: cardContent);
+    return child;
   }
 
   List<ProtocolTable> _linkedTablesForStep(ProtocolStep step) {

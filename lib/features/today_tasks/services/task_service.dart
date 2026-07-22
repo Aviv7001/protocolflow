@@ -52,10 +52,12 @@ class TaskService {
     List<Task> history = await loadHistoryTasks();
 
     final done = today
-        .where((t) => t.isDone)
+        .where((t) => t.status == TaskStatus.completed)
         .map((t) => t.copyWith(completedAt: DateTime.now()))
         .toList();
-    final remaining = today.where((t) => !t.isDone).toList();
+    final remaining = today
+        .where((t) => t.status != TaskStatus.completed)
+        .toList();
 
     if (done.isEmpty) return;
 

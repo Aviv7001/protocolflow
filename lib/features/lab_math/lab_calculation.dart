@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 enum VolumeUnit { nL, uL, mL, L }
 
 enum ConcentrationUnit {
@@ -17,6 +19,7 @@ enum ConcentrationUnit {
   percent,
   X,
   ratio,
+  cellsML,
   gMol,
 }
 
@@ -26,6 +29,7 @@ enum ConcentrationFamily {
   percentage,
   fold,
   ratio,
+  cellDensity,
   molecularWeight,
 }
 
@@ -76,6 +80,8 @@ class LabCalculation {
         return ConcentrationFamily.fold;
       case ConcentrationUnit.ratio:
         return ConcentrationFamily.ratio;
+      case ConcentrationUnit.cellsML:
+        return ConcentrationFamily.cellDensity;
       case ConcentrationUnit.gMol:
         return ConcentrationFamily.molecularWeight;
     }
@@ -160,6 +166,8 @@ class LabCalculation {
         return value;
       case ConcentrationUnit.ratio:
         return value == 0 ? 0 : 1.0 / value;
+      case ConcentrationUnit.cellsML:
+        return value;
       case ConcentrationUnit.gMol:
         return value;
     }
@@ -194,10 +202,66 @@ class LabCalculation {
         return value / 1e-3;
       case ConcentrationUnit.percent:
       case ConcentrationUnit.X:
-      case ConcentrationUnit.ratio:
+      case ConcentrationUnit.cellsML:
       case ConcentrationUnit.gMol:
         return value;
+      case ConcentrationUnit.ratio:
+        return value == 0 ? 0 : 1.0 / value;
     }
+  }
+
+  static double? parseConcentrationInput(
+    String input,
+    ConcentrationUnit unit, {
+    int cellsExponent = 0,
+  }) {
+    final trimmed = input.trim();
+    if (unit == ConcentrationUnit.ratio) {
+      final parts = trimmed.split(RegExp(r'[:/]'));
+      if (parts.length == 2) {
+        final numerator = double.tryParse(parts[0].trim());
+        final denominator = double.tryParse(parts[1].trim());
+        if (numerator == null ||
+            denominator == null ||
+            numerator <= 0 ||
+            denominator <= 0) {
+          return null;
+        }
+        return denominator / numerator;
+      }
+    }
+
+    final value = double.tryParse(trimmed);
+    if (value == null) return null;
+    if (unit == ConcentrationUnit.cellsML) {
+      return value * _powerOfTen(cellsExponent);
+    }
+    return value;
+  }
+
+  static String concentrationInputText(double value, ConcentrationUnit unit) {
+    if (unit == ConcentrationUnit.ratio) {
+      return '1:${formatNumber(value)}';
+    }
+    if (unit == ConcentrationUnit.cellsML) {
+      return formatNumber(cellsCoefficient(value));
+    }
+    return formatNumber(value);
+  }
+
+  static int cellsExponent(double value, {int fallback = 6}) {
+    if (!value.isFinite || value == 0) return fallback;
+    return (math.log(value.abs()) / math.ln10).floor();
+  }
+
+  static double cellsCoefficient(double value, {int fallbackExponent = 6}) {
+    if (!value.isFinite || value == 0) return value;
+    return value /
+        _powerOfTen(cellsExponent(value, fallback: fallbackExponent));
+  }
+
+  static String formatInputConcentration(double value, ConcentrationUnit unit) {
+    return formatConcentration(concentrationToBase(value, unit), unit);
   }
 
   static double decimalPenalty(double value) {
@@ -315,7 +379,26 @@ class LabCalculation {
   }
 
   static String formatConcentration(double baseValue, ConcentrationUnit unit) {
+    if (unit == ConcentrationUnit.ratio) {
+      return '1:${formatNumber(concentrationFromBase(baseValue, unit))}';
+    }
+    if (unit == ConcentrationUnit.cellsML) {
+      final value = concentrationFromBase(baseValue, unit);
+      if (value > 0) {
+        final exponent = (math.log(value) / math.ln10).floor();
+        final mantissa = value / _powerOfTen(exponent);
+        return '${formatNumber(mantissa)} x 10^$exponent cells/mL';
+      }
+    }
     return '${formatNumber(concentrationFromBase(baseValue, unit))} ${unitLabel(unit)}';
+  }
+
+  static double _powerOfTen(int exponent) {
+    var value = 1.0;
+    for (var index = 0; index < exponent.abs(); index++) {
+      value = exponent >= 0 ? value * 10 : value / 10;
+    }
+    return value;
   }
 
   static String formatNumber(double value) {
@@ -366,6 +449,8 @@ class LabCalculation {
         return 'X';
       case ConcentrationUnit.ratio:
         return 'ratio';
+      case ConcentrationUnit.cellsML:
+        return 'cells/mL';
       case ConcentrationUnit.gMol:
         return 'g/mol';
     }

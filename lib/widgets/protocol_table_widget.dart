@@ -188,6 +188,8 @@ class ProtocolTableWidget extends StatelessWidget {
         return Icons.color_lens;
       case TableType.serialDilution:
         return Icons.water_drop;
+      case TableType.materialList:
+        return Icons.inventory_2_outlined;
       default:
         return Icons.table_chart;
     }
@@ -213,6 +215,8 @@ class ProtocolTableWidget extends StatelessWidget {
         return Colors.green;
       case TableType.generic:
         return Colors.grey;
+      case TableType.materialList:
+        return Colors.teal;
     }
   }
 }

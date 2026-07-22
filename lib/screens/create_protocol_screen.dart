@@ -11,8 +11,8 @@ import '../features/master_mix/services/master_mix_calculator_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/protocol_table_widget.dart';
 import '../widgets/protocol_table_preview.dart';
+import '../widgets/protocol_step_actions_table.dart';
 import '../widgets/protocol_step_notes_table.dart';
-import '../widgets/horizontal_table_scroll.dart';
 import '../services/auth_service.dart';
 import '../services/drive_sync_service.dart';
 import '../services/picked_image_store.dart';
@@ -52,6 +52,8 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
   final List<ProtocolStep> _steps = [];
   final List<ProtocolTable> _tables = [];
   final List<ProtocolAdditionalData> _additionalData = [];
+  late String _materialListTableId;
+  bool _isMaterialListCollapsed = false;
   bool _usePhases = false;
   late final bool _isInProgress;
   ProtocolStep? _stepClipboard;
@@ -79,6 +81,8 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
       );
     }
 
+    _ensureMaterialListTable(widget.initialProtocol?.materialListTableId);
+
     if (widget.isAddingPhase) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _addNewPhase();
@@ -94,20 +98,95 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
     super.dispose();
   }
 
-  void _addNewMaterial() {
-    setState(() {
-      _materials.add(
-        MaterialItem(
-          id: 'mat_${DateTime.now().millisecondsSinceEpoch}',
-          name: '',
-          quantity: '',
-          catalogNumber: '',
-          manufacturer: '',
-          location: '',
-          stockConcentration: '',
-        ),
+  List<ProtocolTable> get _regularTables =>
+      _tables.where((table) => table.type != TableType.materialList).toList();
+
+  ProtocolTable get _materialListTable =>
+      _tables.firstWhere((table) => table.id == _materialListTableId);
+
+  void _ensureMaterialListTable(String? linkedTableId) {
+    var index = linkedTableId == null
+        ? -1
+        : _tables.indexWhere((table) => table.id == linkedTableId);
+    if (index == -1) {
+      index = _tables.indexWhere(
+        (table) => table.type == TableType.materialList,
       );
-    });
+    }
+    if (index >= 0) {
+      _materialListTableId = _tables[index].id;
+      _syncLegacyMaterialsFromTable(_tables[index]);
+      return;
+    }
+
+    _materialListTableId =
+        linkedTableId ??
+        'material_list_${DateTime.now().microsecondsSinceEpoch}';
+    _tables.insert(
+      0,
+      createMaterialListTable(
+        id: _materialListTableId,
+        data: _materials
+            .map<List<dynamic>>(
+              (material) => [
+                material.name,
+                material.quantity,
+                material.stockConcentration,
+                material.catalogNumber,
+                material.manufacturer,
+              ],
+            )
+            .toList(),
+      ),
+    );
+  }
+
+  void _updateMaterialListTable(ProtocolTable updated) {
+    final index = _tables.indexWhere(
+      (table) => table.id == _materialListTableId,
+    );
+    if (index == -1) return;
+    final normalized = updated.copyWith(
+      id: _materialListTableId,
+      type: TableType.materialList,
+      title: updated.title.isEmpty ? 'Material List' : updated.title,
+    );
+    _tables[index] = normalized;
+    _syncLegacyMaterialsFromTable(normalized);
+  }
+
+  void _syncLegacyMaterialsFromTable(ProtocolTable table) {
+    final previous = List<MaterialItem>.from(_materials);
+    _materials
+      ..clear()
+      ..addAll(
+        table.data
+            .asMap()
+            .entries
+            .where((entry) {
+              return entry.value.any(
+                (cell) => cell.toString().trim().isNotEmpty,
+              );
+            })
+            .map((entry) {
+              final row = entry.value;
+              String valueAt(int index) =>
+                  index < row.length ? row[index].toString() : '';
+              return MaterialItem(
+                id: entry.key < previous.length
+                    ? previous[entry.key].id
+                    : 'mat_${table.id}_${entry.key + 1}',
+                name: valueAt(0),
+                quantity: valueAt(1),
+                stockConcentration: valueAt(2),
+                catalogNumber: valueAt(3),
+                manufacturer: valueAt(4),
+                location: entry.key < previous.length
+                    ? previous[entry.key].location
+                    : '',
+              );
+            }),
+      );
   }
 
   void _addNewSample() {
@@ -440,12 +519,18 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
         return Colors.orange;
       case TableType.checklist:
         return Colors.green;
+      case TableType.materialList:
+        return Colors.teal;
       case TableType.generic:
         return Colors.grey;
     }
   }
 
   void _syncMaterialsFromTable(ProtocolTable table) {
+    if (table.type == TableType.materialList) {
+      setState(() => _syncLegacyMaterialsFromTable(table));
+      return;
+    }
     // We re-sync all materials from all tables to ensure totals are correct
     final Map<String, double> totalVolumesUl = {};
     final Map<String, String> stockConcentrations = {};
@@ -513,7 +598,30 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
           );
         }
       }
+      _replaceMaterialListRowsFromLegacyMaterials();
     });
+  }
+
+  void _replaceMaterialListRowsFromLegacyMaterials() {
+    final index = _tables.indexWhere(
+      (table) => table.id == _materialListTableId,
+    );
+    if (index == -1) return;
+    final rows = _materials
+        .map<List<dynamic>>(
+          (material) => [
+            material.name,
+            material.quantity,
+            material.stockConcentration,
+            material.catalogNumber,
+            material.manufacturer,
+          ],
+        )
+        .toList();
+    _tables[index] = createMaterialListTable(
+      id: _materialListTableId,
+      data: rows,
+    ).copyWith(title: _tables[index].title);
   }
 
   String _formatVolumeUl(double ul) {
@@ -573,6 +681,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
       if (newId.trim().isEmpty) {
         newId = generateProtocolId(initials: signedInUser?.initials);
       }
+      _syncLegacyMaterialsFromTable(_materialListTable);
 
       final newProtocol = Protocol(
         id: newId,
@@ -591,10 +700,11 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
             ? ProtocolSyncStatus.localOnly
             : ProtocolSyncStatus.modified,
         materials: _materials.map((m) => m.copyWith()).toList(),
+        materialListTableId: _materialListTableId,
         samples: List.from(_samples),
         files: List.from(_files),
         steps: _steps.map((s) => s.deepCopy()).toList(),
-        tables: _tables.map((t) => t.deepCopy()).toList(),
+        tables: _tables.map((table) => table.deepCopy()).toList(),
         additionalData: _additionalData.map((d) => d.deepCopy()).toList(),
         isTemplate: isTemplate,
       );
@@ -747,14 +857,6 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
                 _buildSectionHeader('Material List'),
                 const SizedBox(height: 8),
                 _buildMaterialsTable(),
-                const SizedBox(height: 12),
-                Center(
-                  child: ElevatedButton.icon(
-                    onPressed: _addNewMaterial,
-                    icon: const Icon(Icons.add),
-                    label: const Text('Add Material'),
-                  ),
-                ),
 
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 24),
@@ -809,7 +911,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
 
                 _buildSectionHeader('Tables'),
                 const SizedBox(height: 8),
-                if (_tables.isEmpty)
+                if (_regularTables.isEmpty)
                   const Center(
                     child: Text(
                       'No tables added.',
@@ -820,16 +922,19 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    children: _tables.asMap().entries.map((entry) {
-                      final idx = entry.key;
-                      final table = entry.value;
+                    children: _regularTables.map((table) {
                       return Stack(
                         children: [
                           ProtocolTableWidget(
                             table: table,
                             isReadOnly: false,
                             onSave: (updated) {
-                              setState(() => _tables[idx] = updated);
+                              setState(() {
+                                final index = _tables.indexWhere(
+                                  (candidate) => candidate.id == table.id,
+                                );
+                                if (index != -1) _tables[index] = updated;
+                              });
                               _syncMaterialsFromTable(updated);
                             },
                           ),
@@ -842,8 +947,11 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
                                 color: Colors.red,
                                 size: 20,
                               ),
-                              onPressed: () =>
-                                  setState(() => _tables.removeAt(idx)),
+                              onPressed: () => setState(
+                                () => _tables.removeWhere(
+                                  (candidate) => candidate.id == table.id,
+                                ),
+                              ),
                             ),
                           ),
                         ],
@@ -1096,81 +1204,15 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
   }
 
   Widget _buildMaterialsTable() {
-    if (_materials.isEmpty) {
-      return const Text(
-        'No materials added. Press + to add rows.',
-        style: TextStyle(color: Colors.grey),
-      );
-    }
-
-    return HorizontalTableScroll(
-      minWidth: 620,
-      child: DataTable(
-        columnSpacing: 20,
-        horizontalMargin: 0,
-        columns: const [
-          DataColumn(label: SizedBox(width: 140, child: Text('Name'))),
-          DataColumn(label: SizedBox(width: 80, child: Text('Qty'))),
-          DataColumn(label: SizedBox(width: 100, child: Text('Stock Conc.'))),
-          DataColumn(label: SizedBox(width: 100, child: Text('Catalog #'))),
-          DataColumn(label: SizedBox(width: 100, child: Text('Mfr'))),
-          DataColumn(label: SizedBox(width: 40, child: Text(''))),
-        ],
-        rows: _materials.asMap().entries.map((entry) {
-          final idx = entry.key;
-          final item = entry.value;
-
-          return DataRow(
-            key: ValueKey(item.id),
-            cells: [
-              DataCell(
-                _MaterialCell(
-                  initialValue: item.name,
-                  onChanged: (v) =>
-                      _materials[idx] = _materials[idx].copyWith(name: v),
-                ),
-              ),
-              DataCell(
-                _MaterialCell(
-                  initialValue: item.quantity,
-                  onChanged: (v) =>
-                      _materials[idx] = _materials[idx].copyWith(quantity: v),
-                ),
-              ),
-              DataCell(
-                _MaterialCell(
-                  initialValue: item.stockConcentration,
-                  onChanged: (v) => _materials[idx] = _materials[idx].copyWith(
-                    stockConcentration: v,
-                  ),
-                ),
-              ),
-              DataCell(
-                _MaterialCell(
-                  initialValue: item.catalogNumber,
-                  onChanged: (v) => _materials[idx] = _materials[idx].copyWith(
-                    catalogNumber: v,
-                  ),
-                ),
-              ),
-              DataCell(
-                _MaterialCell(
-                  initialValue: item.manufacturer,
-                  onChanged: (v) => _materials[idx] = _materials[idx].copyWith(
-                    manufacturer: v,
-                  ),
-                ),
-              ),
-              DataCell(
-                IconButton(
-                  icon: const Icon(Icons.delete, color: Colors.red, size: 20),
-                  onPressed: () => setState(() => _materials.removeAt(idx)),
-                ),
-              ),
-            ],
-          );
-        }).toList(),
-      ),
+    return ProtocolTablePreview(
+      table: _materialListTable,
+      isReadOnly: _isInProgress,
+      onSave: _isInProgress
+          ? null
+          : (updated) => setState(() => _updateMaterialListTable(updated)),
+      isCollapsed: _isMaterialListCollapsed,
+      onCollapsedChanged: (collapsed) =>
+          setState(() => _isMaterialListCollapsed = collapsed),
     );
   }
 
@@ -1242,16 +1284,6 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
                     _steps[index] = _steps[index].copyWith(instructions: v),
               ),
             ),
-            const Divider(),
-            Text(
-              'Actions',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: _uniformFontSize,
-                color: isLocked ? Colors.grey : null,
-              ),
-            ),
-            const SizedBox(height: 4),
             if (step.actionItems.isEmpty)
               const Text(
                 'No actions yet. Start a description line with - and a space, then leave the field.',
@@ -1260,128 +1292,99 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
                   fontSize: _uniformFontSize - 2,
                 ),
               )
-            else
-              ...step.actionItems.asMap().entries.map((aEntry) {
-                final actionIndex = aEntry.key;
-                final action = aEntry.value;
-                final timer = step.actionTimers[actionIndex] ?? 0;
-
-                return Card(
-                  margin: const EdgeInsets.only(top: 8),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 6,
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        CircleAvatar(
-                          radius: 11,
-                          child: Text(
-                            '${actionIndex + 1}',
-                            style: const TextStyle(fontSize: 11),
-                          ),
+            else ...[
+              const SizedBox(height: 8),
+              ProtocolStepActionsTable(
+                actions: step.actionItems,
+                isLocked: isLocked,
+                trailingBuilder: (context, actionIndex) {
+                  final timer = step.actionTimers[actionIndex] ?? 0;
+                  return Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (timer > 0)
+                        Chip(
+                          avatar: const Icon(Icons.timer_outlined, size: 16),
+                          label: Text(_formatTimer(timer)),
+                          visualDensity: VisualDensity.compact,
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            action,
-                            style: TextStyle(
-                              fontSize: _uniformFontSize,
-                              color: isLocked ? Colors.grey : null,
+                      if (!isLocked)
+                        PopupMenuButton<String>(
+                          tooltip: 'Action options',
+                          icon: const Icon(Icons.more_vert),
+                          onSelected: (value) {
+                            switch (value) {
+                              case 'timer':
+                                _showActionTimerDialog(
+                                  index,
+                                  actionIndex,
+                                  timer,
+                                );
+                                break;
+                              case 'moveUp':
+                                _moveAction(index, actionIndex, -1);
+                                break;
+                              case 'moveDown':
+                                _moveAction(index, actionIndex, 1);
+                                break;
+                              case 'delete':
+                                _deleteAction(index, actionIndex);
+                                break;
+                            }
+                          },
+                          itemBuilder: (context) => [
+                            PopupMenuItem(
+                              value: 'timer',
+                              child: ListTile(
+                                leading: Icon(
+                                  timer > 0
+                                      ? Icons.timer_outlined
+                                      : Icons.timer_off_outlined,
+                                ),
+                                title: Text(
+                                  timer > 0 ? 'Edit Timer' : 'Set Timer',
+                                ),
+                                contentPadding: EdgeInsets.zero,
+                              ),
                             ),
-                          ),
+                            PopupMenuItem(
+                              value: 'moveUp',
+                              enabled: actionIndex > 0,
+                              child: const ListTile(
+                                leading: Icon(Icons.keyboard_arrow_up),
+                                title: Text('Move Up'),
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                            ),
+                            PopupMenuItem(
+                              value: 'moveDown',
+                              enabled:
+                                  actionIndex < step.actionItems.length - 1,
+                              child: const ListTile(
+                                leading: Icon(Icons.keyboard_arrow_down),
+                                title: Text('Move Down'),
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                            ),
+                            const PopupMenuDivider(),
+                            const PopupMenuItem(
+                              value: 'delete',
+                              child: ListTile(
+                                leading: Icon(
+                                  Icons.delete_outline,
+                                  color: AppColors.error,
+                                ),
+                                title: Text('Delete Action'),
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                            ),
+                          ],
                         ),
-                        if (timer > 0)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 8),
-                            child: Chip(
-                              avatar: const Icon(
-                                Icons.timer_outlined,
-                                size: 16,
-                              ),
-                              label: Text(_formatTimer(timer)),
-                              visualDensity: VisualDensity.compact,
-                            ),
-                          ),
-                        if (!isLocked)
-                          PopupMenuButton<String>(
-                            tooltip: 'Action options',
-                            icon: const Icon(Icons.more_vert),
-                            onSelected: (value) {
-                              switch (value) {
-                                case 'timer':
-                                  _showActionTimerDialog(
-                                    index,
-                                    actionIndex,
-                                    timer,
-                                  );
-                                  break;
-                                case 'moveUp':
-                                  _moveAction(index, actionIndex, -1);
-                                  break;
-                                case 'moveDown':
-                                  _moveAction(index, actionIndex, 1);
-                                  break;
-                                case 'delete':
-                                  _deleteAction(index, actionIndex);
-                                  break;
-                              }
-                            },
-                            itemBuilder: (context) => [
-                              PopupMenuItem(
-                                value: 'timer',
-                                child: ListTile(
-                                  leading: Icon(
-                                    timer > 0
-                                        ? Icons.timer_outlined
-                                        : Icons.timer_off_outlined,
-                                  ),
-                                  title: Text(
-                                    timer > 0 ? 'Edit Timer' : 'Set Timer',
-                                  ),
-                                  contentPadding: EdgeInsets.zero,
-                                ),
-                              ),
-                              PopupMenuItem(
-                                value: 'moveUp',
-                                enabled: actionIndex > 0,
-                                child: const ListTile(
-                                  leading: Icon(Icons.keyboard_arrow_up),
-                                  title: Text('Move Up'),
-                                  contentPadding: EdgeInsets.zero,
-                                ),
-                              ),
-                              PopupMenuItem(
-                                value: 'moveDown',
-                                enabled:
-                                    actionIndex < step.actionItems.length - 1,
-                                child: const ListTile(
-                                  leading: Icon(Icons.keyboard_arrow_down),
-                                  title: Text('Move Down'),
-                                  contentPadding: EdgeInsets.zero,
-                                ),
-                              ),
-                              const PopupMenuDivider(),
-                              const PopupMenuItem(
-                                value: 'delete',
-                                child: ListTile(
-                                  leading: Icon(
-                                    Icons.delete_outline,
-                                    color: AppColors.error,
-                                  ),
-                                  title: Text('Delete Action'),
-                                  contentPadding: EdgeInsets.zero,
-                                ),
-                              ),
-                            ],
-                          ),
-                      ],
-                    ),
-                  ),
-                );
-              }),
+                    ],
+                  );
+                },
+              ),
+            ],
             const SizedBox(height: 8),
             Text(
               'Protocol Step Notes',
@@ -1409,7 +1412,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
                 onDelete: (noteIndex) =>
                     _deleteProtocolStepNote(index, noteIndex),
               ),
-            if (_tables.isNotEmpty) ...[
+            if (_regularTables.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text(
                 'Linked Tables',
@@ -1455,7 +1458,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
               Wrap(
                 spacing: 4,
                 runSpacing: 4,
-                children: _tables
+                children: _regularTables
                     .where((t) => !step.tableIds.contains(t.id))
                     .map((t) {
                       final tableColor = _tableColor(t);
@@ -1592,6 +1595,8 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
         return Icons.grid_on;
       case TableType.checklist:
         return Icons.checklist;
+      case TableType.materialList:
+        return Icons.inventory_2_outlined;
       case TableType.generic:
         return Icons.table_chart;
     }
@@ -2088,53 +2093,6 @@ class _PhaseNameFieldState extends State<_PhaseNameField> {
           widget.onChanged(v);
         }
       },
-      onChanged: widget.onChanged,
-    );
-  }
-}
-
-class _MaterialCell extends StatefulWidget {
-  final String initialValue;
-  final Function(String) onChanged;
-
-  const _MaterialCell({required this.initialValue, required this.onChanged});
-
-  @override
-  State<_MaterialCell> createState() => _MaterialCellState();
-}
-
-class _MaterialCellState extends State<_MaterialCell> {
-  late TextEditingController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(text: widget.initialValue);
-  }
-
-  @override
-  void didUpdateWidget(_MaterialCell oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.initialValue != _controller.text) {
-      _controller.text = widget.initialValue;
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return TextField(
-      controller: _controller,
-      decoration: const InputDecoration(
-        border: InputBorder.none,
-        isDense: true,
-      ),
-      style: const TextStyle(fontSize: 12),
       onChanged: widget.onChanged,
     );
   }

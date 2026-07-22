@@ -1,10 +1,35 @@
 enum TableType {
   generic,
+  materialList,
   plateLayout,
   masterMix,
   checklist,
   staining,
   serialDilution,
+}
+
+ProtocolTable createMaterialListTable({
+  required String id,
+  List<List<dynamic>> data = const [],
+}) {
+  const headers = ['Name', 'Qty', 'Stock conc', 'Catalog #', 'Mfr'];
+  final rows = data.isEmpty
+      ? <List<dynamic>>[
+          ['', '', '', '', ''],
+        ]
+      : data.map((row) => List<dynamic>.from(row)).toList();
+  return ProtocolTable(
+    id: id,
+    title: 'Material List',
+    type: TableType.materialList,
+    columnHeaders: headers,
+    rowHeaders: List.generate(rows.length, (index) => '${index + 1}'),
+    data: rows,
+    cellColors: List.generate(
+      rows.length,
+      (_) => List.generate(headers.length, (_) => ''),
+    ),
+  );
 }
 
 class ProtocolTable {

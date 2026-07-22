@@ -194,6 +194,7 @@ class ProtocolTablePreview extends StatelessWidget {
         case TableType.serialDilution:
         case TableType.checklist:
         case TableType.generic:
+        case TableType.materialList:
           return null;
       }
     } catch (_) {
@@ -215,6 +216,8 @@ class ProtocolTablePreview extends StatelessWidget {
         return Icons.water_drop;
       case TableType.generic:
         return Icons.table_chart;
+      case TableType.materialList:
+        return Icons.inventory_2_outlined;
     }
   }
 
@@ -232,6 +235,8 @@ class ProtocolTablePreview extends StatelessWidget {
         return 'Checklist';
       case TableType.generic:
         return 'Generic table';
+      case TableType.materialList:
+        return 'Material list';
     }
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../lab_math/lab_calculation.dart';
+import '../../lab_math/widgets/concentration_input_row.dart';
 import '../models/serial_dilution_input.dart';
 import '../services/serial_dilution_calculator_service.dart';
 import '../widgets/serial_dilution_result_table.dart';
@@ -39,6 +40,10 @@ class _SerialDilutionManagerScreenState
     ConcentrationUnit.ugML,
     ConcentrationUnit.ngML,
     ConcentrationUnit.percent,
+    ConcentrationUnit.X,
+    ConcentrationUnit.ratio,
+    ConcentrationUnit.cellsML,
+    ConcentrationUnit.gMol,
   ];
 
   @override
@@ -389,53 +394,18 @@ class _SerialDilutionManagerScreenState
     final unit =
         _input.startingDilutionConcentrationUnit ??
         _input.stockConcentrationUnit;
-    return Row(
-      children: [
-        Expanded(
-          flex: 2,
-          child: _DelayedTextField(
-            initialValue: (_input.startingDilutionConcentration ?? 0)
-                .toString(),
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              labelText: 'Starting Dilution Concentration (D0)',
-              border: OutlineInputBorder(),
-            ),
-            style: const TextStyle(fontSize: _uniformFontSize),
-            onCommit: (v) => setState(
-              () => _input = _input.copyWith(
-                startingDilutionConcentration: double.tryParse(v) ?? 0,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: DropdownButtonFormField<ConcentrationUnit>(
-            initialValue: unit,
-            decoration: const InputDecoration(
-              labelText: 'Unit',
-              border: OutlineInputBorder(),
-            ),
-            items: _compatibleUnits(_input.stockConcentrationUnit)
-                .map(
-                  (u) => DropdownMenuItem(
-                    value: u,
-                    child: Text(
-                      _unitLabel(u),
-                      style: const TextStyle(fontSize: _uniformFontSize),
-                    ),
-                  ),
-                )
-                .toList(),
-            onChanged: (v) => setState(
-              () => _input = _input.copyWith(
-                startingDilutionConcentrationUnit: v,
-              ),
-            ),
-          ),
-        ),
-      ],
+    return ConcentrationInputRow(
+      label: 'Starting Dilution Concentration (D0)',
+      value: _input.startingDilutionConcentration ?? 0,
+      unit: unit,
+      units: _compatibleUnits(_input.stockConcentrationUnit),
+      onValueChanged: (value) => setState(
+        () => _input = _input.copyWith(startingDilutionConcentration: value),
+      ),
+      onUnitChanged: (unit) => setState(
+        () => _input = _input.copyWith(startingDilutionConcentrationUnit: unit),
+      ),
+      fontSize: _uniformFontSize,
     );
   }
 
@@ -489,50 +459,18 @@ class _SerialDilutionManagerScreenState
   Widget _buildTargetConcRow() {
     final unit =
         _input.targetLowestConcentrationUnit ?? _input.stockConcentrationUnit;
-    return Row(
-      children: [
-        Expanded(
-          flex: 2,
-          child: _DelayedTextField(
-            initialValue: (_input.targetLowestConcentration ?? 0).toString(),
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              labelText: 'Target Lowest Concentration',
-              border: OutlineInputBorder(),
-            ),
-            style: const TextStyle(fontSize: _uniformFontSize),
-            onCommit: (v) => setState(
-              () => _input = _input.copyWith(
-                targetLowestConcentration: double.tryParse(v) ?? 0,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: DropdownButtonFormField<ConcentrationUnit>(
-            initialValue: unit,
-            decoration: const InputDecoration(
-              labelText: 'Unit',
-              border: OutlineInputBorder(),
-            ),
-            items: _compatibleUnits(_input.stockConcentrationUnit)
-                .map(
-                  (u) => DropdownMenuItem(
-                    value: u,
-                    child: Text(
-                      _unitLabel(u),
-                      style: const TextStyle(fontSize: _uniformFontSize),
-                    ),
-                  ),
-                )
-                .toList(),
-            onChanged: (v) => setState(
-              () => _input = _input.copyWith(targetLowestConcentrationUnit: v),
-            ),
-          ),
-        ),
-      ],
+    return ConcentrationInputRow(
+      label: 'Target Lowest Concentration',
+      value: _input.targetLowestConcentration ?? 0,
+      unit: unit,
+      units: _compatibleUnits(_input.stockConcentrationUnit),
+      onValueChanged: (value) => setState(
+        () => _input = _input.copyWith(targetLowestConcentration: value),
+      ),
+      onUnitChanged: (unit) => setState(
+        () => _input = _input.copyWith(targetLowestConcentrationUnit: unit),
+      ),
+      fontSize: _uniformFontSize,
     );
   }
 
@@ -543,44 +481,14 @@ class _SerialDilutionManagerScreenState
     Function(double) onVal,
     Function(ConcentrationUnit) onUnit,
   ) {
-    return Row(
-      children: [
-        Expanded(
-          flex: 2,
-          child: _DelayedTextField(
-            initialValue: value.toString(),
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: InputDecoration(
-              labelText: label,
-              border: const OutlineInputBorder(),
-            ),
-            style: const TextStyle(fontSize: _uniformFontSize),
-            onCommit: (v) => onVal(double.tryParse(v) ?? 0),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: DropdownButtonFormField<ConcentrationUnit>(
-            initialValue: unit,
-            decoration: const InputDecoration(
-              labelText: 'Unit',
-              border: OutlineInputBorder(),
-            ),
-            items: _allowedConcentrationUnits
-                .map(
-                  (u) => DropdownMenuItem(
-                    value: u,
-                    child: Text(
-                      _unitLabel(u),
-                      style: const TextStyle(fontSize: _uniformFontSize),
-                    ),
-                  ),
-                )
-                .toList(),
-            onChanged: (v) => onUnit(v!),
-          ),
-        ),
-      ],
+    return ConcentrationInputRow(
+      label: label,
+      value: value,
+      unit: unit,
+      units: _allowedConcentrationUnits,
+      onValueChanged: onVal,
+      onUnitChanged: onUnit,
+      fontSize: _uniformFontSize,
     );
   }
 
@@ -738,10 +646,6 @@ class _SerialDilutionManagerScreenState
       case SeriesLengthMode.targetLowestConcentration:
         return 'Target lowest concentration';
     }
-  }
-
-  String _unitLabel(ConcentrationUnit unit) {
-    return LabCalculation.unitLabel(unit);
   }
 }
 

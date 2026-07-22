@@ -95,6 +95,61 @@ void main() {
     expect(restored.actionItems, equals(['Legacy action']));
   });
 
+  test('legacy protocol materials are exposed as a material list table', () {
+    final protocol = Protocol.fromJson({
+      'id': 'PT-20260720-AY-4KE4',
+      'title': 'VPK BSA (Pierce BCA kit)',
+      'objective': 'Determine concentration of total proteins',
+      'materials': [
+        {
+          'id': 'mat_b',
+          'name': 'B',
+          'quantity': '110.0 uL',
+          'stockConcentration': '1 X',
+        },
+        {'id': 'mat_a', 'name': 'A', 'quantity': '5.39 mL'},
+      ],
+      'steps': [],
+      'tables': [],
+    });
+
+    final table = protocol.materialListTable;
+    expect(table, isNotNull);
+    expect(table!.type, TableType.materialList);
+    expect(
+      table.columnHeaders,
+      equals(['Name', 'Qty', 'Stock conc', 'Catalog #', 'Mfr']),
+    );
+    expect(table.data.first, equals(['B', '110.0 uL', '1 X', '', '']));
+    expect(protocol.materialListTableId, isNull);
+    expect(protocol.tables, isEmpty);
+  });
+
+  test('linked material list table survives a protocol JSON round trip', () {
+    final table = createMaterialListTable(
+      id: 'material_list_protocol_1',
+      data: [
+        ['PBS', '10 mL', '1 X', 'PBS-123', 'LabCo'],
+      ],
+    );
+    final protocol = Protocol(
+      id: 'protocol_1',
+      title: 'Linked materials',
+      objective: '',
+      description: '',
+      materialListTableId: table.id,
+      steps: const [],
+      tables: [table],
+    );
+
+    final restored = Protocol.fromJson(
+      jsonDecode(jsonEncode(protocol.toJson())),
+    );
+
+    expect(restored.materialListTableId, table.id);
+    expect(restored.materialListTable?.toJson(), equals(table.toJson()));
+  });
+
   test('protocol IDs include display name initials and random suffix', () {
     expect(initialsFromDisplayName('Aviv Yehuda'), equals('AY'));
     expect(initialsFromDisplayName('John Smith'), equals('JS'));

@@ -267,9 +267,15 @@ class MasterMixCalculatorService {
             reagentMassGrams: massGrams,
             formattedReagentVolume: formattedAmount,
             formattedStockConcentration:
-                '${param.input.stockConcentration} ${_unitLabel(param.input.stockConcentrationUnit)}',
+                LabCalculation.formatInputConcentration(
+                  param.input.stockConcentration,
+                  param.input.stockConcentrationUnit,
+                ),
             formattedFinalConcentration:
-                '${param.input.finalConcentration} ${_unitLabel(param.input.finalConcentrationUnit)}',
+                LabCalculation.formatInputConcentration(
+                  param.input.finalConcentration,
+                  param.input.finalConcentrationUnit,
+                ),
             warnings: reagentWarnings,
             suggestions: reagentSuggestions,
             transferEvaluation: transferEvaluation,
@@ -501,10 +507,6 @@ class MasterMixCalculatorService {
       return (targetConc / 100.0) * (volumeL * 1000);
     }
     return null;
-  }
-
-  String _unitLabel(ConcentrationUnit unit) {
-    return LabCalculation.unitLabel(unit, unicodeMicro: true);
   }
 }
 

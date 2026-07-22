@@ -43,6 +43,9 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
   final TransformationController _transformationController =
       TransformationController();
 
+  bool get _isEditableGridType =>
+      _type == TableType.generic || _type == TableType.materialList;
+
   @override
   void initState() {
     super.initState();
@@ -105,7 +108,7 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
     );
     _title = table.title;
     _type = table.type;
-    if (_type == TableType.generic) {
+    if (_isEditableGridType) {
       _genericGridGenerated =
           !needsDimensionSetup ||
           table.data.isNotEmpty ||
@@ -207,7 +210,7 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
           'wizard_state': jsonEncode(_masterMixWizard.toJson()),
         if (_type == TableType.staining)
           'wizard_state': jsonEncode(_stainingWizard.toJson()),
-        if (_type == TableType.generic) ...{
+        if (_isEditableGridType) ...{
           'needs_dimension_setup': 'false',
           'generic_total_rows': (_data.length + 1).toString(),
           'generic_columns': _colHeaders.length.toString(),
@@ -258,11 +261,11 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
       _data.add(List.generate(_colHeaders.length, (_) => ''));
       _cellColors.add(List.generate(_colHeaders.length, (_) => ''));
       _rowHeaders.add(
-        _type == TableType.generic
+        _isEditableGridType
             ? (_rowHeaders.length + 2).toString()
             : (_rowHeaders.length + 1).toString(),
       );
-      if (_type == TableType.generic) _genericTotalRows = _data.length + 1;
+      if (_isEditableGridType) _genericTotalRows = _data.length + 1;
     });
   }
 
@@ -275,12 +278,12 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
         // Renumber rows if they are just numbers
         for (int i = 0; i < _rowHeaders.length; i++) {
           if (int.tryParse(_rowHeaders[i]) != null) {
-            _rowHeaders[i] = _type == TableType.generic
+            _rowHeaders[i] = _isEditableGridType
                 ? (i + 2).toString()
                 : (i + 1).toString();
           }
         }
-        if (_type == TableType.generic) _genericTotalRows = _data.length + 1;
+        if (_isEditableGridType) _genericTotalRows = _data.length + 1;
       });
     }
   }
@@ -294,7 +297,7 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
         row.add('');
       }
       _colHeaders.add(_columnName(_colHeaders.length));
-      if (_type == TableType.generic) _genericColumns = _colHeaders.length;
+      if (_isEditableGridType) _genericColumns = _colHeaders.length;
     });
   }
 
@@ -341,7 +344,11 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: Text(
-            _type == TableType.generic ? 'Generic Table Editor' : 'Edit Table',
+            _type == TableType.materialList
+                ? 'Material List Editor'
+                : _type == TableType.generic
+                ? 'Generic Table Editor'
+                : 'Edit Table',
           ),
           actions: [
             IconButton(
@@ -357,7 +364,7 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
             if (_allTables.length > 1) _buildTableNavigation(),
             const Divider(height: 1),
             Expanded(
-              child: _type == TableType.generic
+              child: _isEditableGridType
                   ? (_genericGridGenerated
                         ? _buildGenericGrid()
                         : _buildGenericSetupCard())
@@ -629,14 +636,14 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
   }
 
   void _handleDone(BuildContext context) async {
-    if (_type == TableType.generic && !_genericGridGenerated) {
+    if (_isEditableGridType && !_genericGridGenerated) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Generate the table grid before saving.')),
       );
       return;
     }
 
-    final String suggestedName = _type == TableType.generic
+    final String suggestedName = _isEditableGridType
         ? (_title.isEmpty ? 'Generic Table' : _title)
         : _title;
     final String? name = await _showSaveDialog(context, suggestedName);

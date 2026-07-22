@@ -182,6 +182,7 @@ class DriveSyncService {
     } catch (e) {
       _logDriveError('sync', e);
       await _markUnsyncedProtocols(ProtocolSyncStatus.error);
+      await _storageService.markSavedTablesSyncError();
       return DriveSyncSummary(errors: 1, details: _friendlyError(e));
     }
   }
@@ -394,6 +395,8 @@ class DriveSyncService {
       }
       uploaded++;
     }
+
+    await _storageService.markSavedTablesSynced();
 
     return DriveSyncSummary(downloaded: downloaded, uploaded: uploaded);
   }

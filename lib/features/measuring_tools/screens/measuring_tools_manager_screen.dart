@@ -82,83 +82,87 @@ class _MeasuringToolsManagerScreenState
               ),
             ),
           Expanded(
-            child: ListView.separated(
-              padding: const EdgeInsets.all(16),
-              itemCount: _tools.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 12),
-              itemBuilder: (context, index) {
-                final tool = _tools[index];
-                return Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    tool.toolName,
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.titleMedium,
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '${tool.toolType} • rank ${tool.accuracyRank}',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
-                                  ),
-                                ],
+            child: RefreshIndicator(
+              onRefresh: _loadTools,
+              child: ListView.separated(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(16),
+                itemCount: _tools.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 12),
+                itemBuilder: (context, index) {
+                  final tool = _tools[index];
+                  return Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      tool.toolName,
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.titleMedium,
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '${tool.toolType} • rank ${tool.accuracyRank}',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            Switch(
-                              value: tool.active,
-                              onChanged: (value) async {
-                                await _saveTools([
-                                  for (final item in _tools)
-                                    if (item.id == tool.id)
-                                      item.copyWith(active: value)
-                                    else
-                                      item,
-                                ]);
-                              },
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 12,
-                          runSpacing: 8,
-                          children: [
-                            _infoChip('Min', '${tool.minVolumeUl} uL'),
-                            _infoChip('Max', '${tool.maxVolumeUl} uL'),
-                            _infoChip('Increment', '${tool.incrementUl} uL'),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            TextButton(
-                              onPressed: () => _editTool(existing: tool),
-                              child: const Text('Edit'),
-                            ),
-                            TextButton(
-                              onPressed: () => _deleteTool(tool),
-                              child: const Text('Delete'),
-                            ),
-                          ],
-                        ),
-                      ],
+                              Switch(
+                                value: tool.active,
+                                onChanged: (value) async {
+                                  await _saveTools([
+                                    for (final item in _tools)
+                                      if (item.id == tool.id)
+                                        item.copyWith(active: value)
+                                      else
+                                        item,
+                                  ]);
+                                },
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Wrap(
+                            spacing: 12,
+                            runSpacing: 8,
+                            children: [
+                              _infoChip('Min', '${tool.minVolumeUl} uL'),
+                              _infoChip('Max', '${tool.maxVolumeUl} uL'),
+                              _infoChip('Increment', '${tool.incrementUl} uL'),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              TextButton(
+                                onPressed: () => _editTool(existing: tool),
+                                child: const Text('Edit'),
+                              ),
+                              TextButton(
+                                onPressed: () => _deleteTool(tool),
+                                child: const Text('Delete'),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
           ),
         ],

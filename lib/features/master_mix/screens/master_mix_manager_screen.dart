@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../models/master_mix_wizard.dart';
 import '../../../widgets/unsaved_changes_pop_scope.dart';
 import '../../lab_math/lab_calculation.dart';
+import '../../lab_math/widgets/concentration_input_row.dart';
 import '../services/master_mix_calculator_service.dart';
 import '../widgets/master_mix_result_table.dart';
 
@@ -36,6 +37,8 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
     ConcentrationUnit.ngML,
     ConcentrationUnit.percent,
     ConcentrationUnit.X,
+    ConcentrationUnit.ratio,
+    ConcentrationUnit.cellsML,
     ConcentrationUnit.gMol,
   ];
   bool _canActuallyPop = false;
@@ -821,44 +824,14 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
     Function(double) onVal,
     Function(ConcentrationUnit) onUnit,
   ) {
-    return Row(
-      children: [
-        Expanded(
-          flex: 2,
-          child: _DelayedTextField(
-            initialValue: value.toString(),
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: InputDecoration(
-              labelText: label,
-              border: const OutlineInputBorder(),
-            ),
-            style: const TextStyle(fontSize: _uniformFontSize),
-            onCommit: (v) => onVal(double.tryParse(v) ?? 0),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: DropdownButtonFormField<ConcentrationUnit>(
-            initialValue: unit,
-            decoration: const InputDecoration(
-              labelText: 'Unit',
-              border: OutlineInputBorder(),
-            ),
-            items: _masterMixConcentrationUnits
-                .map(
-                  (u) => DropdownMenuItem(
-                    value: u,
-                    child: Text(
-                      LabCalculation.unitLabel(u),
-                      style: const TextStyle(fontSize: _uniformFontSize),
-                    ),
-                  ),
-                )
-                .toList(),
-            onChanged: (v) => onUnit(v!),
-          ),
-        ),
-      ],
+    return ConcentrationInputRow(
+      label: label,
+      value: value,
+      unit: unit,
+      units: _masterMixConcentrationUnits,
+      onValueChanged: onVal,
+      onUnitChanged: onUnit,
+      fontSize: _uniformFontSize,
     );
   }
 }

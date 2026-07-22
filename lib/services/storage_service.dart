@@ -6,6 +6,8 @@ import '../models/deleted_protocol_record.dart';
 import '../models/protocol.dart';
 import '../models/protocol_table.dart';
 
+enum SavedTablesSyncState { synced, pending, error }
+
 class StorageService {
   static const String _storageKey = 'completed_protocols_json';
   static const String _activeKey = 'active_protocol_json';
@@ -14,6 +16,7 @@ class StorageService {
   static const String _deletedProtocolsKey = 'deleted_protocols_json';
   static const String _savedTablesKey = 'saved_tables_json';
   static const String _deletedSavedTablesKey = 'deleted_saved_tables_json';
+  static const String _savedTablesSyncStateKey = 'saved_tables_sync_state';
 
   Future<void> saveProtocols(List<Protocol> protocols) async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -199,12 +202,46 @@ class StorageService {
     }
   }
 
-  Future<void> saveSavedTables(List<ProtocolTable> tables) async {
+  Future<void> saveSavedTables(
+    List<ProtocolTable> tables, {
+    bool markPending = true,
+  }) async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String jsonString = jsonEncode(
       tables.map((table) => table.toJson()).toList(),
     );
     await prefs.setString(_savedTablesKey, jsonString);
+    if (markPending) {
+      await prefs.setString(
+        _savedTablesSyncStateKey,
+        SavedTablesSyncState.pending.name,
+      );
+    }
+  }
+
+  Future<SavedTablesSyncState> loadSavedTablesSyncState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getString(_savedTablesSyncStateKey);
+    return SavedTablesSyncState.values.firstWhere(
+      (state) => state.name == stored,
+      orElse: () => SavedTablesSyncState.pending,
+    );
+  }
+
+  Future<void> markSavedTablesSynced() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _savedTablesSyncStateKey,
+      SavedTablesSyncState.synced.name,
+    );
+  }
+
+  Future<void> markSavedTablesSyncError() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _savedTablesSyncStateKey,
+      SavedTablesSyncState.error.name,
+    );
   }
 
   Future<List<ProtocolTable>> loadSavedTables() async {

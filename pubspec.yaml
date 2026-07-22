@@ -44,6 +44,7 @@ dependencies:
   pdf: ^3.11.1
   printing: ^5.13.0
   web: ^1.1.1
+  fl_chart: ^1.2.0
 
 dev_dependencies:
   flutter_test:

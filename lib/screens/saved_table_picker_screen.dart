@@ -178,6 +178,8 @@ class _SavedTablePickerScreenState extends State<SavedTablePickerScreen> {
         return Icons.grid_on;
       case TableType.checklist:
         return Icons.checklist;
+      case TableType.materialList:
+        return Icons.inventory_2_outlined;
       case TableType.generic:
         return Icons.table_chart;
     }
@@ -195,6 +197,8 @@ class _SavedTablePickerScreenState extends State<SavedTablePickerScreen> {
         return Colors.orange;
       case TableType.checklist:
         return Colors.green;
+      case TableType.materialList:
+        return Colors.teal;
       case TableType.generic:
         return Colors.grey;
     }
@@ -212,6 +216,8 @@ class _SavedTablePickerScreenState extends State<SavedTablePickerScreen> {
         return 'Plate layout';
       case TableType.checklist:
         return 'Checklist';
+      case TableType.materialList:
+        return 'Material list';
       case TableType.generic:
         return 'Generic table';
     }

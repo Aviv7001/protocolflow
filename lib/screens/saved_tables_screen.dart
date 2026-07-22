@@ -79,9 +79,10 @@ class _SavedTablesScreenState extends State<SavedTablesScreen> {
         top: !widget.embedded,
         child: _isLoading
             ? const Center(child: CircularProgressIndicator())
-            : _tables.isEmpty
-            ? _buildEmptyState()
-            : _buildTableList(),
+            : RefreshIndicator(
+                onRefresh: _loadTables,
+                child: _tables.isEmpty ? _buildEmptyState() : _buildTableList(),
+              ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _openLabTools,
@@ -92,42 +93,47 @@ class _SavedTablesScreenState extends State<SavedTablesScreen> {
   }
 
   Widget _buildEmptyState() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.table_chart_outlined,
-              size: 56,
-              color: Colors.grey.shade500,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'No saved tables yet',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Use Lab Tools to generate a table and save it here.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey.shade600),
-            ),
-            const SizedBox(height: 20),
-            ElevatedButton.icon(
-              onPressed: _openLabTools,
-              icon: const Icon(Icons.science),
-              label: const Text('Open Lab Tools'),
-            ),
-          ],
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.all(24),
+      children: [
+        SizedBox(
+          height: 360,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.table_chart_outlined,
+                size: 56,
+                color: Colors.grey.shade500,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'No saved tables yet',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Use Lab Tools to generate a table and save it here.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey.shade600),
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton.icon(
+                onPressed: _openLabTools,
+                icon: const Icon(Icons.science),
+                label: const Text('Open Lab Tools'),
+              ),
+            ],
+          ),
         ),
-      ),
+      ],
     );
   }
 
   Widget _buildTableList() {
     return GridView.builder(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 88),
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
         maxCrossAxisExtent: 170,
@@ -194,6 +200,8 @@ class _SavedTablesScreenState extends State<SavedTablesScreen> {
         return 'Plate layout';
       case TableType.checklist:
         return 'Checklist';
+      case TableType.materialList:
+        return 'Material list';
       case TableType.generic:
         return 'Generic table';
     }

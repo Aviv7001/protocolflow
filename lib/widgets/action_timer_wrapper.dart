@@ -153,7 +153,7 @@ class _ActionTimerWrapperState extends State<ActionTimerWrapper> {
       children: [
         Positioned.fill(
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.zero,
             child: LinearProgressIndicator(
               value: progress,
               backgroundColor: Colors.transparent,

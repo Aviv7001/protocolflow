@@ -9,7 +9,6 @@ import '../services/auth_service.dart';
 import '../services/drive_sync_service.dart';
 import '../services/export_service.dart';
 import '../services/import_service.dart';
-import '../services/storage_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/google_sign_in_button.dart';
 import '../features/measuring_tools/screens/measuring_tools_manager_screen.dart';
@@ -18,6 +17,7 @@ import 'library_screen.dart';
 import 'run_protocol_screen.dart';
 import 'protocol_detail_screen.dart';
 import 'saved_tables_screen.dart';
+import 'dashboard_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -28,20 +28,17 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final TaskService _taskService = TaskService();
-  final StorageService _storageService = StorageService();
   final AuthService _authService = AuthService.instance;
   final ExportService _exportService = ExportService();
   final ImportService _importService = ImportService();
   List<Task> _todayTasks = [];
-  int _templateCount = 0;
-  int _protocolCount = 0;
-  int _savedTableCount = 0;
   bool _isLoadingTasks = true;
-  bool _isLoadingOverview = true;
+  bool _areTasksShrunk = false;
   bool _isSigningIn = false;
   bool _isSyncing = false;
   bool _hasAttemptedStartupSync = false;
   int _selectedDesktopIndex = 0;
+  int _libraryInitialTabIndex = 1;
   bool _isSidebarOpen = false;
   AppUser? _signedInUser;
   StreamSubscription<AppUser?>? _userSubscription;
@@ -54,7 +51,6 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _startTimer();
     _loadTasks();
-    _loadOverview();
     _initializeAuth();
   }
 
@@ -97,19 +93,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _loadOverview() async {
-    final protocols = await _storageService.loadProtocols();
-    final savedTables = await _storageService.loadSavedTables();
-    if (!mounted) return;
-
-    setState(() {
-      _templateCount = protocols.where((p) => p.isTemplate).length;
-      _protocolCount = protocols.where((p) => !p.isTemplate).length;
-      _savedTableCount = savedTables.length;
-      _isLoadingOverview = false;
-    });
-  }
-
   Future<void> _addTask(String title, String description) async {
     final newTask = Task(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -123,14 +106,28 @@ class _HomeScreenState extends State<HomeScreen> {
     await _taskService.saveTodayTasks(_todayTasks);
   }
 
-  Future<void> _toggleTaskDone(Task task) async {
+  Future<void> _updateTaskStatus(Task task, TaskStatus status) async {
     final index = _todayTasks.indexWhere((t) => t.id == task.id);
     if (index != -1) {
       setState(() {
-        _todayTasks[index] = _todayTasks[index].copyWith(isDone: !task.isDone);
+        _todayTasks[index] = _todayTasks[index].copyWith(status: status);
       });
       await _taskService.saveTodayTasks(_todayTasks);
     }
+  }
+
+  Future<void> _moveTask(Task task, int direction) async {
+    final index = _todayTasks.indexWhere((item) => item.id == task.id);
+    final targetIndex = index + direction;
+    if (index == -1 || targetIndex < 0 || targetIndex >= _todayTasks.length) {
+      return;
+    }
+
+    setState(() {
+      final movedTask = _todayTasks.removeAt(index);
+      _todayTasks.insert(targetIndex, movedTask);
+    });
+    await _taskService.saveTodayTasks(_todayTasks);
   }
 
   Future<void> _removeTask(Task task) async {
@@ -147,10 +144,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _refreshRunningProtocols() async {
     await loadPersistentProtocols();
-    await _loadOverview();
     if (mounted) {
       setState(() {});
     }
+  }
+
+  Future<void> _refreshHome() async {
+    await Future.wait([_loadTasks(), _refreshRunningProtocols()]);
   }
 
   void _showAddTaskDialog() {
@@ -448,46 +448,52 @@ class _HomeScreenState extends State<HomeScreen> {
         selected: _selectedDesktopIndex == 0,
       ),
       _DesktopNavItem(
-        icon: Icons.library_books_outlined,
-        label: 'Library',
+        icon: Icons.dashboard_outlined,
+        label: 'Dashboard',
         onTap: () => _selectPage(1),
         selected: _selectedDesktopIndex == 1,
       ),
       _DesktopNavItem(
-        icon: Icons.play_circle_outline,
-        label: 'Running',
-        onTap: () => _selectPage(2),
+        icon: Icons.library_books_outlined,
+        label: 'Library',
+        onTap: () => _openLibraryTab(1),
         selected: _selectedDesktopIndex == 2,
       ),
       _DesktopNavItem(
-        icon: Icons.table_chart_outlined,
-        label: 'Tables',
+        icon: Icons.play_circle_outline,
+        label: 'Running',
         onTap: () => _selectPage(3),
         selected: _selectedDesktopIndex == 3,
       ),
       _DesktopNavItem(
-        icon: Icons.science_outlined,
-        label: 'Lab Tools',
+        icon: Icons.table_chart_outlined,
+        label: 'Tables',
         onTap: () => _selectPage(4),
         selected: _selectedDesktopIndex == 4,
       ),
       _DesktopNavItem(
-        icon: Icons.straighten,
-        label: 'Measuring',
+        icon: Icons.science_outlined,
+        label: 'Lab Tools',
         onTap: () => _selectPage(5),
         selected: _selectedDesktopIndex == 5,
       ),
       _DesktopNavItem(
-        icon: Icons.history,
-        label: 'History',
+        icon: Icons.straighten,
+        label: 'Measuring',
         onTap: () => _selectPage(6),
         selected: _selectedDesktopIndex == 6,
       ),
       _DesktopNavItem(
-        icon: Icons.settings_outlined,
-        label: 'Settings',
+        icon: Icons.history,
+        label: 'History',
         onTap: () => _selectPage(7),
         selected: _selectedDesktopIndex == 7,
+      ),
+      _DesktopNavItem(
+        icon: Icons.settings_outlined,
+        label: 'Settings',
+        onTap: () => _selectPage(8),
+        selected: _selectedDesktopIndex == 8,
       ),
     ];
 
@@ -649,16 +655,23 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: _toggleSidebar,
             icon: const Icon(Icons.menu),
           ),
-          const SizedBox(width: 4),
-          Flexible(
-            child: Text(
-              _currentPageTitle,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+          const Expanded(child: SizedBox.shrink()),
+          const Text(
+            'ProtocolFlow',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+          ),
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: IconButton(
+                tooltip: _signedInUser == null ? 'Sign in' : 'Account',
+                onPressed: _isSigningIn ? null : _handleProfilePressed,
+                icon: const Icon(Icons.account_circle),
+              ),
             ),
           ),
-          const Spacer(),
         ],
       ),
     );
@@ -671,61 +684,58 @@ class _HomeScreenState extends State<HomeScreen> {
   void _selectPage(int index) {
     setState(() => _selectedDesktopIndex = index);
     if (index == 0) {
-      _loadOverview();
       _refreshRunningProtocols();
     }
     if (_isSidebarOpen) setState(() => _isSidebarOpen = false);
   }
 
-  String get _currentPageTitle {
-    switch (_selectedDesktopIndex) {
-      case 1:
-        return 'Library';
-      case 2:
-        return 'Running';
-      case 3:
-        return 'Tables';
-      case 4:
-        return 'Lab Tools';
-      case 5:
-        return 'Measuring Tools';
-      case 6:
-        return 'History';
-      case 7:
-        return 'Settings';
-      default:
-        return 'Home';
-    }
+  void _openLibraryTab(int tabIndex) {
+    setState(() {
+      _libraryInitialTabIndex = tabIndex;
+      _selectedDesktopIndex = 2;
+      _isSidebarOpen = false;
+    });
   }
 
   Widget _buildSelectedPage() {
     if (_selectedDesktopIndex == 1) {
-      return const LibraryScreen(embedded: true);
+      return _buildDashboardWorkspace();
     }
     if (_selectedDesktopIndex == 2) {
-      return const LibraryScreen(initialTabIndex: 2, embedded: true);
+      return LibraryScreen(
+        key: ValueKey(_libraryInitialTabIndex),
+        initialTabIndex: _libraryInitialTabIndex,
+        embedded: true,
+      );
     }
     if (_selectedDesktopIndex == 3) {
-      return const SavedTablesScreen(embedded: true);
+      return const LibraryScreen(initialTabIndex: 2, embedded: true);
     }
     if (_selectedDesktopIndex == 4) {
-      return const LabToolsScreen(embedded: true);
+      return const SavedTablesScreen(embedded: true);
     }
     if (_selectedDesktopIndex == 5) {
-      return const MeasuringToolsManagerScreen(embedded: true);
+      return const LabToolsScreen(embedded: true);
     }
     if (_selectedDesktopIndex == 6) {
-      return const LibraryScreen(initialTabIndex: 3, embedded: true);
+      return const MeasuringToolsManagerScreen(embedded: true);
     }
     if (_selectedDesktopIndex == 7) {
+      return const LibraryScreen(initialTabIndex: 3, embedded: true);
+    }
+    if (_selectedDesktopIndex == 8) {
       return _buildSettingsWorkspace();
     }
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(12, 16, 12, 24),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 1440),
-        child: _buildHomeWorkspace(),
+    return RefreshIndicator(
+      onRefresh: _refreshHome,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(12, 16, 12, 24),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1440),
+          child: _buildHomeWorkspace(),
+        ),
       ),
     );
   }
@@ -735,7 +745,7 @@ class _HomeScreenState extends State<HomeScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Operations Today',
+          'Hello ${_signedInUser?.displayName ?? 'there'}',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: Theme.of(context).textTheme.headlineSmall,
@@ -751,29 +761,21 @@ class _HomeScreenState extends State<HomeScreen> {
         const SizedBox(height: 20),
         _buildTasksSection(),
         const SizedBox(height: 20),
-        _buildDataHealthStrip(),
-        const SizedBox(height: 20),
         _buildSectionTitle('Quick Start'),
         _buildWorkspaceActions(),
-        const SizedBox(height: 28),
-        _buildSectionTitle('Overview'),
-        _buildOverviewGrid(),
       ],
     );
+  }
+
+  Widget _buildDashboardWorkspace() {
+    return const DashboardScreen();
   }
 
   Widget _buildResumeWorkSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSectionHeader(
-          'Resume Work',
-          trailing: IconButton(
-            tooltip: 'Refresh running protocols',
-            onPressed: _refreshRunningProtocols,
-            icon: const Icon(Icons.refresh),
-          ),
-        ),
+        _buildSectionHeader('Resume Work'),
         if (activeProtocol != null || runningProtocols.isNotEmpty)
           Column(
             children: [
@@ -791,7 +793,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 Align(
                   alignment: Alignment.centerLeft,
                   child: TextButton.icon(
-                    onPressed: () => _selectPage(2),
+                    onPressed: () => _selectPage(3),
                     icon: const Icon(Icons.play_circle_outline),
                     label: const Text('View all running'),
                   ),
@@ -820,7 +822,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                     TextButton(
-                      onPressed: () => _selectPage(1),
+                      onPressed: () => _openLibraryTab(1),
                       child: const Text(
                         'Open library',
                         maxLines: 1,
@@ -839,7 +841,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       SizedBox(
                         width: double.infinity,
                         child: TextButton(
-                          onPressed: () => _selectPage(1),
+                          onPressed: () => _openLibraryTab(1),
                           child: const Text('Open library'),
                         ),
                       ),
@@ -854,51 +856,98 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildTasksSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionHeader(
-          'Today\'s Tasks',
-          trailing: TextButton(
-            onPressed: () => Navigator.pushNamed(context, '/task_history'),
-            child: const Text(
-              'Tasks History',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      margin: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ListTile(
+            dense: true,
+            leading: const Icon(Icons.today_outlined, color: AppColors.primary),
+            title: Text(
+              'Today\'s Tasks',
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            subtitle: Text(
+              '${_todayTasks.length} '
+              '${_todayTasks.length == 1 ? 'task' : 'tasks'}',
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: 'Task history',
+                  icon: const Icon(Icons.history),
+                  onPressed: () =>
+                      Navigator.pushNamed(context, '/task_history'),
+                ),
+                IconButton(
+                  tooltip: _areTasksShrunk ? 'Expand tasks' : 'Shrink tasks',
+                  icon: Icon(
+                    _areTasksShrunk ? Icons.unfold_more : Icons.unfold_less,
+                  ),
+                  onPressed: () =>
+                      setState(() => _areTasksShrunk = !_areTasksShrunk),
+                ),
+              ],
             ),
           ),
-        ),
-        if (_isLoadingTasks)
-          const Center(child: CircularProgressIndicator())
-        else if (_todayTasks.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 8.0),
-            child: Text(
-              'No tasks for today.',
-              style: TextStyle(color: AppColors.textSecondary),
+          if (!_areTasksShrunk) ...[
+            const Divider(height: 1),
+            if (_isLoadingTasks)
+              const Padding(
+                padding: EdgeInsets.all(20),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_todayTasks.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                child: Text(
+                  'No tasks for today.',
+                  style: TextStyle(color: AppColors.textSecondary),
+                ),
+              )
+            else
+              ..._todayTasks.asMap().entries.map((entry) {
+                return Column(
+                  children: [
+                    _buildTaskItem(entry.value, entry.key),
+                    if (entry.key < _todayTasks.length - 1)
+                      const Divider(height: 1, indent: 54),
+                  ],
+                );
+              }),
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: Wrap(
+                alignment: WrapAlignment.center,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: _showAddTaskDialog,
+                    icon: const Icon(Icons.add),
+                    label: const Text('Add Task'),
+                  ),
+                  if (_todayTasks.any(
+                    (task) => task.status == TaskStatus.completed,
+                  ))
+                    TextButton.icon(
+                      onPressed: _archiveTasks,
+                      icon: const Icon(Icons.archive_outlined),
+                      label: const Text('Move completed to history'),
+                    ),
+                ],
+              ),
             ),
-          )
-        else
-          ..._todayTasks.map((task) => _buildTaskItem(task)),
-        const SizedBox(height: 8),
-        Align(
-          alignment: Alignment.center,
-          child: ElevatedButton.icon(
-            onPressed: _showAddTaskDialog,
-            icon: const Icon(Icons.add),
-            label: const Text('Add Task'),
-          ),
-        ),
-        if (_todayTasks.any((t) => t.isDone))
-          Align(
-            alignment: Alignment.center,
-            child: TextButton.icon(
-              onPressed: _archiveTasks,
-              icon: const Icon(Icons.archive_outlined),
-              label: const Text('Move done tasks to history'),
-            ),
-          ),
-      ],
+          ],
+        ],
+      ),
     );
   }
 
@@ -910,25 +959,31 @@ class _HomeScreenState extends State<HomeScreen> {
         description: 'Create a protocol or template',
         onTap: () async {
           final result = await Navigator.pushNamed(context, '/create');
-          if (result != null) _loadOverview();
+          if (result != null) _refreshRunningProtocols();
         },
+      ),
+      _WorkspaceAction(
+        icon: Icons.folder_open_outlined,
+        label: 'Library',
+        description: 'Browse protocols',
+        onTap: () => _openLibraryTab(1),
       ),
       _WorkspaceAction(
         icon: Icons.table_chart_outlined,
         label: 'Tables',
         description: 'Saved and reusable tables',
-        onTap: () => _selectPage(3),
+        onTap: () => _selectPage(4),
       ),
       _WorkspaceAction(
         icon: Icons.science_outlined,
         label: 'Lab tools',
         description: 'Plates, mixes, staining, calculators',
-        onTap: () => _selectPage(4),
+        onTap: () => _selectPage(5),
       ),
       _WorkspaceAction(
-        icon: Icons.folder_open_outlined,
-        label: 'Library',
-        description: 'Browse templates and protocols',
+        icon: Icons.dashboard_outlined,
+        label: 'Dashboard',
+        description: 'Protocol activity and lab data',
         onTap: () => _selectPage(1),
       ),
     ];
@@ -988,109 +1043,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildDataHealthStrip() {
-    final user = _signedInUser;
-    final syncLabel = _isSyncing
-        ? 'Syncing with Google Drive'
-        : user == null
-        ? 'Sign in to sync with Google Drive'
-        : 'Google Drive ready';
-
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final narrow = constraints.maxWidth < 360;
-                final status = Row(
-                  children: [
-                    Icon(
-                      user == null
-                          ? Icons.cloud_off_outlined
-                          : Icons.cloud_done_outlined,
-                      color: user == null
-                          ? AppColors.warning
-                          : AppColors.success,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        syncLabel,
-                        maxLines: narrow ? 2 : 1,
-                        overflow: TextOverflow.ellipsis,
-                        softWrap: true,
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                  ],
-                );
-                final action = TextButton(
-                  onPressed: _isSyncing
-                      ? null
-                      : user == null
-                      ? _handleProfilePressed
-                      : () => _runDriveSync(promptIfNecessary: true),
-                  child: Text(user == null ? 'Sign in' : 'Sync'),
-                );
-
-                if (narrow) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      status,
-                      const SizedBox(height: 8),
-                      SizedBox(width: double.infinity, child: action),
-                    ],
-                  );
-                }
-
-                return Row(
-                  children: [
-                    Expanded(child: status),
-                    action,
-                  ],
-                );
-              },
-            ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _buildDataHealthChip(
-                  Icons.copy_all,
-                  'Templates',
-                  _isLoadingOverview ? '-' : _templateCount.toString(),
-                ),
-                _buildDataHealthChip(
-                  Icons.article_outlined,
-                  'Protocols',
-                  _isLoadingOverview ? '-' : _protocolCount.toString(),
-                ),
-                _buildDataHealthChip(
-                  Icons.table_chart_outlined,
-                  'Tables',
-                  _isLoadingOverview ? '-' : _savedTableCount.toString(),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDataHealthChip(IconData icon, String label, String value) {
-    return Chip(
-      avatar: Icon(icon, size: 18, color: AppColors.primary),
-      label: Text('$label: $value'),
     );
   }
 
@@ -1240,7 +1192,6 @@ class _HomeScreenState extends State<HomeScreen> {
         context,
       ).showSnackBar(SnackBar(content: Text(result.message)));
       if (result.success) {
-        await _loadOverview();
         await _refreshRunningProtocols();
       }
     }
@@ -1255,7 +1206,7 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             ListTile(
               leading: const Icon(Icons.file_upload),
-              title: const Text('Import JSON'),
+              title: const Text('Import ProtocolFlow file'),
               onTap: () => Navigator.pop(context, 'import'),
             ),
             const Divider(height: 1),
@@ -1293,7 +1244,10 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildSectionHeader(String title, {required Widget trailing}) {
+  Widget _buildSectionHeader(
+    String title, {
+    Widget trailing = const SizedBox.shrink(),
+  }) {
     return LayoutBuilder(
       builder: (context, constraints) {
         if (constraints.maxWidth < 340) {
@@ -1316,104 +1270,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         );
       },
-    );
-  }
-
-  Widget _buildOverviewGrid() {
-    final runningCount = _runningProtocolCount;
-    final items = [
-      _OverviewItem(
-        icon: Icons.copy_all,
-        label: 'Templates',
-        value: _templateCount,
-        onTap: () => _selectPage(1),
-      ),
-      _OverviewItem(
-        icon: Icons.article_outlined,
-        label: 'Protocols',
-        value: _protocolCount,
-        onTap: () => _selectPage(1),
-      ),
-      _OverviewItem(
-        icon: Icons.play_circle_outline,
-        label: 'Running',
-        value: runningCount,
-        onTap: () => _selectPage(2),
-      ),
-      _OverviewItem(
-        icon: Icons.check_circle_outline,
-        label: 'Completed',
-        value: completedProtocols.length,
-        onTap: () => _selectPage(6),
-      ),
-      _OverviewItem(
-        icon: Icons.table_chart,
-        label: 'Saved Tables',
-        value: _savedTableCount,
-        onTap: () => _selectPage(3),
-      ),
-    ];
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final crossAxisCount = constraints.maxWidth >= 720
-            ? 5
-            : constraints.maxWidth >= 420
-            ? 3
-            : 2;
-        const spacing = 8.0;
-        final itemWidth =
-            (constraints.maxWidth - (spacing * (crossAxisCount - 1))) /
-            crossAxisCount;
-
-        return Wrap(
-          spacing: spacing,
-          runSpacing: spacing,
-          children: items
-              .map(
-                (item) =>
-                    SizedBox(width: itemWidth, child: _buildOverviewCard(item)),
-              )
-              .toList(),
-        );
-      },
-    );
-  }
-
-  Widget _buildOverviewCard(_OverviewItem item) {
-    return Card(
-      margin: EdgeInsets.zero,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: item.onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(item.icon, color: AppColors.primary),
-              const SizedBox(height: 12),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 180),
-                child: Text(
-                  _isLoadingOverview ? '-' : item.displayValue,
-                  key: ValueKey(
-                    '${item.label}_${item.displayValue}_$_isLoadingOverview',
-                  ),
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                item.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: AppColors.textSecondary),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 
@@ -1449,45 +1305,160 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildTaskItem(Task task) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 4),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      child: ListTile(
-        dense: true,
-        visualDensity: VisualDensity.compact,
-        leading: SizedBox(
-          width: 24,
-          height: 24,
-          child: Checkbox(
-            value: task.isDone,
-            onChanged: (val) => _toggleTaskDone(task),
-          ),
-        ),
-        title: Text(
-          task.title,
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-            decoration: task.isDone ? TextDecoration.lineThrough : null,
-            color: task.isDone ? AppColors.textDisabled : null,
-          ),
-        ),
-        subtitle: task.description.isNotEmpty
-            ? Text(task.description, style: const TextStyle(fontSize: 12))
-            : null,
-        trailing: IconButton(
-          icon: const Icon(
-            Icons.remove_circle_outline,
-            color: AppColors.error,
-            size: 18,
-          ),
-          onPressed: () => _removeTask(task),
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(),
-        ),
+  Widget _buildTaskItem(Task task, int index) {
+    final isCompleted = task.status == TaskStatus.completed;
+    final title = Text(
+      task.title,
+      style: TextStyle(
+        fontSize: 14,
+        decoration: isCompleted ? TextDecoration.lineThrough : null,
+        color: isCompleted ? AppColors.textDisabled : null,
       ),
     );
+    final description = task.description.isEmpty
+        ? null
+        : Text(task.description, style: const TextStyle(fontSize: 12));
+    final number = CircleAvatar(
+      radius: 14,
+      child: Text('${index + 1}', style: const TextStyle(fontSize: 12)),
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 520) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                number,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      title,
+                      ?description,
+                      const SizedBox(height: 6),
+                      _buildTaskStatusMenu(task),
+                    ],
+                  ),
+                ),
+                _buildTaskOptions(task, index),
+              ],
+            ),
+          );
+        }
+
+        return ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+          leading: number,
+          title: title,
+          subtitle: description,
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildTaskStatusMenu(task),
+              _buildTaskOptions(task, index),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildTaskStatusMenu(Task task) {
+    final color = _taskStatusColor(task.status);
+    return PopupMenuButton<TaskStatus>(
+      tooltip: 'Change task status',
+      onSelected: (status) => _updateTaskStatus(task, status),
+      itemBuilder: (context) => TaskStatus.values
+          .map(
+            (status) => PopupMenuItem(
+              value: status,
+              child: Row(
+                children: [
+                  Icon(
+                    _taskStatusIcon(status),
+                    color: _taskStatusColor(status),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(_taskStatusLabel(status)),
+                ],
+              ),
+            ),
+          )
+          .toList(),
+      child: Chip(
+        avatar: Icon(_taskStatusIcon(task.status), size: 16, color: color),
+        label: Text(
+          _taskStatusLabel(task.status),
+          style: TextStyle(fontSize: 12, color: color),
+        ),
+        visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        side: BorderSide(color: color.withValues(alpha: 0.45)),
+      ),
+    );
+  }
+
+  Widget _buildTaskOptions(Task task, int index) {
+    return PopupMenuButton<String>(
+      tooltip: 'Task options',
+      icon: const Icon(Icons.more_vert),
+      onSelected: (value) {
+        if (value == 'moveUp') _moveTask(task, -1);
+        if (value == 'moveDown') _moveTask(task, 1);
+        if (value == 'delete') _removeTask(task);
+      },
+      itemBuilder: (context) => [
+        PopupMenuItem(
+          value: 'moveUp',
+          enabled: index > 0,
+          child: const Text('Move up'),
+        ),
+        PopupMenuItem(
+          value: 'moveDown',
+          enabled: index < _todayTasks.length - 1,
+          child: const Text('Move down'),
+        ),
+        const PopupMenuDivider(),
+        const PopupMenuItem(value: 'delete', child: Text('Delete task')),
+      ],
+    );
+  }
+
+  String _taskStatusLabel(TaskStatus status) {
+    switch (status) {
+      case TaskStatus.notStarted:
+        return 'Not started';
+      case TaskStatus.inProgress:
+        return 'In progress';
+      case TaskStatus.completed:
+        return 'Completed';
+    }
+  }
+
+  IconData _taskStatusIcon(TaskStatus status) {
+    switch (status) {
+      case TaskStatus.notStarted:
+        return Icons.radio_button_unchecked;
+      case TaskStatus.inProgress:
+        return Icons.play_circle_outline;
+      case TaskStatus.completed:
+        return Icons.check_circle_outline;
+    }
+  }
+
+  Color _taskStatusColor(TaskStatus status) {
+    switch (status) {
+      case TaskStatus.notStarted:
+        return AppColors.textSecondary;
+      case TaskStatus.inProgress:
+        return AppColors.info;
+      case TaskStatus.completed:
+        return AppColors.success;
+    }
   }
 
   Widget _buildRunningProtocolCard() {
@@ -1573,22 +1544,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-}
-
-class _OverviewItem {
-  const _OverviewItem({
-    required this.icon,
-    required this.label,
-    this.value,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final int? value;
-  final VoidCallback onTap;
-
-  String get displayValue => (value ?? 0).toString();
 }
 
 class _DesktopNavItem {

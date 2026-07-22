@@ -24,6 +24,40 @@ void main() {
       expect(LabCalculation.unitLabel(ConcentrationUnit.mgUL), 'mg/uL');
       expect(LabCalculation.unitLabel(ConcentrationUnit.ngUL), 'ng/uL');
     });
+
+    test('parses colon and slash ratio inputs', () {
+      expect(
+        LabCalculation.parseConcentrationInput('1:50', ConcentrationUnit.ratio),
+        50,
+      );
+      expect(
+        LabCalculation.parseConcentrationInput('1/50', ConcentrationUnit.ratio),
+        50,
+      );
+      expect(
+        LabCalculation.parseConcentrationInput('2:10', ConcentrationUnit.ratio),
+        5,
+      );
+    });
+
+    test('combines cells per mL coefficient and exponent', () {
+      final value = LabCalculation.parseConcentrationInput(
+        '5',
+        ConcentrationUnit.cellsML,
+        cellsExponent: 6,
+      );
+
+      expect(value, 5000000);
+      expect(LabCalculation.cellsCoefficient(value!), 5);
+      expect(LabCalculation.cellsExponent(value), 6);
+      expect(
+        LabCalculation.formatInputConcentration(
+          value,
+          ConcentrationUnit.cellsML,
+        ),
+        '5 x 10^6 cells/mL',
+      );
+    });
   });
 
   group('LabCalculation smart pipetting helpers', () {

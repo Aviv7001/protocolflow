@@ -29,6 +29,66 @@ class TableSelectionScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cards = [
+      _buildTypeCard(
+        context,
+        'Master Mix',
+        'Calculator',
+        Icons.biotech,
+        Colors.blue,
+        onTap: () => _openMasterMix(context),
+      ),
+      _buildTypeCard(
+        context,
+        'Staining',
+        'Panel Generator',
+        Icons.color_lens,
+        Colors.indigo,
+        onTap: () => _openStaining(context),
+      ),
+      _buildTypeCard(
+        context,
+        'Serial Dilution',
+        'Standard Curve',
+        Icons.water_drop,
+        Colors.cyan,
+        onTap: () => _openSerialDilution(context),
+      ),
+      _buildTypeCard(
+        context,
+        'Plate Layout',
+        'Well Designer',
+        Icons.grid_on,
+        Colors.orange,
+        onTap: () => _openPlateLayout(context),
+      ),
+      _buildTypeCard(
+        context,
+        'Generic Table',
+        'Custom Grid',
+        Icons.table_chart,
+        Colors.grey,
+        onTap: () => _openGenericTable(context),
+      ),
+      if (!standaloneMode)
+        _buildTypeCard(
+          context,
+          'Saved Tables',
+          'Choose Existing',
+          Icons.folder_copy,
+          Colors.green,
+          onTap: () => _openSavedTables(context),
+        ),
+      _buildTypeCard(
+        context,
+        'Import Table',
+        'From CSV/Excel',
+        Icons.file_upload,
+        Colors.purple,
+        onTap: () => _importGenericTable(context),
+      ),
+    ];
+
     return Scaffold(
       appBar: embedded ? null : AppBar(title: Text(title), centerTitle: true),
       body: Padding(
@@ -46,70 +106,15 @@ class TableSelectionScreen extends StatelessWidget {
             Text(subtitle, style: TextStyle(color: Colors.grey.shade600)),
             const SizedBox(height: 24),
             Expanded(
-              child: GridView.count(
-                crossAxisCount: 2,
-                crossAxisSpacing: 16,
-                mainAxisSpacing: 16,
-                childAspectRatio: 0.9,
-                children: [
-                  _buildTypeCard(
-                    context,
-                    'Master Mix',
-                    'Calculator',
-                    Icons.biotech,
-                    Colors.blue,
-                    onTap: () => _openMasterMix(context),
-                  ),
-                  _buildTypeCard(
-                    context,
-                    'Staining',
-                    'Panel Generator',
-                    Icons.color_lens,
-                    Colors.indigo,
-                    onTap: () => _openStaining(context),
-                  ),
-                  _buildTypeCard(
-                    context,
-                    'Serial Dilution',
-                    'Standard Curve',
-                    Icons.water_drop,
-                    Colors.cyan,
-                    onTap: () => _openSerialDilution(context),
-                  ),
-                  _buildTypeCard(
-                    context,
-                    'Plate Layout',
-                    'Well Designer',
-                    Icons.grid_on,
-                    Colors.orange,
-                    onTap: () => _openPlateLayout(context),
-                  ),
-                  _buildTypeCard(
-                    context,
-                    'Generic Table',
-                    'Custom Grid',
-                    Icons.table_chart,
-                    Colors.grey,
-                    onTap: () => _openGenericTable(context),
-                  ),
-                  if (!standaloneMode)
-                    _buildTypeCard(
-                      context,
-                      'Saved Tables',
-                      'Choose Existing',
-                      Icons.folder_copy,
-                      Colors.green,
-                      onTap: () => _openSavedTables(context),
-                    ),
-                  _buildTypeCard(
-                    context,
-                    'Import Table',
-                    'From CSV/Excel',
-                    Icons.file_upload,
-                    Colors.purple,
-                    onTap: () => _importGenericTable(context),
-                  ),
-                ],
+              child: GridView.builder(
+                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 240,
+                  mainAxisExtent: 180,
+                  crossAxisSpacing: 16,
+                  mainAxisSpacing: 16,
+                ),
+                itemCount: cards.length,
+                itemBuilder: (context, index) => cards[index],
               ),
             ),
           ],
@@ -131,7 +136,7 @@ class TableSelectionScreen extends StatelessWidget {
       elevation: isAvailable ? 2 : 0,
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(8),
         side: BorderSide(
           color: isAvailable
               ? color.withValues(alpha: 0.2)
@@ -165,6 +170,8 @@ class TableSelectionScreen extends StatelessWidget {
               Text(
                 title,
                 textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 15,
@@ -175,6 +182,8 @@ class TableSelectionScreen extends StatelessWidget {
               Text(
                 subtitle,
                 textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 11,
                   color: isAvailable
