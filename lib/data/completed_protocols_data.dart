@@ -15,7 +15,10 @@ Future<void> loadPersistentProtocols() async {
 }
 
 Future<void> savePersistentProtocols() async {
-  await _storageService.saveCompletedProtocols(completedProtocols);
+  await _storageService.saveCompletedProtocols(
+    completedProtocols,
+    markPending: false,
+  );
   await _storageService.saveActiveProtocol(activeProtocol);
   await _storageService.saveRunningProtocols(runningProtocols);
 }

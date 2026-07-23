@@ -29,6 +29,7 @@ class Protocol {
   final String objective;
   final String description;
   final String? ownerId;
+  final String? projectId;
   final String? createdByName;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -51,6 +52,7 @@ class Protocol {
     required this.objective,
     required this.description,
     this.ownerId,
+    this.projectId,
     this.createdByName,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -106,6 +108,7 @@ class Protocol {
     String? objective,
     String? description,
     String? ownerId,
+    String? projectId,
     String? createdByName,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -128,6 +131,7 @@ class Protocol {
       objective: objective ?? this.objective,
       description: description ?? this.description,
       ownerId: ownerId ?? this.ownerId,
+      projectId: projectId ?? this.projectId,
       createdByName: createdByName ?? this.createdByName,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -161,6 +165,7 @@ class Protocol {
       'title': title,
       // Drive sync will use ownerId + protocolId to scope remote ownership.
       'ownerId': ownerId,
+      'projectId': projectId,
       'createdByName': createdByName,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
@@ -204,6 +209,7 @@ class Protocol {
       objective: json['objective'] ?? '',
       description: json['description'] ?? '',
       ownerId: json['ownerId'],
+      projectId: json['projectId'],
       createdByName: json['createdByName'],
       createdAt: _parseDate(json['createdAt']) ?? now,
       updatedAt: _parseDate(json['updatedAt']) ?? now,

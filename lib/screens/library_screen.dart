@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/protocol.dart';
+import '../models/project.dart';
 import '../models/active_protocol.dart';
 import '../data/completed_protocols_data.dart';
 import '../services/storage_service.dart';
@@ -9,15 +10,19 @@ import '../theme/app_colors.dart';
 import '../widgets/sync_status_chip.dart';
 import '../utils/date_time_format.dart';
 import 'protocol_detail_screen.dart';
+import 'projects_screen.dart';
 import 'completed_protocol_detail_screen.dart';
 import 'run_protocol_screen.dart';
+import 'create_protocol_screen.dart';
 
 class LibraryScreen extends StatefulWidget {
   final int initialTabIndex;
+  final String? initialProjectId;
   final bool embedded;
   const LibraryScreen({
     super.key,
     this.initialTabIndex = 0,
+    this.initialProjectId,
     this.embedded = false,
   });
 
@@ -32,7 +37,11 @@ class _LibraryScreenState extends State<LibraryScreen>
   final ExportService _exportService = ExportService();
   final ImportService _importService = ImportService();
   List<Protocol> _protocols = [];
+  List<Project> _projects = [];
+  String? _selectedProjectId;
   bool _isLoading = true;
+  static const String _allProjectsFilter = '__all__';
+  static const String _unassignedProjectsFilter = '__unassigned__';
 
   @override
   void initState() {
@@ -47,12 +56,14 @@ class _LibraryScreenState extends State<LibraryScreen>
         setState(() {});
       }
     });
+    _selectedProjectId = widget.initialProjectId;
     _loadData();
   }
 
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
     _protocols = await _storageService.loadProtocols();
+    _projects = await _storageService.loadProjects();
     setState(() => _isLoading = false);
   }
 
@@ -129,6 +140,16 @@ class _LibraryScreenState extends State<LibraryScreen>
           : AppBar(
               title: const Text('Library'),
               actions: [
+                IconButton(
+                  tooltip: 'Projects',
+                  icon: const Icon(Icons.folder_copy_outlined),
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const ProjectsScreen(),
+                    ),
+                  ).then((_) => _loadData()),
+                ),
                 PopupMenuButton<String>(
                   onSelected: (value) async {
                     if (value == 'export_all') {
@@ -195,7 +216,7 @@ class _LibraryScreenState extends State<LibraryScreen>
           (_tabController.index == 0 || _tabController.index == 1)
           ? FloatingActionButton(
               onPressed: () async {
-                final result = await Navigator.pushNamed(context, '/create');
+                final result = await _openCreateProtocol();
                 if (result != null) _loadData();
               },
               child: const Icon(Icons.add),
@@ -209,11 +230,19 @@ class _LibraryScreenState extends State<LibraryScreen>
 
     final filteredProtocols = _protocols
         .where((p) => p.isTemplate == isTemplate)
+        .where((p) => _matchesSelectedProject(p))
         .toList();
 
     if (filteredProtocols.isEmpty) {
-      return _refreshableEmpty(
-        isTemplate ? 'No templates found.' : 'No protocols found.',
+      return Column(
+        children: [
+          _buildProjectFilter(),
+          Expanded(
+            child: _refreshableEmpty(
+              isTemplate ? 'No templates found.' : 'No protocols found.',
+            ),
+          ),
+        ],
       );
     }
 
@@ -221,9 +250,10 @@ class _LibraryScreenState extends State<LibraryScreen>
       onRefresh: _refreshData,
       child: ListView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
-        itemCount: filteredProtocols.length,
+        itemCount: filteredProtocols.length + 1,
         itemBuilder: (context, index) {
-          final protocol = filteredProtocols[index];
+          if (index == 0) return _buildProjectFilter();
+          final protocol = filteredProtocols[index - 1];
           return ListTile(
             leading: Icon(
               isTemplate ? Icons.copy_all : Icons.article_outlined,
@@ -247,6 +277,10 @@ class _LibraryScreenState extends State<LibraryScreen>
                   'Created by: ${protocol.createdByName ?? 'Unknown user'}',
                   style: const TextStyle(fontSize: 12),
                 ),
+                Text(
+                  'Project: ${_projectNameFor(protocol.projectId)}',
+                  style: const TextStyle(fontSize: 12),
+                ),
                 const SizedBox(height: 4),
                 SyncStatusChip(status: protocol.syncStatus, compact: true),
               ],
@@ -264,9 +298,138 @@ class _LibraryScreenState extends State<LibraryScreen>
     );
   }
 
+  Future<Object?> _openCreateProtocol() {
+    return Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CreateProtocolScreen(
+          initialProjectId: _selectedProjectId == '__unassigned__'
+              ? null
+              : _selectedProjectId,
+        ),
+      ),
+    );
+  }
+
+  bool _matchesSelectedProject(Protocol protocol) {
+    final selected = _selectedProjectId;
+    if (selected == null) return true;
+    final projectId = protocol.projectId;
+    if (selected == _unassignedProjectsFilter) {
+      return projectId == null ||
+          projectId.isEmpty ||
+          !_projects.any((project) => project.id == projectId);
+    }
+    return projectId == selected;
+  }
+
+  String _projectNameFor(String? projectId) {
+    if (projectId == null || projectId.isEmpty) return 'Unassigned';
+    for (final project in _projects) {
+      if (project.id == projectId) return project.name;
+    }
+    return 'Unassigned';
+  }
+
+  Widget _buildProjectFilter() {
+    final project = _selectedProject();
+    final color = project == null
+        ? AppColors.primary
+        : Color(project.colorValue);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: PopupMenuButton<String>(
+          tooltip: 'Filter by project',
+          initialValue: _selectedProjectId ?? _allProjectsFilter,
+          onSelected: (value) => setState(
+            () =>
+                _selectedProjectId = value == _allProjectsFilter ? null : value,
+          ),
+          itemBuilder: (context) => [
+            const PopupMenuItem<String>(
+              value: _allProjectsFilter,
+              child: ListTile(
+                leading: Icon(Icons.all_inbox_outlined),
+                title: Text('All projects'),
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+            for (final project in _projects)
+              PopupMenuItem<String>(
+                value: project.id,
+                child: ListTile(
+                  leading: Icon(
+                    Icons.folder_outlined,
+                    color: Color(project.colorValue),
+                  ),
+                  title: Text(project.name),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            const PopupMenuDivider(),
+            const PopupMenuItem<String>(
+              value: _unassignedProjectsFilter,
+              child: ListTile(
+                leading: Icon(Icons.folder_off_outlined),
+                title: Text('Unassigned'),
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+          ],
+          child: Chip(
+            avatar: Icon(_projectFilterIcon(), color: color, size: 18),
+            label: Text(_projectFilterLabel()),
+            side: BorderSide(color: color.withValues(alpha: 0.35)),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Project? _selectedProject() {
+    for (final project in _projects) {
+      if (project.id == _selectedProjectId) return project;
+    }
+    return null;
+  }
+
+  IconData _projectFilterIcon() {
+    if (_selectedProjectId == _unassignedProjectsFilter) {
+      return Icons.folder_off_outlined;
+    }
+    if (_selectedProjectId == null) return Icons.all_inbox_outlined;
+    return Icons.folder_outlined;
+  }
+
+  String _projectFilterLabel() {
+    if (_selectedProjectId == null) return 'All projects';
+    if (_selectedProjectId == _unassignedProjectsFilter) return 'Unassigned';
+    return _selectedProject()?.name ?? 'Unassigned';
+  }
+
   Widget _buildRunningTab() {
-    if (activeProtocol == null && runningProtocols.isEmpty) {
-      return _refreshableEmpty('No protocols currently running.');
+    final activeMatches =
+        activeProtocol != null &&
+        _matchesSelectedProject(activeProtocol!.protocol);
+    final filteredRunning = runningProtocols
+        .where(
+          (p) =>
+              (activeProtocol == null ||
+                  p.protocol.id != activeProtocol!.protocol.id) &&
+              _matchesSelectedProject(p.protocol),
+        )
+        .toList();
+
+    if (!activeMatches && filteredRunning.isEmpty) {
+      return Column(
+        children: [
+          _buildProjectFilter(),
+          Expanded(child: _refreshableEmpty('No protocols currently running.')),
+        ],
+      );
     }
 
     return RefreshIndicator(
@@ -274,7 +437,8 @@ class _LibraryScreenState extends State<LibraryScreen>
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
-          if (activeProtocol != null) ...[
+          _buildProjectFilter(),
+          if (activeMatches) ...[
             const Padding(
               padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Text(
@@ -288,7 +452,7 @@ class _LibraryScreenState extends State<LibraryScreen>
             ),
             _buildActiveProtocolItem(),
           ],
-          if (runningProtocols.isNotEmpty) ...[
+          if (filteredRunning.isNotEmpty) ...[
             const Padding(
               padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Text(
@@ -300,13 +464,7 @@ class _LibraryScreenState extends State<LibraryScreen>
                 ),
               ),
             ),
-            ...runningProtocols
-                .where(
-                  (p) =>
-                      activeProtocol == null ||
-                      p.protocol.id != activeProtocol!.protocol.id,
-                )
-                .map((p) => _buildRunningProtocolItem(p)),
+            ...filteredRunning.map((p) => _buildRunningProtocolItem(p)),
           ],
         ],
       ),
@@ -344,6 +502,10 @@ class _LibraryScreenState extends State<LibraryScreen>
             Text(status, style: const TextStyle(color: AppColors.info)),
             Text(
               'Started: ${activeProtocol!.startedAt.toString().split('.')[0]}',
+              style: const TextStyle(fontSize: 11),
+            ),
+            Text(
+              'Project: ${_projectNameFor(protocol.projectId)}',
               style: const TextStyle(fontSize: 11),
             ),
           ],
@@ -396,7 +558,16 @@ class _LibraryScreenState extends State<LibraryScreen>
           protocol.title,
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
-        subtitle: Text('Steps completed: $completedCount/$totalSteps'),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Steps completed: $completedCount/$totalSteps'),
+            Text(
+              'Project: ${_projectNameFor(protocol.projectId)}',
+              style: const TextStyle(fontSize: 12),
+            ),
+          ],
+        ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -461,17 +632,27 @@ class _LibraryScreenState extends State<LibraryScreen>
   }
 
   Widget _buildHistoryTab() {
-    if (completedProtocols.isEmpty) {
-      return _refreshableEmpty('No history found.');
+    final filteredCompleted = completedProtocols
+        .where((completed) => _matchesSelectedProject(completed.protocol))
+        .toList();
+
+    if (filteredCompleted.isEmpty) {
+      return Column(
+        children: [
+          _buildProjectFilter(),
+          Expanded(child: _refreshableEmpty('No history found.')),
+        ],
+      );
     }
 
     return RefreshIndicator(
       onRefresh: _refreshData,
       child: ListView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
-        itemCount: completedProtocols.length,
+        itemCount: filteredCompleted.length + 1,
         itemBuilder: (context, index) {
-          final completed = completedProtocols[index];
+          if (index == 0) return _buildProjectFilter();
+          final completed = filteredCompleted[index - 1];
           final dateStr = formatDate(completed.completedAt);
 
           return ListTile(
@@ -485,6 +666,11 @@ class _LibraryScreenState extends State<LibraryScreen>
                   'Completed by: '
                   '${completed.completedByName ?? 'Unknown user'}',
                 ),
+                Text(
+                  'Project: ${_projectNameFor(completed.protocol.projectId)}',
+                ),
+                const SizedBox(height: 4),
+                SyncStatusChip(status: completed.syncStatus, compact: true),
               ],
             ),
             trailing: const Icon(Icons.chevron_right),

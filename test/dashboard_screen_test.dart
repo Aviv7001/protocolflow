@@ -83,12 +83,16 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 700));
 
-    expect(find.byType(BarChart), findsOneWidget);
+    expect(find.byType(LineChart), findsOneWidget);
     expect(find.byType(PieChart), findsNWidgets(2));
     expect(find.text('BCA assay'), findsWidgets);
-    expect(find.text('2h 0m'), findsOneWidget);
     expect(find.text('Protocols'), findsWidgets);
     expect(find.text('Templates'), findsWidgets);
+    expect(find.text('Projects'), findsWidgets);
+    expect(find.text('Completed runs'), findsOneWidget);
+    expect(find.text('Today tasks'), findsOneWidget);
+    expect(find.text('Task history'), findsOneWidget);
+    expect(find.text('Measuring tools'), findsOneWidget);
     expect(find.text('Tables'), findsWidgets);
     final tableSynced = tester.widget<Text>(
       find.descendant(

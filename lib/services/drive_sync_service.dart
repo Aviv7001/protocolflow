@@ -68,6 +68,7 @@ class DriveSyncService {
   static const String _savedTablesFileName = 'saved_tables.json';
   static const String _tasksFileName = 'today_tasks.json';
   static const String _measuringToolsFileName = 'measuring_tools.json';
+  static const String _projectsFileName = 'projects.json';
 
   final AuthService _authService = AuthService.instance;
   final StorageService _storageService = StorageService();
@@ -163,6 +164,14 @@ class DriveSyncService {
       }
 
       await _storageService.saveProtocols(merged);
+      final projectSummary = await _syncProjects(headers);
+      downloaded += projectSummary.downloaded;
+      uploaded += projectSummary.uploaded;
+      errors += projectSummary.errors;
+      if (projectSummary.details != null) {
+        errorDetails.add(projectSummary.details!);
+      }
+
       final completedSummary = await _syncCompletedProtocols(headers);
       downloaded += completedSummary.downloaded;
       uploaded += completedSummary.uploaded;
@@ -182,10 +191,18 @@ class DriveSyncService {
       final taskSummary = await _syncTasks(headers);
       downloaded += taskSummary.downloaded;
       uploaded += taskSummary.uploaded;
+      errors += taskSummary.errors;
+      if (taskSummary.details != null) {
+        errorDetails.add(taskSummary.details!);
+      }
 
       final measuringToolSummary = await _syncMeasuringTools(headers);
       downloaded += measuringToolSummary.downloaded;
       uploaded += measuringToolSummary.uploaded;
+      errors += measuringToolSummary.errors;
+      if (measuringToolSummary.details != null) {
+        errorDetails.add(measuringToolSummary.details!);
+      }
 
       return DriveSyncSummary(
         downloaded: downloaded,
@@ -198,6 +215,22 @@ class DriveSyncService {
       _logDriveError('sync', e);
       await _markUnsyncedProtocols(ProtocolSyncStatus.error);
       await _storageService.markSavedTablesSyncError();
+      await _storageService.saveSyncBundleState(
+        SyncBundleType.projects,
+        SyncBundleState.error,
+      );
+      await _storageService.saveSyncBundleState(
+        SyncBundleType.completedProtocols,
+        SyncBundleState.error,
+      );
+      await _storageService.saveSyncBundleState(
+        SyncBundleType.tasks,
+        SyncBundleState.error,
+      );
+      await _storageService.saveSyncBundleState(
+        SyncBundleType.measuringTools,
+        SyncBundleState.error,
+      );
       return DriveSyncSummary(errors: 1, details: _friendlyError(e));
     }
   }
@@ -294,6 +327,7 @@ class DriveSyncService {
       if (!file.name.endsWith('.json')) continue;
       if (file.name.startsWith('completed_protocol_')) continue;
       if (file.name == _savedTablesFileName) continue;
+      if (file.name == _projectsFileName) continue;
       final response = await http.get(
         Uri.parse('$_baseUrl/files/${file.id}?alt=media'),
         headers: headers,
@@ -311,11 +345,69 @@ class DriveSyncService {
     return remotes;
   }
 
+  Future<DriveSyncSummary> _syncProjects(Map<String, String> headers) async {
+    final localPayload = await _storageService.buildProjectsSyncPayload();
+    final remoteFile = await _findDriveFile(_projectsFileName, headers);
+    if (remoteFile == null) {
+      await _uploadJsonFile(
+        fileName: _projectsFileName,
+        content: const JsonEncoder.withIndent('  ').convert(localPayload),
+        headers: headers,
+      );
+      await _storageService.saveSyncBundleState(
+        SyncBundleType.projects,
+        SyncBundleState.synced,
+      );
+      return const DriveSyncSummary(uploaded: 1);
+    }
+
+    final decoded = await _downloadJson(remoteFile.id, headers);
+    final remotePayload = decoded is Map<String, dynamic>
+        ? decoded
+        : {
+            'updatedAt': DateTime.fromMillisecondsSinceEpoch(
+              0,
+              isUtc: true,
+            ).toIso8601String(),
+            'projects': decoded is List ? decoded : <dynamic>[],
+          };
+
+    final remoteUpdatedAt = _payloadUpdatedAt(remotePayload);
+    final localUpdatedAt = _payloadUpdatedAt(localPayload);
+    if (remoteUpdatedAt.isAfter(localUpdatedAt)) {
+      await _storageService.replaceProjectsFromSyncPayload(remotePayload);
+      await _storageService.saveSyncBundleState(
+        SyncBundleType.projects,
+        SyncBundleState.synced,
+      );
+      return const DriveSyncSummary(downloaded: 1);
+    }
+    if (jsonEncode(remotePayload) != jsonEncode(localPayload)) {
+      await _uploadJsonFile(
+        fileName: _projectsFileName,
+        content: const JsonEncoder.withIndent('  ').convert(localPayload),
+        headers: headers,
+        existingFileId: remoteFile.id,
+      );
+      await _storageService.saveSyncBundleState(
+        SyncBundleType.projects,
+        SyncBundleState.synced,
+      );
+      return const DriveSyncSummary(uploaded: 1);
+    }
+    await _storageService.saveSyncBundleState(
+      SyncBundleType.projects,
+      SyncBundleState.synced,
+    );
+    return const DriveSyncSummary();
+  }
+
   Future<DriveSyncSummary> _syncCompletedProtocols(
     Map<String, String> headers,
   ) async {
     var downloaded = 0;
     var uploaded = 0;
+    final syncTime = DateTime.now();
     final localCompleted = await _storageService.loadCompletedProtocols();
     final remoteCompleted = await _downloadRemoteCompletedProtocols(headers);
     final remoteById = {
@@ -326,42 +418,67 @@ class DriveSyncService {
 
     for (final remote in remoteCompleted) {
       if (localIds.contains(remote.id)) continue;
-      merged.add(remote);
+      merged.add(
+        remote.copyWith(
+          lastSyncedAt: syncTime,
+          syncStatus: ProtocolSyncStatus.synced,
+        ),
+      );
       downloaded++;
     }
 
     for (final local in localCompleted) {
       final remote = remoteById[local.id];
       if (remote != null) {
-        final resolved = _enrichCompletedProtocol(local, remote);
+        final resolved = _enrichCompletedProtocol(local, remote).copyWith(
+          driveFileId: remote.driveFileId,
+          lastSyncedAt: syncTime,
+          syncStatus: ProtocolSyncStatus.synced,
+        );
         final localIndex = merged.indexWhere((item) => item.id == local.id);
-        if (_completedMetadataDiffers(local, resolved) && localIndex >= 0) {
+        if ((_completedMetadataDiffers(local, resolved) ||
+                local.syncStatus != ProtocolSyncStatus.synced) &&
+            localIndex >= 0) {
           merged[localIndex] = resolved;
           downloaded++;
         }
         if (_completedMetadataDiffers(remote, resolved)) {
-          await _uploadJsonFile(
+          final fileId = await _uploadJsonFile(
             fileName: _completedFileName(resolved.id),
             content: const JsonEncoder.withIndent(
               '  ',
             ).convert(resolved.toJson()),
             headers: headers,
+            existingFileId: remote.driveFileId,
           );
+          if (localIndex >= 0) {
+            merged[localIndex] = resolved.copyWith(driveFileId: fileId);
+          }
           uploaded++;
         }
         continue;
       }
-      await _uploadJsonFile(
+      final fileId = await _uploadJsonFile(
         fileName: _completedFileName(local.id),
         content: const JsonEncoder.withIndent('  ').convert(local.toJson()),
         headers: headers,
       );
+      final localIndex = merged.indexWhere((item) => item.id == local.id);
+      if (localIndex >= 0) {
+        merged[localIndex] = local.copyWith(
+          driveFileId: fileId,
+          lastSyncedAt: syncTime,
+          syncStatus: ProtocolSyncStatus.synced,
+        );
+      }
       uploaded++;
     }
 
-    if (downloaded > 0) {
-      await _storageService.saveCompletedProtocols(merged);
-    }
+    await _storageService.saveCompletedProtocols(merged, markPending: false);
+    await _storageService.saveSyncBundleState(
+      SyncBundleType.completedProtocols,
+      SyncBundleState.synced,
+    );
     return DriveSyncSummary(downloaded: downloaded, uploaded: uploaded);
   }
 
@@ -385,6 +502,9 @@ class DriveSyncService {
       startedAt: local.startedAt ?? remote.startedAt,
       completedAt: local.completedAt,
       completedByName: local.completedByName ?? remote.completedByName,
+      driveFileId: local.driveFileId ?? remote.driveFileId,
+      lastSyncedAt: local.lastSyncedAt ?? remote.lastSyncedAt,
+      syncStatus: local.syncStatus,
     );
   }
 
@@ -410,7 +530,11 @@ class DriveSyncService {
       }
       final decoded = await _downloadJson(file.id, headers);
       if (decoded is! Map<String, dynamic>) continue;
-      completed.add(CompletedProtocol.fromJson(decoded));
+      completed.add(
+        CompletedProtocol.fromJson(
+          decoded,
+        ).copyWith(driveFileId: file.id, syncStatus: ProtocolSyncStatus.synced),
+      );
     }
     return completed;
   }
@@ -489,6 +613,10 @@ class DriveSyncService {
         content: const JsonEncoder.withIndent('  ').convert(local),
         headers: headers,
       );
+      await _storageService.saveSyncBundleState(
+        SyncBundleType.tasks,
+        SyncBundleState.synced,
+      );
       return const DriveSyncSummary(uploaded: 1);
     }
 
@@ -500,6 +628,10 @@ class DriveSyncService {
         headers: headers,
         existingFileId: remoteFile.id,
       );
+      await _storageService.saveSyncBundleState(
+        SyncBundleType.tasks,
+        SyncBundleState.synced,
+      );
       return const DriveSyncSummary(uploaded: 1);
     }
 
@@ -507,6 +639,10 @@ class DriveSyncService {
     final localUpdatedAt = _payloadUpdatedAt(local);
     if (remoteUpdatedAt.isAfter(localUpdatedAt)) {
       await _taskService.replaceFromSyncPayload(decoded);
+      await _storageService.saveSyncBundleState(
+        SyncBundleType.tasks,
+        SyncBundleState.synced,
+      );
       return const DriveSyncSummary(downloaded: 1);
     }
     if (jsonEncode(decoded) != jsonEncode(local)) {
@@ -516,8 +652,16 @@ class DriveSyncService {
         headers: headers,
         existingFileId: remoteFile.id,
       );
+      await _storageService.saveSyncBundleState(
+        SyncBundleType.tasks,
+        SyncBundleState.synced,
+      );
       return const DriveSyncSummary(uploaded: 1);
     }
+    await _storageService.saveSyncBundleState(
+      SyncBundleType.tasks,
+      SyncBundleState.synced,
+    );
     return const DriveSyncSummary();
   }
 
@@ -532,6 +676,10 @@ class DriveSyncService {
         content: const JsonEncoder.withIndent('  ').convert(local),
         headers: headers,
       );
+      await _storageService.saveSyncBundleState(
+        SyncBundleType.measuringTools,
+        SyncBundleState.synced,
+      );
       return const DriveSyncSummary(uploaded: 1);
     }
 
@@ -543,6 +691,10 @@ class DriveSyncService {
         headers: headers,
         existingFileId: remoteFile.id,
       );
+      await _storageService.saveSyncBundleState(
+        SyncBundleType.measuringTools,
+        SyncBundleState.synced,
+      );
       return const DriveSyncSummary(uploaded: 1);
     }
 
@@ -550,6 +702,10 @@ class DriveSyncService {
     final localUpdatedAt = _payloadUpdatedAt(local);
     if (remoteUpdatedAt.isAfter(localUpdatedAt)) {
       await _measuringToolService.replaceFromSyncPayload(decoded);
+      await _storageService.saveSyncBundleState(
+        SyncBundleType.measuringTools,
+        SyncBundleState.synced,
+      );
       return const DriveSyncSummary(downloaded: 1);
     }
     if (jsonEncode(decoded) != jsonEncode(local)) {
@@ -559,8 +715,16 @@ class DriveSyncService {
         headers: headers,
         existingFileId: remoteFile.id,
       );
+      await _storageService.saveSyncBundleState(
+        SyncBundleType.measuringTools,
+        SyncBundleState.synced,
+      );
       return const DriveSyncSummary(uploaded: 1);
     }
+    await _storageService.saveSyncBundleState(
+      SyncBundleType.measuringTools,
+      SyncBundleState.synced,
+    );
     return const DriveSyncSummary();
   }
 
@@ -804,6 +968,7 @@ class DriveSyncService {
       objective: protocol.objective,
       description: protocol.description,
       ownerId: protocol.ownerId,
+      projectId: protocol.projectId,
       createdByName: protocol.createdByName,
       createdAt: protocol.createdAt,
       updatedAt: DateTime.now(),

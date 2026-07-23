@@ -14,6 +14,7 @@ import '../widgets/google_sign_in_button.dart';
 import '../features/measuring_tools/screens/measuring_tools_manager_screen.dart';
 import 'lab_tools_screen.dart';
 import 'library_screen.dart';
+import 'projects_screen.dart';
 import 'run_protocol_screen.dart';
 import 'protocol_detail_screen.dart';
 import 'saved_tables_screen.dart';
@@ -39,6 +40,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _hasAttemptedStartupSync = false;
   int _selectedDesktopIndex = 0;
   int _libraryInitialTabIndex = 1;
+  String? _libraryInitialProjectId;
   bool _isSidebarOpen = false;
   AppUser? _signedInUser;
   StreamSubscription<AppUser?>? _userSubscription;
@@ -462,8 +464,8 @@ class _HomeScreenState extends State<HomeScreen> {
         selected: _selectedDesktopIndex == 2,
       ),
       _DesktopNavItem(
-        icon: Icons.play_circle_outline,
-        label: 'Running',
+        icon: Icons.folder_copy_outlined,
+        label: 'Projects',
         onTap: () => _selectPage(3),
         selected: _selectedDesktopIndex == 3,
       ),
@@ -486,16 +488,10 @@ class _HomeScreenState extends State<HomeScreen> {
         selected: _selectedDesktopIndex == 6,
       ),
       _DesktopNavItem(
-        icon: Icons.history,
-        label: 'History',
-        onTap: () => _selectPage(7),
-        selected: _selectedDesktopIndex == 7,
-      ),
-      _DesktopNavItem(
         icon: Icons.settings_outlined,
         label: 'Settings',
-        onTap: () => _selectPage(8),
-        selected: _selectedDesktopIndex == 8,
+        onTap: () => _selectPage(7),
+        selected: _selectedDesktopIndex == 7,
       ),
     ];
 
@@ -691,9 +687,10 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_isSidebarOpen) setState(() => _isSidebarOpen = false);
   }
 
-  void _openLibraryTab(int tabIndex) {
+  void _openLibraryTab(int tabIndex, {String? projectId}) {
     setState(() {
       _libraryInitialTabIndex = tabIndex;
+      _libraryInitialProjectId = projectId;
       _selectedDesktopIndex = 2;
       _isSidebarOpen = false;
     });
@@ -705,13 +702,18 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     if (_selectedDesktopIndex == 2) {
       return LibraryScreen(
-        key: ValueKey(_libraryInitialTabIndex),
+        key: ValueKey('$_libraryInitialTabIndex-$_libraryInitialProjectId'),
         initialTabIndex: _libraryInitialTabIndex,
+        initialProjectId: _libraryInitialProjectId,
         embedded: true,
       );
     }
     if (_selectedDesktopIndex == 3) {
-      return const LibraryScreen(initialTabIndex: 2, embedded: true);
+      return ProjectsScreen(
+        embedded: true,
+        onProjectSelected: (projectId) =>
+            _openLibraryTab(1, projectId: projectId),
+      );
     }
     if (_selectedDesktopIndex == 4) {
       return const SavedTablesScreen(embedded: true);
@@ -723,9 +725,6 @@ class _HomeScreenState extends State<HomeScreen> {
       return const MeasuringToolsManagerScreen(embedded: true);
     }
     if (_selectedDesktopIndex == 7) {
-      return const LibraryScreen(initialTabIndex: 3, embedded: true);
-    }
-    if (_selectedDesktopIndex == 8) {
       return _buildSettingsWorkspace();
     }
 
@@ -795,7 +794,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 Align(
                   alignment: Alignment.centerLeft,
                   child: TextButton.icon(
-                    onPressed: () => _selectPage(3),
+                    onPressed: () => _openLibraryTab(2),
                     icon: const Icon(Icons.play_circle_outline),
                     label: const Text('View all running'),
                   ),
@@ -969,6 +968,12 @@ class _HomeScreenState extends State<HomeScreen> {
         label: 'Library',
         description: 'Browse protocols',
         onTap: () => _openLibraryTab(1),
+      ),
+      _WorkspaceAction(
+        icon: Icons.folder_copy_outlined,
+        label: 'Projects',
+        description: 'Organize protocols and templates',
+        onTap: () => _selectPage(3),
       ),
       _WorkspaceAction(
         icon: Icons.table_chart_outlined,

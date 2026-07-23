@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/measuring_tool.dart';
+import '../../../services/storage_service.dart';
 
 class MeasuringToolService {
   MeasuringToolService._();
@@ -259,6 +260,10 @@ class MeasuringToolService {
     final payload = jsonEncode(tools.map((tool) => tool.toJson()).toList());
     await prefs.setString(_storageKey, payload);
     await prefs.setString(_syncUpdatedAtKey, DateTime.now().toIso8601String());
+    await StorageService().saveSyncBundleState(
+      SyncBundleType.measuringTools,
+      SyncBundleState.pending,
+    );
     _cachedTools = List<MeasuringTool>.from(tools);
   }
 

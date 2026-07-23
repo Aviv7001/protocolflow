@@ -14,6 +14,7 @@ void main() {
       title: 'Nested protocol',
       objective: 'Verify save/load',
       description: 'Actions, timers, tables, materials, notes, files',
+      projectId: 'project_bca',
       materials: [
         MaterialItem(
           id: 'mat_1',

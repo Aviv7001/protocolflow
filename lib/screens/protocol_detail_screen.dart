@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/protocol.dart';
 import '../models/active_protocol.dart';
+import '../models/project.dart';
 import '../models/protocol_additional_data.dart';
 import '../models/protocol_step.dart';
 import '../models/protocol_table.dart';
@@ -72,12 +73,19 @@ class _ProtocolMetadataItem extends StatelessWidget {
 class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
   late Protocol protocol;
   ActiveProtocol? activeState;
+  List<Project> _projects = [];
 
   @override
   void initState() {
     super.initState();
     protocol = widget.protocol;
     activeState = widget.activeState;
+    _loadProjects();
+  }
+
+  Future<void> _loadProjects() async {
+    final projects = await StorageService().loadProjects();
+    if (mounted) setState(() => _projects = projects);
   }
 
   void _confirmDelete(BuildContext context) {
@@ -359,6 +367,10 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
                       'Created by: '
                       '${protocol.createdByName ?? 'Unknown user'}',
                 ),
+                _ProtocolMetadataItem(
+                  icon: Icons.folder_outlined,
+                  text: 'Project: ${_projectNameFor(protocol.projectId)}',
+                ),
               ],
             ),
             const Divider(height: 32),
@@ -432,6 +444,14 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
               icon: const Icon(Icons.play_arrow),
             ),
     );
+  }
+
+  String _projectNameFor(String? projectId) {
+    if (projectId == null || projectId.isEmpty) return 'Unassigned';
+    for (final project in _projects) {
+      if (project.id == projectId) return project.name;
+    }
+    return 'Unassigned';
   }
 
   List<Widget> _buildGroupedSteps(BuildContext context) {

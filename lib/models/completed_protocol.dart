@@ -8,6 +8,9 @@ class CompletedProtocol {
   final DateTime? startedAt;
   final DateTime completedAt;
   final String? completedByName;
+  final String? driveFileId;
+  final DateTime? lastSyncedAt;
+  final ProtocolSyncStatus syncStatus;
 
   CompletedProtocol({
     required this.id,
@@ -16,7 +19,34 @@ class CompletedProtocol {
     this.startedAt,
     required this.completedAt,
     this.completedByName,
+    this.driveFileId,
+    this.lastSyncedAt,
+    this.syncStatus = ProtocolSyncStatus.localOnly,
   });
+
+  CompletedProtocol copyWith({
+    String? id,
+    Protocol? protocol,
+    List<StepNote>? notes,
+    DateTime? startedAt,
+    DateTime? completedAt,
+    String? completedByName,
+    String? driveFileId,
+    DateTime? lastSyncedAt,
+    ProtocolSyncStatus? syncStatus,
+  }) {
+    return CompletedProtocol(
+      id: id ?? this.id,
+      protocol: (protocol ?? this.protocol).deepCopy(),
+      notes: (notes ?? this.notes).map((note) => note.deepCopy()).toList(),
+      startedAt: startedAt ?? this.startedAt,
+      completedAt: completedAt ?? this.completedAt,
+      completedByName: completedByName ?? this.completedByName,
+      driveFileId: driveFileId ?? this.driveFileId,
+      lastSyncedAt: lastSyncedAt ?? this.lastSyncedAt,
+      syncStatus: syncStatus ?? this.syncStatus,
+    );
+  }
 
   Map<String, dynamic> toJson() {
     return {
@@ -26,6 +56,9 @@ class CompletedProtocol {
       'startedAt': startedAt?.toIso8601String(),
       'completedAt': completedAt.toIso8601String(),
       'completedByName': completedByName,
+      'driveFileId': driveFileId,
+      'lastSyncedAt': lastSyncedAt?.toIso8601String(),
+      'syncStatus': syncStatus.name,
     };
   }
 
@@ -43,6 +76,14 @@ class CompletedProtocol {
         json['completedAt'] ?? DateTime.now().toIso8601String(),
       ),
       completedByName: json['completedByName'],
+      driveFileId: json['driveFileId'],
+      lastSyncedAt: _parseDate(json['lastSyncedAt']),
+      syncStatus: ProtocolSyncStatus.fromJson(json['syncStatus']),
     );
+  }
+
+  static DateTime? _parseDate(dynamic value) {
+    if (value is! String || value.isEmpty) return null;
+    return DateTime.tryParse(value);
   }
 }

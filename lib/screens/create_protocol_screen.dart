@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/protocol.dart';
+import '../models/project.dart';
 import '../models/material.dart';
 import '../models/protocol_additional_data.dart';
 import '../models/protocol_step.dart';
@@ -23,6 +24,7 @@ import 'table_selection_screen.dart';
 
 class CreateProtocolScreen extends StatefulWidget {
   final Protocol? initialProtocol;
+  final String? initialProjectId;
   final List<String>? lockedStepIds;
   final String? targetPhase;
   final bool isAddingPhase;
@@ -30,6 +32,7 @@ class CreateProtocolScreen extends StatefulWidget {
   const CreateProtocolScreen({
     super.key,
     this.initialProtocol,
+    this.initialProjectId,
     this.lockedStepIds,
     this.targetPhase,
     this.isAddingPhase = false,
@@ -52,6 +55,8 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
   final List<ProtocolStep> _steps = [];
   final List<ProtocolTable> _tables = [];
   final List<ProtocolAdditionalData> _additionalData = [];
+  List<Project> _projects = [];
+  String? _selectedProjectId;
   late String _materialListTableId;
   bool _isMaterialListCollapsed = false;
   bool _usePhases = false;
@@ -70,6 +75,9 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
       _titleController.text = p.title;
       _objectiveController.text = p.objective;
       _descriptionController.text = p.description;
+      _selectedProjectId = (p.projectId == null || p.projectId!.isEmpty)
+          ? null
+          : p.projectId;
       _materials.addAll(p.materials.map((m) => m.copyWith()));
       _samples.addAll(p.samples);
       _files.addAll(p.files);
@@ -79,15 +87,23 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
       _usePhases = p.steps.any(
         (s) => s.phaseName != null && s.phaseName!.isNotEmpty,
       );
+    } else {
+      _selectedProjectId = widget.initialProjectId;
     }
 
     _ensureMaterialListTable(widget.initialProtocol?.materialListTableId);
+    _loadProjects();
 
     if (widget.isAddingPhase) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _addNewPhase();
       });
     }
+  }
+
+  Future<void> _loadProjects() async {
+    final projects = await _storageService.loadProjects();
+    if (mounted) setState(() => _projects = projects);
   }
 
   @override
@@ -691,6 +707,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
         // Future Drive sync will use ownerId with protocolId to locate the
         // user's remote protocol record without depending on editable names.
         ownerId: signedInUser?.googleUserId ?? widget.initialProtocol?.ownerId,
+        projectId: _selectedProjectId,
         createdByName:
             signedInUser?.displayName ??
             signedInUser?.email ??
@@ -789,13 +806,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildFieldSection(
-                  'Protocol Title',
-                  _titleController,
-                  validator: (value) => value == null || value.isEmpty
-                      ? 'Please enter a title'
-                      : null,
-                ),
+                _buildProtocolTitleSection(),
                 const Divider(height: 32),
 
                 _buildFieldSection('Objective', _objectiveController),
@@ -1075,6 +1086,157 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
         const SizedBox(height: 16),
       ],
     );
+  }
+
+  Widget _buildProtocolTitleSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Protocol Title',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+            ),
+            _buildProjectMenuChip(),
+          ],
+        ),
+        const SizedBox(height: 4),
+        TextFormField(
+          controller: _titleController,
+          validator: (value) =>
+              value == null || value.isEmpty ? 'Please enter a title' : null,
+          readOnly: _isInProgress,
+          decoration: InputDecoration(
+            border: InputBorder.none,
+            hintText: 'Enter text...',
+            fillColor: _isInProgress ? Colors.grey.shade100 : null,
+            filled: _isInProgress,
+          ),
+        ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  Widget _buildProjectMenuChip() {
+    final project = _selectedProject();
+    final color = project == null ? Colors.grey : Color(project.colorValue);
+
+    return PopupMenuButton<String>(
+      enabled: !_isInProgress,
+      tooltip: 'Choose project',
+      initialValue: _selectedProjectId ?? '__unassigned__',
+      onSelected: (value) async {
+        if (value == '__create__') {
+          await _createProject();
+          return;
+        }
+        setState(() {
+          _selectedProjectId = value == '__unassigned__' ? null : value;
+        });
+      },
+      itemBuilder: (context) => [
+        const PopupMenuItem<String>(
+          value: '__unassigned__',
+          child: ListTile(
+            leading: Icon(Icons.folder_off_outlined),
+            title: Text('Unassigned'),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+        for (final project in _projects)
+          PopupMenuItem<String>(
+            value: project.id,
+            child: ListTile(
+              leading: Icon(
+                Icons.folder_outlined,
+                color: Color(project.colorValue),
+              ),
+              title: Text(project.name),
+              contentPadding: EdgeInsets.zero,
+            ),
+          ),
+        const PopupMenuDivider(),
+        const PopupMenuItem<String>(
+          value: '__create__',
+          child: ListTile(
+            leading: Icon(Icons.create_new_folder_outlined),
+            title: Text('Create project'),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+      ],
+      child: Chip(
+        avatar: Icon(
+          project == null ? Icons.folder_off_outlined : Icons.folder_outlined,
+          color: color,
+          size: 18,
+        ),
+        label: Text(project?.name ?? 'Unassigned'),
+        side: BorderSide(color: color.withValues(alpha: 0.35)),
+      ),
+    );
+  }
+
+  Project? _selectedProject() {
+    for (final project in _projects) {
+      if (project.id == _selectedProjectId) return project;
+    }
+    return null;
+  }
+
+  Future<void> _createProject() async {
+    final controller = TextEditingController();
+    _ProjectDialogContent.lastSelectedColor = AppColors.primary;
+    try {
+      final name = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('New Project'),
+          content: _ProjectDialogContent(controller: controller),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () =>
+                  Navigator.pop(dialogContext, controller.text.trim()),
+              child: const Text('Create'),
+            ),
+          ],
+        ),
+      );
+      if (name == null || name.isEmpty) return;
+      final existing = _projects
+          .where((project) => project.name.toLowerCase() == name.toLowerCase())
+          .cast<Project?>()
+          .firstWhere((project) => project != null, orElse: () => null);
+      if (existing != null) {
+        setState(() => _selectedProjectId = existing.id);
+        return;
+      }
+
+      final project = Project(
+        id: 'project_${DateTime.now().microsecondsSinceEpoch}',
+        name: name,
+        colorValue: _ProjectDialogContent.lastSelectedColor.toARGB32(),
+      );
+      await _storageService.upsertProject(project);
+      if (!mounted) return;
+      setState(() {
+        _projects = [
+          ..._projects,
+          project,
+        ]..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+        _selectedProjectId = project.id;
+      });
+    } finally {
+      controller.dispose();
+    }
   }
 
   Widget _buildSectionHeader(String title) {
@@ -1916,6 +2078,89 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
 }
 
 enum _StepIntakeKind { none, action, note }
+
+class _ProjectDialogContent extends StatefulWidget {
+  static Color lastSelectedColor = AppColors.primary;
+
+  final TextEditingController controller;
+
+  const _ProjectDialogContent({required this.controller});
+
+  @override
+  State<_ProjectDialogContent> createState() => _ProjectDialogContentState();
+}
+
+class _ProjectDialogContentState extends State<_ProjectDialogContent> {
+  static const _colors = [
+    AppColors.primary,
+    Colors.blue,
+    Colors.indigo,
+    Colors.purple,
+    Colors.teal,
+    Colors.green,
+    Colors.orange,
+    Colors.red,
+    Colors.blueGrey,
+  ];
+
+  late Color _selectedColor;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedColor = _ProjectDialogContent.lastSelectedColor;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextField(
+          controller: widget.controller,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Project name'),
+          textCapitalization: TextCapitalization.words,
+        ),
+        const SizedBox(height: 18),
+        const Text('Color', style: TextStyle(fontWeight: FontWeight.w700)),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final color in _colors)
+              InkWell(
+                borderRadius: BorderRadius.circular(20),
+                onTap: () {
+                  setState(() => _selectedColor = color);
+                  _ProjectDialogContent.lastSelectedColor = color;
+                },
+                child: Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: _selectedColor == color
+                          ? Colors.black87
+                          : Colors.transparent,
+                      width: 2,
+                    ),
+                  ),
+                  child: _selectedColor == color
+                      ? const Icon(Icons.check, color: Colors.white, size: 18)
+                      : null,
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
 
 class _ActionTimerInput extends StatefulWidget {
   final int totalSeconds;

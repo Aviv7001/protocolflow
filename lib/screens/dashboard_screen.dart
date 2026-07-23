@@ -4,6 +4,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
 import '../models/completed_protocol.dart';
+import '../models/project.dart';
 import '../models/protocol.dart';
 import '../models/protocol_table.dart';
 import '../models/task.dart';
@@ -25,6 +26,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   DashboardData? _data;
   Object? _error;
   DashboardRange _range = DashboardRange.thirtyDays;
+  String? _selectedProjectId;
+  static const String _allProjectsFilter = '__all__';
+  static const String _unassignedProjectsFilter = '__unassigned__';
 
   @override
   void initState() {
@@ -94,37 +98,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final created = data.protocols
         .where((item) => _inRange(item.createdAt))
         .toList();
-    final completedTasks = [
-      ...data.taskHistory.where(
-        (task) => task.completedAt != null && _inRange(task.completedAt!),
-      ),
-      ...data.todayTasks.where((task) => task.status == TaskStatus.completed),
-    ];
-    final durations = completed
-        .where((item) => item.startedAt != null)
-        .map((item) => item.completedAt.difference(item.startedAt!))
-        .where((duration) => !duration.isNegative)
+    final filteredProtocols = data.protocols
+        .where(_matchesSelectedProject)
         .toList();
+    final filteredRunning = data.runningProtocols
+        .where((item) => _matchesSelectedProject(item.protocol))
+        .toList();
+    final filteredCompleted = completed
+        .where((item) => _matchesSelectedProject(item.protocol))
+        .toList();
+    final filteredCreated = created.where(_matchesSelectedProject).toList();
 
     return _refreshable(
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildHeader(),
-          const SizedBox(height: 18),
-          _buildKpis(
-            data,
-            created,
-            completed,
-            completedTasks.length,
-            durations,
-          ),
           const SizedBox(height: 16),
           _responsivePanels([
             _DashboardPanel(
               title: 'Protocol activity',
               subtitle: 'Created and completed runs',
-              child: _buildActivityChart(created, completed),
+              child: _buildProjectAwarePanelChild(
+                _buildActivityChart(filteredCreated, filteredCompleted),
+              ),
             ),
             _DashboardPanel(
               title: 'Today\'s task status',
@@ -137,7 +134,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
             _DashboardPanel(
               title: 'Protocol status',
               subtitle: 'Library and run distribution',
-              child: _buildProtocolStatus(data, completed.length),
+              child: _buildProjectAwarePanelChild(
+                _buildProtocolStatus(
+                  protocols: filteredProtocols,
+                  runningCount: filteredRunning.length,
+                  completedCount: filteredCompleted.length,
+                ),
+              ),
             ),
             _DashboardPanel(
               title: 'Most used protocols',
@@ -245,81 +248,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildKpis(
-    DashboardData data,
-    List<Protocol> created,
-    List<CompletedProtocol> completed,
-    int completedTaskCount,
-    List<Duration> durations,
-  ) {
-    final average = durations.isEmpty
-        ? null
-        : Duration(
-            milliseconds:
-                durations.fold<int>(
-                  0,
-                  (sum, item) => sum + item.inMilliseconds,
-                ) ~/
-                durations.length,
-          );
-    final items = [
-      _KpiData(
-        'Active runs',
-        '${data.runningProtocols.length}',
-        Icons.play_circle_outline,
-        AppColors.info,
-      ),
-      _KpiData(
-        'Completed',
-        '${completed.length}',
-        Icons.check_circle_outline,
-        AppColors.success,
-      ),
-      _KpiData(
-        'Protocols created',
-        '${created.where((item) => !item.isTemplate).length}',
-        Icons.article_outlined,
-        AppColors.primary,
-      ),
-      _KpiData(
-        'Saved tables',
-        '${data.savedTables.length}',
-        Icons.table_chart_outlined,
-        const Color(0xFF7B61A8),
-      ),
-      _KpiData(
-        'Tasks completed',
-        '$completedTaskCount',
-        Icons.task_alt,
-        const Color(0xFFCE7A24),
-      ),
-      _KpiData(
-        'Average duration',
-        average == null ? 'No timing data' : _formatDuration(average),
-        Icons.timer_outlined,
-        const Color(0xFFB14C68),
-      ),
-    ];
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final columns = constraints.maxWidth >= 1050
-            ? 6
-            : constraints.maxWidth >= 650
-            ? 3
-            : 2;
-        const gap = 8.0;
-        final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
-        return Wrap(
-          spacing: gap,
-          runSpacing: gap,
-          children: items
-              .map((item) => SizedBox(width: width, child: _KpiTile(item)))
-              .toList(),
-        );
-      },
-    );
-  }
-
   Widget _responsivePanels(List<Widget> panels, {double minPanelWidth = 380}) {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -367,10 +295,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         const SizedBox(height: 12),
         SizedBox(
           height: 190,
-          child: BarChart(
-            BarChartData(
+          child: LineChart(
+            LineChartData(
               maxY: maxValue.toDouble() + 1,
-              alignment: BarChartAlignment.spaceAround,
               borderData: FlBorderData(show: false),
               titlesData: const FlTitlesData(show: false),
               gridData: FlGridData(
@@ -380,26 +307,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   strokeWidth: 1,
                 ),
               ),
-              barGroups: points.asMap().entries.map((entry) {
-                return BarChartGroupData(
-                  x: entry.key,
-                  barsSpace: 3,
-                  barRods: [
-                    BarChartRodData(
-                      toY: entry.value.created.toDouble(),
-                      color: AppColors.primary,
-                      width: 10,
-                      borderRadius: BorderRadius.zero,
-                    ),
-                    BarChartRodData(
-                      toY: entry.value.completed.toDouble(),
-                      color: AppColors.success,
-                      width: 10,
-                      borderRadius: BorderRadius.zero,
-                    ),
-                  ],
-                );
-              }).toList(),
+              lineBarsData: [
+                _activityLine(
+                  points.map((point) => point.created).toList(),
+                  AppColors.primary,
+                ),
+                _activityLine(
+                  points.map((point) => point.completed).toList(),
+                  AppColors.success,
+                ),
+              ],
             ),
           ),
         ),
@@ -471,11 +388,93 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildProtocolStatus(DashboardData data, int completedCount) {
+  LineChartBarData _activityLine(List<int> values, Color color) {
+    return LineChartBarData(
+      spots: values
+          .asMap()
+          .entries
+          .map((entry) => FlSpot(entry.key.toDouble(), entry.value.toDouble()))
+          .toList(),
+      color: color,
+      barWidth: 3,
+      dotData: FlDotData(show: true),
+      belowBarData: BarAreaData(
+        show: true,
+        color: color.withValues(alpha: 0.08),
+      ),
+    );
+  }
+
+  Widget _buildProjectAwarePanelChild(Widget child) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [_buildProjectFilter(), const SizedBox(height: 12), child],
+    );
+  }
+
+  Widget _buildProjectFilter() {
+    final project = _selectedProject();
+    final color = project == null
+        ? AppColors.primary
+        : Color(project.colorValue);
+    return PopupMenuButton<String>(
+      tooltip: 'Filter by project',
+      initialValue: _selectedProjectId ?? _allProjectsFilter,
+      onSelected: (value) => setState(
+        () => _selectedProjectId = value == _allProjectsFilter ? null : value,
+      ),
+      itemBuilder: (context) {
+        final data = _data;
+        final projects = data?.projects ?? const <Project>[];
+        return [
+          const PopupMenuItem<String>(
+            value: _allProjectsFilter,
+            child: ListTile(
+              leading: Icon(Icons.all_inbox_outlined),
+              title: Text('All projects'),
+              contentPadding: EdgeInsets.zero,
+            ),
+          ),
+          for (final project in projects)
+            PopupMenuItem<String>(
+              value: project.id,
+              child: ListTile(
+                leading: Icon(
+                  Icons.folder_outlined,
+                  color: Color(project.colorValue),
+                ),
+                title: Text(project.name),
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+          const PopupMenuDivider(),
+          const PopupMenuItem<String>(
+            value: _unassignedProjectsFilter,
+            child: ListTile(
+              leading: Icon(Icons.folder_off_outlined),
+              title: Text('Unassigned'),
+              contentPadding: EdgeInsets.zero,
+            ),
+          ),
+        ];
+      },
+      child: Chip(
+        avatar: Icon(_projectFilterIcon(), color: color, size: 18),
+        label: Text(_projectFilterLabel()),
+        side: BorderSide(color: color.withValues(alpha: 0.35)),
+      ),
+    );
+  }
+
+  Widget _buildProtocolStatus({
+    required List<Protocol> protocols,
+    required int runningCount,
+    required int completedCount,
+  }) {
     final values = [
-      data.protocols.where((item) => item.isTemplate).length,
-      data.protocols.where((item) => !item.isTemplate).length,
-      data.runningProtocols.length,
+      protocols.where((item) => item.isTemplate).length,
+      protocols.where((item) => !item.isTemplate).length,
+      runningCount,
       completedCount,
     ];
     if (values.every((value) => value == 0)) {
@@ -745,6 +744,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
         const _DataHealthHeader(),
         const Divider(height: 20),
         _DataHealthRow(
+          icon: Icons.folder_copy_outlined,
+          label: 'Projects',
+          health: _SyncHealth.fromBundleState(
+            total: data.projects.length,
+            state: data.projectsSyncState,
+          ),
+        ),
+        _DataHealthRow(
           icon: Icons.article_outlined,
           label: 'Protocols',
           health: _SyncHealth.fromProtocols(protocols),
@@ -755,9 +762,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
           health: _SyncHealth.fromProtocols(templates),
         ),
         _DataHealthRow(
+          icon: Icons.check_circle_outline,
+          label: 'Completed runs',
+          health: _SyncHealth.fromCompletedProtocols(data.completedProtocols),
+        ),
+        _DataHealthRow(
           icon: Icons.table_chart_outlined,
           label: 'Tables',
           health: tableHealth,
+        ),
+        _DataHealthRow(
+          icon: Icons.today_outlined,
+          label: 'Today tasks',
+          health: _SyncHealth.fromBundleState(
+            total: data.todayTasks.length,
+            state: data.tasksSyncState,
+          ),
+        ),
+        _DataHealthRow(
+          icon: Icons.history_outlined,
+          label: 'Task history',
+          health: _SyncHealth.fromBundleState(
+            total: data.taskHistory.length,
+            state: data.tasksSyncState,
+          ),
+        ),
+        _DataHealthRow(
+          icon: Icons.straighten,
+          label: 'Measuring tools',
+          health: _SyncHealth.fromBundleState(
+            total: data.measuringTools.length,
+            state: data.measuringToolsSyncState,
+          ),
         ),
         const Divider(height: 24),
         Row(
@@ -777,6 +813,41 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
       ],
     );
+  }
+
+  bool _matchesSelectedProject(Protocol protocol) {
+    final selected = _selectedProjectId;
+    if (selected == null) return true;
+    final projectId = protocol.projectId;
+    if (selected == _unassignedProjectsFilter) {
+      final projects = _data?.projects ?? const <Project>[];
+      return projectId == null ||
+          projectId.isEmpty ||
+          !projects.any((project) => project.id == projectId);
+    }
+    return projectId == selected;
+  }
+
+  Project? _selectedProject() {
+    final projects = _data?.projects ?? const <Project>[];
+    for (final project in projects) {
+      if (project.id == _selectedProjectId) return project;
+    }
+    return null;
+  }
+
+  IconData _projectFilterIcon() {
+    if (_selectedProjectId == _unassignedProjectsFilter) {
+      return Icons.folder_off_outlined;
+    }
+    if (_selectedProjectId == null) return Icons.all_inbox_outlined;
+    return Icons.folder_outlined;
+  }
+
+  String _projectFilterLabel() {
+    if (_selectedProjectId == null) return 'All projects';
+    if (_selectedProjectId == _unassignedProjectsFilter) return 'Unassigned';
+    return _selectedProject()?.name ?? 'Unassigned';
   }
 
   bool _inRange(DateTime value) {
@@ -850,16 +921,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     DashboardRange.allTime => 'All',
   };
 
-  String _formatDuration(Duration duration) {
-    if (duration.inDays > 0) {
-      return '${duration.inDays}d ${duration.inHours.remainder(24)}h';
-    }
-    if (duration.inHours > 0) {
-      return '${duration.inHours}h ${duration.inMinutes.remainder(60)}m';
-    }
-    return '${math.max(1, duration.inMinutes)}m';
-  }
-
   DateTime _day(DateTime value) => DateTime(value.year, value.month, value.day);
   String _dateLabel(DateTime value) =>
       '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
@@ -908,50 +969,6 @@ class _DashboardPanel extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           child,
-        ],
-      ),
-    ),
-  );
-}
-
-class _KpiData {
-  final String label;
-  final String value;
-  final IconData icon;
-  final Color color;
-  const _KpiData(this.label, this.value, this.icon, this.color);
-}
-
-class _KpiTile extends StatelessWidget {
-  final _KpiData data;
-  const _KpiTile(this.data);
-  @override
-  Widget build(BuildContext context) => Card(
-    margin: EdgeInsets.zero,
-    child: Padding(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(data.icon, color: data.color, size: 22),
-          const SizedBox(height: 10),
-          Text(
-            data.value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(
-              context,
-            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          Text(
-            data.label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 12,
-              color: AppColors.textSecondary,
-            ),
-          ),
         ],
       ),
     ),
@@ -1107,6 +1124,36 @@ class _SyncHealth {
       }
     }
     return _SyncHealth(synced: synced, pending: pending, issues: issues);
+  }
+
+  factory _SyncHealth.fromCompletedProtocols(List<CompletedProtocol> items) {
+    var synced = 0;
+    var pending = 0;
+    var issues = 0;
+    for (final item in items) {
+      switch (item.syncStatus) {
+        case ProtocolSyncStatus.synced:
+          synced++;
+        case ProtocolSyncStatus.localOnly:
+        case ProtocolSyncStatus.modified:
+          pending++;
+        case ProtocolSyncStatus.conflict:
+        case ProtocolSyncStatus.error:
+          issues++;
+      }
+    }
+    return _SyncHealth(synced: synced, pending: pending, issues: issues);
+  }
+
+  factory _SyncHealth.fromBundleState({
+    required int total,
+    required SyncBundleState state,
+  }) {
+    return switch (state) {
+      SyncBundleState.synced => _SyncHealth(synced: total),
+      SyncBundleState.pending => _SyncHealth(pending: total),
+      SyncBundleState.error => _SyncHealth(issues: total),
+    };
   }
 }
 

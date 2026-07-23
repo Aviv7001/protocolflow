@@ -1,7 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocolflow/features/measuring_tools/services/measuring_tool_service.dart';
 import 'package:protocolflow/features/today_tasks/services/task_service.dart';
+import 'package:protocolflow/models/project.dart';
 import 'package:protocolflow/models/task.dart';
+import 'package:protocolflow/services/storage_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -71,6 +73,28 @@ void main() {
     expect(tools.single.id, 'custom-pipette');
     expect(
       (await service.buildSyncPayload())['updatedAt'],
+      '2026-07-23T12:00:00.000Z',
+    );
+  });
+
+  test('project sync payload replaces project collection', () async {
+    SharedPreferences.setMockInitialValues({});
+    final service = StorageService();
+    await service.saveProjects([
+      Project(id: 'local-project', name: 'Local Project'),
+    ]);
+
+    await service.replaceProjectsFromSyncPayload({
+      'updatedAt': '2026-07-23T12:00:00.000Z',
+      'projects': [
+        {'id': 'remote-project', 'name': 'Remote Project'},
+      ],
+    });
+
+    final projects = await service.loadProjects();
+    expect(projects.single.id, 'remote-project');
+    expect(
+      (await service.buildProjectsSyncPayload())['updatedAt'],
       '2026-07-23T12:00:00.000Z',
     );
   });

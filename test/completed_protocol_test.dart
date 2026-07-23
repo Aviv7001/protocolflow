@@ -24,6 +24,7 @@ void main() {
 
     expect(restored.startedAt, startedAt);
     expect(restored.completedByName, 'Aviv Researcher');
+    expect(restored.syncStatus, ProtocolSyncStatus.localOnly);
     expect(
       restored.completedAt.difference(restored.startedAt!),
       const Duration(hours: 2),

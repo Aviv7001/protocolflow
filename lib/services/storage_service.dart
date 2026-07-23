@@ -3,20 +3,33 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/completed_protocol.dart';
 import '../models/active_protocol.dart';
 import '../models/deleted_protocol_record.dart';
+import '../models/project.dart';
 import '../models/protocol.dart';
 import '../models/protocol_table.dart';
 
 enum SavedTablesSyncState { synced, pending, error }
+
+enum SyncBundleState { synced, pending, error }
+
+enum SyncBundleType { projects, completedProtocols, tasks, measuringTools }
 
 class StorageService {
   static const String _storageKey = 'completed_protocols_json';
   static const String _activeKey = 'active_protocol_json';
   static const String _runningKey = 'running_protocols_json';
   static const String _libraryKey = 'protocols_library_json';
+  static const String _projectsKey = 'projects_json';
+  static const String _projectsSyncUpdatedAtKey = 'projects_sync_updated_at';
   static const String _deletedProtocolsKey = 'deleted_protocols_json';
   static const String _savedTablesKey = 'saved_tables_json';
   static const String _deletedSavedTablesKey = 'deleted_saved_tables_json';
   static const String _savedTablesSyncStateKey = 'saved_tables_sync_state';
+  static const String _projectsSyncStateKey = 'projects_sync_state';
+  static const String _completedProtocolsSyncStateKey =
+      'completed_protocols_sync_state';
+  static const String _tasksSyncStateKey = 'tasks_sync_state';
+  static const String _measuringToolsSyncStateKey =
+      'measuring_tools_sync_state';
 
   Future<void> saveProtocols(List<Protocol> protocols) async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -24,6 +37,121 @@ class StorageService {
       protocols.map((p) => p.toJson()).toList(),
     );
     await prefs.setString(_libraryKey, jsonString);
+  }
+
+  Future<void> saveProjects(
+    List<Project> projects, {
+    bool markUpdated = true,
+    bool markPending = true,
+  }) async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final sorted = List<Project>.from(projects)
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    await prefs.setString(
+      _projectsKey,
+      jsonEncode(sorted.map((project) => project.toJson()).toList()),
+    );
+    if (markUpdated) {
+      await prefs.setString(
+        _projectsSyncUpdatedAtKey,
+        DateTime.now().toUtc().toIso8601String(),
+      );
+    }
+    if (markPending) {
+      await saveSyncBundleState(
+        SyncBundleType.projects,
+        SyncBundleState.pending,
+      );
+    }
+  }
+
+  Future<List<Project>> loadProjects() async {
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String? jsonString = prefs.getString(_projectsKey);
+      if (jsonString == null || jsonString.isEmpty) return [];
+
+      final List<dynamic> jsonList = jsonDecode(jsonString);
+      final projects =
+          jsonList
+              .whereType<Map<String, dynamic>>()
+              .map(Project.fromJson)
+              .where((project) => project.name.trim().isNotEmpty)
+              .toList()
+            ..sort(
+              (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+            );
+      return projects;
+    } catch (e) {
+      return [];
+    }
+  }
+
+  Future<Project> upsertProject(Project project) async {
+    final projects = await loadProjects();
+    final index = projects.indexWhere((existing) => existing.id == project.id);
+    if (index == -1) {
+      projects.add(project);
+    } else {
+      projects[index] = project;
+    }
+    await saveProjects(projects);
+    return project;
+  }
+
+  Future<void> deleteProject(String projectId) async {
+    final projects = await loadProjects();
+    projects.removeWhere((project) => project.id == projectId);
+    await saveProjects(projects);
+
+    final protocols = await loadProtocols();
+    await saveProtocols(
+      protocols
+          .map(
+            (protocol) => protocol.projectId == projectId
+                ? protocol.copyWith(projectId: '')
+                : protocol,
+          )
+          .toList(),
+    );
+  }
+
+  Future<Map<String, dynamic>> buildProjectsSyncPayload() async {
+    final prefs = await SharedPreferences.getInstance();
+    final projects = await loadProjects();
+    var updatedAt = DateTime.tryParse(
+      prefs.getString(_projectsSyncUpdatedAtKey) ?? '',
+    );
+    if (updatedAt == null) {
+      updatedAt = DateTime.now().toUtc();
+      await prefs.setString(
+        _projectsSyncUpdatedAtKey,
+        updatedAt.toIso8601String(),
+      );
+    }
+    return {
+      'updatedAt': updatedAt.toIso8601String(),
+      'projects': projects.map((project) => project.toJson()).toList(),
+    };
+  }
+
+  Future<void> replaceProjectsFromSyncPayload(
+    Map<String, dynamic> payload,
+  ) async {
+    final projects = (payload['projects'] as List? ?? [])
+        .whereType<Map<String, dynamic>>()
+        .map(Project.fromJson)
+        .where((project) => project.name.trim().isNotEmpty)
+        .toList();
+    await saveProjects(projects, markUpdated: false, markPending: false);
+    final prefs = await SharedPreferences.getInstance();
+    final updatedAt =
+        DateTime.tryParse(payload['updatedAt']?.toString() ?? '') ??
+        DateTime.now().toUtc();
+    await prefs.setString(
+      _projectsSyncUpdatedAtKey,
+      updatedAt.toIso8601String(),
+    );
   }
 
   Future<List<Protocol>> loadProtocols() async {
@@ -128,12 +256,21 @@ class StorageService {
     }
   }
 
-  Future<void> saveCompletedProtocols(List<CompletedProtocol> protocols) async {
+  Future<void> saveCompletedProtocols(
+    List<CompletedProtocol> protocols, {
+    bool markPending = true,
+  }) async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String jsonString = jsonEncode(
       protocols.map((p) => p.toJson()).toList(),
     );
     await prefs.setString(_storageKey, jsonString);
+    if (markPending) {
+      await saveSyncBundleState(
+        SyncBundleType.completedProtocols,
+        SyncBundleState.pending,
+      );
+    }
   }
 
   Future<List<CompletedProtocol>> loadCompletedProtocols() async {
@@ -242,6 +379,32 @@ class StorageService {
       _savedTablesSyncStateKey,
       SavedTablesSyncState.error.name,
     );
+  }
+
+  Future<SyncBundleState> loadSyncBundleState(SyncBundleType type) async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getString(_syncBundleStateKey(type));
+    return SyncBundleState.values.firstWhere(
+      (state) => state.name == stored,
+      orElse: () => SyncBundleState.pending,
+    );
+  }
+
+  Future<void> saveSyncBundleState(
+    SyncBundleType type,
+    SyncBundleState state,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_syncBundleStateKey(type), state.name);
+  }
+
+  String _syncBundleStateKey(SyncBundleType type) {
+    return switch (type) {
+      SyncBundleType.projects => _projectsSyncStateKey,
+      SyncBundleType.completedProtocols => _completedProtocolsSyncStateKey,
+      SyncBundleType.tasks => _tasksSyncStateKey,
+      SyncBundleType.measuringTools => _measuringToolsSyncStateKey,
+    };
   }
 
   Future<List<ProtocolTable>> loadSavedTables() async {

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../models/task.dart';
+import '../../../services/storage_service.dart';
 
 class TaskService {
   static const String _todayTasksKey = 'today_tasks_json';
@@ -24,6 +25,10 @@ class TaskService {
     final jsonString = jsonEncode(tasks.map((t) => t.toJson()).toList());
     await prefs.setString(_todayTasksKey, jsonString);
     await prefs.setString(_syncUpdatedAtKey, DateTime.now().toIso8601String());
+    await StorageService().saveSyncBundleState(
+      SyncBundleType.tasks,
+      SyncBundleState.pending,
+    );
   }
 
   Future<List<Task>> loadHistoryTasks() async {
@@ -43,12 +48,20 @@ class TaskService {
     final jsonString = jsonEncode(tasks.map((t) => t.toJson()).toList());
     await prefs.setString(_historyTasksKey, jsonString);
     await prefs.setString(_syncUpdatedAtKey, DateTime.now().toIso8601String());
+    await StorageService().saveSyncBundleState(
+      SyncBundleType.tasks,
+      SyncBundleState.pending,
+    );
   }
 
   Future<void> clearHistoryTasks() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_historyTasksKey);
     await prefs.setString(_syncUpdatedAtKey, DateTime.now().toIso8601String());
+    await StorageService().saveSyncBundleState(
+      SyncBundleType.tasks,
+      SyncBundleState.pending,
+    );
   }
 
   Future<Map<String, dynamic>> buildSyncPayload() async {
