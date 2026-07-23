@@ -17,6 +17,7 @@ import '../theme/app_colors.dart';
 import '../widgets/protocol_step_actions_table.dart';
 import '../widgets/protocol_step_notes_table.dart';
 import '../widgets/protocol_table_preview.dart';
+import '../utils/date_time_format.dart';
 import 'run_protocol_screen.dart';
 import 'create_protocol_screen.dart';
 
@@ -32,6 +33,40 @@ class ProtocolDetailScreen extends StatefulWidget {
 
   @override
   State<ProtocolDetailScreen> createState() => _ProtocolDetailScreenState();
+}
+
+class _ProtocolMetadataItem extends StatelessWidget {
+  final IconData icon;
+  final String text;
+
+  const _ProtocolMetadataItem({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    final maxWidth = (MediaQuery.sizeOf(context).width - 32)
+        .clamp(0.0, 360.0)
+        .toDouble();
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxWidth),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: AppColors.textSecondary),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              text,
+              softWrap: true,
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
@@ -307,6 +342,23 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
                   ),
                 const SizedBox(width: 8),
                 SyncStatusChip(status: protocol.syncStatus, compact: true),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 18,
+              runSpacing: 6,
+              children: [
+                _ProtocolMetadataItem(
+                  icon: Icons.calendar_today_outlined,
+                  text: 'Created on: ${formatDate(protocol.createdAt)}',
+                ),
+                _ProtocolMetadataItem(
+                  icon: Icons.person_outline,
+                  text:
+                      'Created by: '
+                      '${protocol.createdByName ?? 'Unknown user'}',
+                ),
               ],
             ),
             const Divider(height: 32),

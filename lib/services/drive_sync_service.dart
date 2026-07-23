@@ -7,6 +7,8 @@ import '../models/completed_protocol.dart';
 import '../models/deleted_protocol_record.dart';
 import '../models/protocol.dart';
 import '../models/protocol_table.dart';
+import '../features/today_tasks/services/task_service.dart';
+import '../features/measuring_tools/services/measuring_tool_service.dart';
 import '../utils/protocol_id.dart';
 import 'auth_service.dart';
 import 'storage_service.dart';
@@ -64,9 +66,14 @@ class DriveSyncService {
   static const String _uploadBaseUrl =
       'https://www.googleapis.com/upload/drive/v3';
   static const String _savedTablesFileName = 'saved_tables.json';
+  static const String _tasksFileName = 'today_tasks.json';
+  static const String _measuringToolsFileName = 'measuring_tools.json';
 
   final AuthService _authService = AuthService.instance;
   final StorageService _storageService = StorageService();
+  final TaskService _taskService = TaskService();
+  final MeasuringToolService _measuringToolService =
+      MeasuringToolService.instance;
 
   String _completedFileName(String completedId) {
     return 'completed_protocol_$completedId.json';
@@ -171,6 +178,14 @@ class DriveSyncService {
       if (tableSummary.details != null) {
         errorDetails.add(tableSummary.details!);
       }
+
+      final taskSummary = await _syncTasks(headers);
+      downloaded += taskSummary.downloaded;
+      uploaded += taskSummary.uploaded;
+
+      final measuringToolSummary = await _syncMeasuringTools(headers);
+      downloaded += measuringToolSummary.downloaded;
+      uploaded += measuringToolSummary.uploaded;
 
       return DriveSyncSummary(
         downloaded: downloaded,
@@ -316,7 +331,26 @@ class DriveSyncService {
     }
 
     for (final local in localCompleted) {
-      if (remoteById.containsKey(local.id)) continue;
+      final remote = remoteById[local.id];
+      if (remote != null) {
+        final resolved = _enrichCompletedProtocol(local, remote);
+        final localIndex = merged.indexWhere((item) => item.id == local.id);
+        if (_completedMetadataDiffers(local, resolved) && localIndex >= 0) {
+          merged[localIndex] = resolved;
+          downloaded++;
+        }
+        if (_completedMetadataDiffers(remote, resolved)) {
+          await _uploadJsonFile(
+            fileName: _completedFileName(resolved.id),
+            content: const JsonEncoder.withIndent(
+              '  ',
+            ).convert(resolved.toJson()),
+            headers: headers,
+          );
+          uploaded++;
+        }
+        continue;
+      }
       await _uploadJsonFile(
         fileName: _completedFileName(local.id),
         content: const JsonEncoder.withIndent('  ').convert(local.toJson()),
@@ -329,6 +363,39 @@ class DriveSyncService {
       await _storageService.saveCompletedProtocols(merged);
     }
     return DriveSyncSummary(downloaded: downloaded, uploaded: uploaded);
+  }
+
+  CompletedProtocol _enrichCompletedProtocol(
+    CompletedProtocol local,
+    CompletedProtocol remote,
+  ) {
+    final localCreator = local.protocol.createdByName?.trim();
+    final remoteCreator = remote.protocol.createdByName?.trim();
+    return CompletedProtocol(
+      id: local.id,
+      protocol:
+          (localCreator == null || localCreator.isEmpty) &&
+              remoteCreator != null &&
+              remoteCreator.isNotEmpty
+          ? remote.protocol
+          : local.protocol,
+      notes: local.notes.isEmpty && remote.notes.isNotEmpty
+          ? remote.notes
+          : local.notes,
+      startedAt: local.startedAt ?? remote.startedAt,
+      completedAt: local.completedAt,
+      completedByName: local.completedByName ?? remote.completedByName,
+    );
+  }
+
+  bool _completedMetadataDiffers(
+    CompletedProtocol current,
+    CompletedProtocol enriched,
+  ) {
+    return current.startedAt != enriched.startedAt ||
+        current.completedByName != enriched.completedByName ||
+        current.protocol.createdByName != enriched.protocol.createdByName ||
+        (current.notes.isEmpty && enriched.notes.isNotEmpty);
   }
 
   Future<List<CompletedProtocol>> _downloadRemoteCompletedProtocols(
@@ -411,6 +478,95 @@ class DriveSyncService {
         .whereType<Map<String, dynamic>>()
         .map(ProtocolTable.fromJson)
         .toList();
+  }
+
+  Future<DriveSyncSummary> _syncTasks(Map<String, String> headers) async {
+    final local = await _taskService.buildSyncPayload();
+    final remoteFile = await _findDriveFile(_tasksFileName, headers);
+    if (remoteFile == null) {
+      await _uploadJsonFile(
+        fileName: _tasksFileName,
+        content: const JsonEncoder.withIndent('  ').convert(local),
+        headers: headers,
+      );
+      return const DriveSyncSummary(uploaded: 1);
+    }
+
+    final decoded = await _downloadJson(remoteFile.id, headers);
+    if (decoded is! Map<String, dynamic>) {
+      await _uploadJsonFile(
+        fileName: _tasksFileName,
+        content: const JsonEncoder.withIndent('  ').convert(local),
+        headers: headers,
+        existingFileId: remoteFile.id,
+      );
+      return const DriveSyncSummary(uploaded: 1);
+    }
+
+    final remoteUpdatedAt = _payloadUpdatedAt(decoded);
+    final localUpdatedAt = _payloadUpdatedAt(local);
+    if (remoteUpdatedAt.isAfter(localUpdatedAt)) {
+      await _taskService.replaceFromSyncPayload(decoded);
+      return const DriveSyncSummary(downloaded: 1);
+    }
+    if (jsonEncode(decoded) != jsonEncode(local)) {
+      await _uploadJsonFile(
+        fileName: _tasksFileName,
+        content: const JsonEncoder.withIndent('  ').convert(local),
+        headers: headers,
+        existingFileId: remoteFile.id,
+      );
+      return const DriveSyncSummary(uploaded: 1);
+    }
+    return const DriveSyncSummary();
+  }
+
+  Future<DriveSyncSummary> _syncMeasuringTools(
+    Map<String, String> headers,
+  ) async {
+    final local = await _measuringToolService.buildSyncPayload();
+    final remoteFile = await _findDriveFile(_measuringToolsFileName, headers);
+    if (remoteFile == null) {
+      await _uploadJsonFile(
+        fileName: _measuringToolsFileName,
+        content: const JsonEncoder.withIndent('  ').convert(local),
+        headers: headers,
+      );
+      return const DriveSyncSummary(uploaded: 1);
+    }
+
+    final decoded = await _downloadJson(remoteFile.id, headers);
+    if (decoded is! Map<String, dynamic>) {
+      await _uploadJsonFile(
+        fileName: _measuringToolsFileName,
+        content: const JsonEncoder.withIndent('  ').convert(local),
+        headers: headers,
+        existingFileId: remoteFile.id,
+      );
+      return const DriveSyncSummary(uploaded: 1);
+    }
+
+    final remoteUpdatedAt = _payloadUpdatedAt(decoded);
+    final localUpdatedAt = _payloadUpdatedAt(local);
+    if (remoteUpdatedAt.isAfter(localUpdatedAt)) {
+      await _measuringToolService.replaceFromSyncPayload(decoded);
+      return const DriveSyncSummary(downloaded: 1);
+    }
+    if (jsonEncode(decoded) != jsonEncode(local)) {
+      await _uploadJsonFile(
+        fileName: _measuringToolsFileName,
+        content: const JsonEncoder.withIndent('  ').convert(local),
+        headers: headers,
+        existingFileId: remoteFile.id,
+      );
+      return const DriveSyncSummary(uploaded: 1);
+    }
+    return const DriveSyncSummary();
+  }
+
+  DateTime _payloadUpdatedAt(Map<String, dynamic> payload) {
+    return DateTime.tryParse(payload['updatedAt']?.toString() ?? '') ??
+        DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
   }
 
   Future<dynamic> _downloadJson(

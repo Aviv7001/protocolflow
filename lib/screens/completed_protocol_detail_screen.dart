@@ -15,6 +15,7 @@ import 'package:protocolflow/services/docx_export_service.dart';
 import 'package:protocolflow/services/pdf_service.dart';
 import 'package:protocolflow/services/export_service.dart';
 import 'package:protocolflow/theme/app_colors.dart';
+import 'package:protocolflow/utils/date_time_format.dart';
 
 class CompletedProtocolDetailScreen extends StatelessWidget {
   final CompletedProtocol completedProtocol;
@@ -108,9 +109,7 @@ class CompletedProtocolDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final protocol = completedProtocol.protocol;
-    final date = completedProtocol.completedAt;
-    final dateStr =
-        '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+    final dateStr = formatDateTime(completedProtocol.completedAt);
 
     return Scaffold(
       appBar: AppBar(
@@ -141,7 +140,23 @@ class CompletedProtocolDetailScreen extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
+              'Created on: ${formatDate(protocol.createdAt)}',
+              style: const TextStyle(fontStyle: FontStyle.italic),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Created by: ${protocol.createdByName ?? 'Unknown user'}',
+              style: const TextStyle(fontStyle: FontStyle.italic),
+            ),
+            const SizedBox(height: 4),
+            Text(
               'Completed on: $dateStr',
+              style: const TextStyle(fontStyle: FontStyle.italic),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Completed by: '
+              '${completedProtocol.completedByName ?? 'Unknown user'}',
               style: const TextStyle(fontStyle: FontStyle.italic),
             ),
             const Divider(height: 32),

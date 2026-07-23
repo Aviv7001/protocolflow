@@ -260,6 +260,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final summary = await DriveSyncService.instance.syncNow(
       promptIfNecessary: promptIfNecessary,
     );
+    await _loadTasks();
+    await loadPersistentProtocols();
     if (mounted) {
       setState(() => _isSyncing = false);
       if (!showSnackBar) return;

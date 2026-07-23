@@ -12,6 +12,7 @@ import 'package:protocolflow/models/step_note.dart';
 import 'package:protocolflow/models/completed_protocol.dart';
 import 'package:protocolflow/data/completed_protocols_data.dart';
 import 'package:protocolflow/services/picked_image_store.dart';
+import 'package:protocolflow/services/auth_service.dart';
 import 'package:protocolflow/theme/app_colors.dart';
 import 'package:protocolflow/widgets/action_timer_wrapper.dart';
 import 'package:protocolflow/widgets/local_image.dart';
@@ -269,6 +270,9 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
                   notes: List.from(_notes),
                   startedAt: activeProtocol?.startedAt,
                   completedAt: DateTime.now(),
+                  completedByName:
+                      AuthService.instance.currentUser?.displayName ??
+                      AuthService.instance.currentUser?.email,
                 ),
               );
 

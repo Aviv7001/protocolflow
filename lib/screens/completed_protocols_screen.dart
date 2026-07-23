@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../data/completed_protocols_data.dart';
 import '../theme/app_colors.dart';
 import 'completed_protocol_detail_screen.dart';
+import '../utils/date_time_format.dart';
 
 class CompletedProtocolsScreen extends StatefulWidget {
   const CompletedProtocolsScreen({super.key});
@@ -22,9 +23,7 @@ class _CompletedProtocolsScreenState extends State<CompletedProtocolsScreen> {
               itemCount: completedProtocols.length,
               itemBuilder: (context, index) {
                 final completed = completedProtocols[index];
-                final date = completed.completedAt;
-                final dateStr =
-                    '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+                final dateStr = formatDateTime(completed.completedAt);
 
                 return ListTile(
                   leading: const Icon(
@@ -32,7 +31,16 @@ class _CompletedProtocolsScreenState extends State<CompletedProtocolsScreen> {
                     color: AppColors.success,
                   ),
                   title: Text(completed.protocol.title),
-                  subtitle: Text('Completed on: $dateStr'),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Completed on: $dateStr'),
+                      Text(
+                        'Completed by: '
+                        '${completed.completedByName ?? 'Unknown user'}',
+                      ),
+                    ],
+                  ),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () async {
                     await Navigator.push(

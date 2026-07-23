@@ -7,6 +7,7 @@ class CompletedProtocol {
   final List<StepNote> notes;
   final DateTime? startedAt;
   final DateTime completedAt;
+  final String? completedByName;
 
   CompletedProtocol({
     required this.id,
@@ -14,6 +15,7 @@ class CompletedProtocol {
     required this.notes,
     this.startedAt,
     required this.completedAt,
+    this.completedByName,
   });
 
   Map<String, dynamic> toJson() {
@@ -23,6 +25,7 @@ class CompletedProtocol {
       'notes': notes.map((n) => n.toJson()).toList(),
       'startedAt': startedAt?.toIso8601String(),
       'completedAt': completedAt.toIso8601String(),
+      'completedByName': completedByName,
     };
   }
 
@@ -39,6 +42,7 @@ class CompletedProtocol {
       completedAt: DateTime.parse(
         json['completedAt'] ?? DateTime.now().toIso8601String(),
       ),
+      completedByName: json['completedByName'],
     );
   }
 }

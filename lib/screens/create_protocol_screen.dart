@@ -692,7 +692,9 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
         // user's remote protocol record without depending on editable names.
         ownerId: signedInUser?.googleUserId ?? widget.initialProtocol?.ownerId,
         createdByName:
-            signedInUser?.displayName ?? widget.initialProtocol?.createdByName,
+            signedInUser?.displayName ??
+            signedInUser?.email ??
+            widget.initialProtocol?.createdByName,
         createdAt: isUpdating ? widget.initialProtocol!.createdAt : now,
         updatedAt: now,
         schemaVersion: Protocol.currentSchemaVersion,

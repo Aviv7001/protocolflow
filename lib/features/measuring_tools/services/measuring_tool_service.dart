@@ -9,6 +9,7 @@ class MeasuringToolService {
 
   static final MeasuringToolService instance = MeasuringToolService._();
   static const String _storageKey = 'measuring_tools_json';
+  static const String _syncUpdatedAtKey = 'measuring_tools_sync_updated_at';
 
   List<MeasuringTool>? _cachedTools;
 
@@ -257,6 +258,45 @@ class MeasuringToolService {
     final prefs = await SharedPreferences.getInstance();
     final payload = jsonEncode(tools.map((tool) => tool.toJson()).toList());
     await prefs.setString(_storageKey, payload);
+    await prefs.setString(_syncUpdatedAtKey, DateTime.now().toIso8601String());
+    _cachedTools = List<MeasuringTool>.from(tools);
+  }
+
+  Future<Map<String, dynamic>> buildSyncPayload() async {
+    final prefs = await SharedPreferences.getInstance();
+    var updatedAt = DateTime.tryParse(prefs.getString(_syncUpdatedAtKey) ?? '');
+    if (updatedAt == null) {
+      final hasLegacyData = prefs.containsKey(_storageKey);
+      updatedAt = hasLegacyData
+          ? DateTime.now()
+          : DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+      if (hasLegacyData) {
+        await prefs.setString(_syncUpdatedAtKey, updatedAt.toIso8601String());
+      }
+    }
+    return {
+      'updatedAt': updatedAt.toIso8601String(),
+      'tools': (await loadTools()).map((tool) => tool.toJson()).toList(),
+    };
+  }
+
+  Future<void> replaceFromSyncPayload(Map<String, dynamic> payload) async {
+    final tools = (payload['tools'] as List? ?? [])
+        .whereType<Map>()
+        .map((item) => MeasuringTool.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
+    if (tools.isEmpty) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _storageKey,
+      jsonEncode(tools.map((tool) => tool.toJson()).toList()),
+    );
+    await prefs.setString(
+      _syncUpdatedAtKey,
+      payload['updatedAt']?.toString() ??
+          DateTime.fromMillisecondsSinceEpoch(0, isUtc: true).toIso8601String(),
+    );
     _cachedTools = List<MeasuringTool>.from(tools);
   }
 

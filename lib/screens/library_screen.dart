@@ -7,6 +7,7 @@ import '../services/export_service.dart';
 import '../services/import_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/sync_status_chip.dart';
+import '../utils/date_time_format.dart';
 import 'protocol_detail_screen.dart';
 import 'completed_protocol_detail_screen.dart';
 import 'run_protocol_screen.dart';
@@ -237,6 +238,15 @@ class _LibraryScreenState extends State<LibraryScreen>
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
+                const SizedBox(height: 3),
+                Text(
+                  'Created on: ${formatDate(protocol.createdAt)}',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                Text(
+                  'Created by: ${protocol.createdByName ?? 'Unknown user'}',
+                  style: const TextStyle(fontSize: 12),
+                ),
                 const SizedBox(height: 4),
                 SyncStatusChip(status: protocol.syncStatus, compact: true),
               ],
@@ -462,13 +472,21 @@ class _LibraryScreenState extends State<LibraryScreen>
         itemCount: completedProtocols.length,
         itemBuilder: (context, index) {
           final completed = completedProtocols[index];
-          final date = completed.completedAt;
-          final dateStr = '${date.year}-${date.month}-${date.day}';
+          final dateStr = formatDate(completed.completedAt);
 
           return ListTile(
             leading: const Icon(Icons.check_circle, color: AppColors.success),
             title: Text(completed.protocol.title),
-            subtitle: Text('Completed on: $dateStr'),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Completed on: $dateStr'),
+                Text(
+                  'Completed by: '
+                  '${completed.completedByName ?? 'Unknown user'}',
+                ),
+              ],
+            ),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.push(
               context,
