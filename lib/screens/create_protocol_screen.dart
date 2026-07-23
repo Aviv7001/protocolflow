@@ -10,7 +10,6 @@ import '../models/protocol_table.dart';
 import '../models/master_mix_wizard.dart';
 import '../features/master_mix/services/master_mix_calculator_service.dart';
 import '../theme/app_colors.dart';
-import '../widgets/protocol_table_widget.dart';
 import '../widgets/protocol_table_preview.dart';
 import '../widgets/protocol_step_actions_table.dart';
 import '../widgets/protocol_step_notes_table.dart';
@@ -932,44 +931,39 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
                     ),
                   )
                 else
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: _regularTables.map((table) {
-                      return Stack(
-                        children: [
-                          ProtocolTableWidget(
-                            table: table,
-                            isReadOnly: false,
-                            onSave: (updated) {
-                              setState(() {
-                                final index = _tables.indexWhere(
-                                  (candidate) => candidate.id == table.id,
-                                );
-                                if (index != -1) _tables[index] = updated;
-                              });
-                              _syncMaterialsFromTable(updated);
-                            },
-                          ),
-                          Positioned(
-                            right: 0,
-                            top: 0,
-                            child: IconButton(
-                              icon: const Icon(
-                                Icons.remove_circle,
-                                color: Colors.red,
-                                size: 20,
-                              ),
-                              onPressed: () => setState(
-                                () => _tables.removeWhere(
-                                  (candidate) => candidate.id == table.id,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      );
-                    }).toList(),
+                  LinkedProtocolTablesSection(
+                    tables: _regularTables,
+                    isReadOnly: _isInProgress,
+                    initiallyCollapsed: true,
+                    onSave: _isInProgress
+                        ? null
+                        : (updated) {
+                            setState(() {
+                              final index = _tables.indexWhere(
+                                (candidate) => candidate.id == updated.id,
+                              );
+                              if (index != -1) _tables[index] = updated;
+                            });
+                            _syncMaterialsFromTable(updated);
+                          },
+                    onDelete: _isInProgress
+                        ? null
+                        : (table) => setState(() {
+                            _tables.removeWhere(
+                              (candidate) => candidate.id == table.id,
+                            );
+                            for (
+                              var index = 0;
+                              index < _steps.length;
+                              index++
+                            ) {
+                              _steps[index] = _steps[index].copyWith(
+                                tableIds: _steps[index].tableIds
+                                    .where((id) => id != table.id)
+                                    .toList(),
+                              );
+                            }
+                          }),
                   ),
                 const SizedBox(height: 16),
                 Center(

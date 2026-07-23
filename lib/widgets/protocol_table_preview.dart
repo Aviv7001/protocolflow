@@ -21,6 +21,7 @@ class ProtocolTablePreview extends StatelessWidget {
     this.onMoveUp,
     this.onMoveDown,
     this.onUnlink,
+    this.onDelete,
     this.canMoveUp = false,
     this.canMoveDown = false,
     this.showOrderControls = false,
@@ -34,6 +35,7 @@ class ProtocolTablePreview extends StatelessWidget {
   final VoidCallback? onMoveUp;
   final VoidCallback? onMoveDown;
   final VoidCallback? onUnlink;
+  final VoidCallback? onDelete;
   final bool canMoveUp;
   final bool canMoveDown;
   final bool showOrderControls;
@@ -114,6 +116,13 @@ class ProtocolTablePreview extends StatelessWidget {
                     onPressed: onUnlink,
                     color: AppColors.error,
                     icon: const Icon(Icons.link_off),
+                  ),
+                if (onDelete != null)
+                  IconButton(
+                    tooltip: 'Delete table',
+                    onPressed: onDelete,
+                    color: AppColors.error,
+                    icon: const Icon(Icons.delete_outline),
                   ),
               ],
             ),
@@ -251,6 +260,8 @@ class LinkedProtocolTablesSection extends StatefulWidget {
     this.onMoveUp,
     this.onMoveDown,
     this.onUnlink,
+    this.onDelete,
+    this.initiallyCollapsed = false,
   });
 
   final List<ProtocolTable> tables;
@@ -260,6 +271,8 @@ class LinkedProtocolTablesSection extends StatefulWidget {
   final void Function(int index)? onMoveUp;
   final void Function(int index)? onMoveDown;
   final void Function(ProtocolTable table)? onUnlink;
+  final void Function(ProtocolTable table)? onDelete;
+  final bool initiallyCollapsed;
 
   @override
   State<LinkedProtocolTablesSection> createState() =>
@@ -572,10 +585,25 @@ class _LinkedProtocolTablesSectionState
   final Set<String> _collapsedTableIds = {};
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.initiallyCollapsed) {
+      _collapsedTableIds.addAll(widget.tables.map((table) => table.id));
+    }
+  }
+
+  @override
   void didUpdateWidget(covariant LinkedProtocolTablesSection oldWidget) {
     super.didUpdateWidget(oldWidget);
     final currentIds = widget.tables.map((table) => table.id).toSet();
     _collapsedTableIds.removeWhere((id) => !currentIds.contains(id));
+    if (widget.initiallyCollapsed) {
+      final previousIds = oldWidget.tables.map((table) => table.id).toSet();
+      _collapsedTableIds.addAll(currentIds.difference(previousIds));
+      if (!oldWidget.initiallyCollapsed) {
+        _collapsedTableIds.addAll(currentIds);
+      }
+    }
   }
 
   @override
@@ -628,6 +656,9 @@ class _LinkedProtocolTablesSectionState
             onUnlink: widget.onUnlink == null
                 ? null
                 : () => widget.onUnlink!(table),
+            onDelete: widget.onDelete == null
+                ? null
+                : () => widget.onDelete!(table),
             isCollapsed: _collapsedTableIds.contains(table.id),
             onCollapsedChanged: (collapsed) {
               setState(() {

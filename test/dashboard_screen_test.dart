@@ -10,6 +10,11 @@ import 'package:protocolflow/models/task.dart';
 import 'package:protocolflow/screens/dashboard_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+void expectNoFlutterException(WidgetTester tester) {
+  final exception = tester.takeException();
+  expect(exception, isNull);
+}
+
 void main() {
   testWidgets('dashboard renders responsive sections with empty data', (
     tester,
@@ -28,12 +33,13 @@ void main() {
     expect(find.text('Today\'s task status'), findsOneWidget);
     expect(find.text('Activity heatmap'), findsOneWidget);
     expect(find.text('Data health'), findsOneWidget);
+    expect(find.text('Data footprint'), findsOneWidget);
     expect(find.text('Recent exports'), findsOneWidget);
     expect(find.text('30d'), findsOneWidget);
     expect(find.text('All'), findsOneWidget);
     expect(find.byType(RefreshIndicator), findsOneWidget);
     expect(find.byIcon(Icons.refresh), findsNothing);
-    expect(tester.takeException(), isNull);
+    expectNoFlutterException(tester);
   });
 
   testWidgets('dashboard renders charts from persisted activity', (
@@ -94,6 +100,9 @@ void main() {
     expect(find.text('Task history'), findsOneWidget);
     expect(find.text('Measuring tools'), findsOneWidget);
     expect(find.text('Tables'), findsWidgets);
+    expect(find.text('Local browser data'), findsOneWidget);
+    expect(find.text('Drive sync data'), findsOneWidget);
+    expect(find.text('Not signed in'), findsOneWidget);
     final tableSynced = tester.widget<Text>(
       find.descendant(
         of: find.byKey(const Key('data-health-tables-synced')),
@@ -101,6 +110,6 @@ void main() {
       ),
     );
     expect(tableSynced.data, '1');
-    expect(tester.takeException(), isNull);
+    expectNoFlutterException(tester);
   });
 }

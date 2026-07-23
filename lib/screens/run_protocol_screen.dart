@@ -19,7 +19,6 @@ import 'package:protocolflow/widgets/local_image.dart';
 import 'package:protocolflow/widgets/protocol_step_actions_table.dart';
 import 'package:protocolflow/widgets/protocol_step_notes_table.dart';
 import 'package:protocolflow/widgets/protocol_table_preview.dart';
-import 'package:protocolflow/widgets/protocol_table_widget.dart';
 import 'package:protocolflow/screens/library_screen.dart';
 
 class RunProtocolScreen extends StatefulWidget {
@@ -760,10 +759,7 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
   }
 
   void _openFiles() {
-    final attachedFiles = <String>{
-      ...protocol.files,
-      ...protocol.steps.expand((step) => step.attachedFiles),
-    }.toList();
+    final unlinkedTables = _unlinkedTables();
     final additionalData = protocol.additionalData;
 
     showModalBottomSheet<void>(
@@ -783,23 +779,31 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
                   controller: scrollController,
                   children: [
                     Text(
-                      'Attached Files & Data',
+                      'Files',
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Reference tables and additional data for this protocol.',
+                      style: TextStyle(color: AppColors.textSecondary),
+                    ),
                     const SizedBox(height: 12),
-                    if (attachedFiles.isEmpty && additionalData.isEmpty)
-                      const Text('No files or additional data attached.')
+                    if (unlinkedTables.isEmpty && additionalData.isEmpty)
+                      const Text('No reference tables or additional data.')
                     else ...[
-                      if (attachedFiles.isNotEmpty) ...[
+                      if (unlinkedTables.isNotEmpty) ...[
                         const Text(
-                          'Protocol Files',
+                          'Reference Tables',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             color: Colors.grey,
                           ),
                         ),
                         const SizedBox(height: 8),
-                        _buildFileGrid(attachedFiles),
+                        LinkedProtocolTablesSection(
+                          tables: unlinkedTables,
+                          initiallyCollapsed: true,
+                        ),
                         const SizedBox(height: 16),
                       ],
                       if (additionalData.isNotEmpty) ...[
@@ -821,23 +825,6 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
           },
         );
       },
-    );
-  }
-
-  // ignore: unused_element
-  Widget _buildTableGrid(List<ProtocolTable> tables) {
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: tables.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        mainAxisSpacing: 8,
-        crossAxisSpacing: 8,
-        childAspectRatio: 0.82,
-      ),
-      itemBuilder: (context, index) =>
-          ProtocolTableWidget(table: tables[index]),
     );
   }
 
@@ -904,49 +891,18 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
     );
   }
 
-  Widget _buildFileGrid(List<String> files) {
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: files.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        mainAxisSpacing: 8,
-        crossAxisSpacing: 8,
-        childAspectRatio: 0.85,
-      ),
-      itemBuilder: (context, index) {
-        final fileName = files[index];
-        return InkWell(
-          onTap: () {
-            debugPrint('Open file: $fileName');
-            Navigator.pop(context);
-          },
-          borderRadius: BorderRadius.circular(8),
-          child: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey.shade300),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.insert_drive_file, size: 32),
-                const SizedBox(height: 8),
-                Text(
-                  fileName,
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
+  List<ProtocolTable> _unlinkedTables() {
+    final linkedTableIds = protocol.steps
+        .expand((step) => step.tableIds)
+        .where((id) => id.trim().isNotEmpty)
+        .toSet();
+    return protocol.tables
+        .where(
+          (table) =>
+              table.type != TableType.materialList &&
+              !linkedTableIds.contains(table.id),
+        )
+        .toList();
   }
 
   @override

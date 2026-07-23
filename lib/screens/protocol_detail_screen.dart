@@ -8,7 +8,6 @@ import '../models/protocol_step.dart';
 import '../models/protocol_table.dart';
 import '../data/completed_protocols_data.dart';
 import '../services/storage_service.dart';
-import '../widgets/protocol_table_widget.dart';
 import '../widgets/local_image.dart';
 import '../widgets/sync_status_chip.dart';
 import '../services/docx_export_service.dart';
@@ -826,7 +825,10 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
             style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
           ),
           const SizedBox(height: 8),
-          _buildTableGrid(unassignedTables),
+          LinkedProtocolTablesSection(
+            tables: unassignedTables,
+            initiallyCollapsed: true,
+          ),
           const SizedBox(height: 16),
         ],
         if (protocol.additionalData.isNotEmpty) ...[
@@ -905,22 +907,6 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
         borderRadius: BorderRadius.circular(4),
         child: buildLocalImage(photoPaths[index]),
       ),
-    );
-  }
-
-  Widget _buildTableGrid(List<ProtocolTable> tables) {
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: tables.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        mainAxisSpacing: 8,
-        crossAxisSpacing: 8,
-        childAspectRatio: 0.82,
-      ),
-      itemBuilder: (context, index) =>
-          ProtocolTableWidget(table: tables[index]),
     );
   }
 

@@ -185,11 +185,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ], minPanelWidth: 300),
           const SizedBox(height: 16),
-          _DashboardPanel(
-            title: 'Data health',
-            subtitle: 'Google Drive synchronization and attention items',
-            child: _buildDataHealth(data),
-          ),
+          _responsivePanels([
+            _DashboardPanel(
+              title: 'Data footprint',
+              subtitle: 'Estimated local and Drive sync payload size',
+              child: _buildDataFootprint(
+                data.footprint,
+                hasDriveAccount: data.hasDriveAccount,
+              ),
+            ),
+            _DashboardPanel(
+              title: 'Data health',
+              subtitle: 'Google Drive synchronization and attention items',
+              child: _buildDataHealth(data),
+            ),
+          ], minPanelWidth: 420),
         ],
       ),
     );
@@ -230,7 +240,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildRangeControl({bool compact = false}) {
-    return SegmentedButton<DashboardRange>(
+    final control = SegmentedButton<DashboardRange>(
       segments: DashboardRange.values
           .map(
             (range) => ButtonSegment(
@@ -245,6 +255,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       onSelectionChanged: (selection) {
         setState(() => _range = selection.first);
       },
+    );
+    if (!compact) return control;
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: control,
     );
   }
 
@@ -347,44 +362,52 @@ class _DashboardScreenState extends State<DashboardScreen> {
         .toList();
     if (tasks.isEmpty) return const _EmptyChart('No tasks for today.');
     const colors = [AppColors.textSecondary, AppColors.info, AppColors.success];
-    return Row(
-      children: [
-        Expanded(
-          child: SizedBox(
-            height: 190,
-            child: PieChart(
-              PieChartData(
-                centerSpaceRadius: 42,
-                sectionsSpace: 2,
-                sections: List.generate(
-                  values.length,
-                  (index) => PieChartSectionData(
-                    value: values[index].toDouble(),
-                    color: colors[index],
-                    title: values[index] == 0 ? '' : '${values[index]}',
-                    radius: 42,
-                    titleStyle: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
+    final chart = SizedBox(
+      height: 190,
+      child: PieChart(
+        PieChartData(
+          centerSpaceRadius: 42,
+          sectionsSpace: 2,
+          sections: List.generate(
+            values.length,
+            (index) => PieChartSectionData(
+              value: values[index].toDouble(),
+              color: colors[index],
+              title: values[index] == 0 ? '' : '${values[index]}',
+              radius: 42,
+              titleStyle: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ),
         ),
-        const SizedBox(width: 12),
-        const Flexible(
-          child: _Legend(
-            vertical: true,
-            items: [
-              _LegendData('Not started', AppColors.textSecondary),
-              _LegendData('In progress', AppColors.info),
-              _LegendData('Completed', AppColors.success),
-            ],
-          ),
-        ),
+      ),
+    );
+    const legend = _Legend(
+      vertical: true,
+      items: [
+        _LegendData('Not started', AppColors.textSecondary),
+        _LegendData('In progress', AppColors.info),
+        _LegendData('Completed', AppColors.success),
       ],
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 360) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [chart, const SizedBox(height: 10), legend],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: chart),
+            const SizedBox(width: 12),
+            const Flexible(child: legend),
+          ],
+        );
+      },
     );
   }
 
@@ -486,44 +509,53 @@ class _DashboardScreenState extends State<DashboardScreen> {
       AppColors.info,
       AppColors.success,
     ];
-    return Row(
-      children: [
-        Expanded(
-          child: SizedBox(
-            height: 190,
-            child: PieChart(
-              PieChartData(
-                centerSpaceRadius: 38,
-                sectionsSpace: 2,
-                sections: List.generate(
-                  values.length,
-                  (index) => PieChartSectionData(
-                    value: values[index].toDouble(),
-                    color: colors[index],
-                    title: values[index] == 0 ? '' : '${values[index]}',
-                    radius: 44,
-                    titleStyle: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
+    final chart = SizedBox(
+      height: 190,
+      child: PieChart(
+        PieChartData(
+          centerSpaceRadius: 38,
+          sectionsSpace: 2,
+          sections: List.generate(
+            values.length,
+            (index) => PieChartSectionData(
+              value: values[index].toDouble(),
+              color: colors[index],
+              title: values[index] == 0 ? '' : '${values[index]}',
+              radius: 44,
+              titleStyle: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ),
         ),
-        const Flexible(
-          child: _Legend(
-            vertical: true,
-            items: [
-              _LegendData('Templates', Color(0xFF7B61A8)),
-              _LegendData('Ready', AppColors.primary),
-              _LegendData('Running', AppColors.info),
-              _LegendData('Completed', AppColors.success),
-            ],
-          ),
-        ),
+      ),
+    );
+    const legend = _Legend(
+      vertical: true,
+      items: [
+        _LegendData('Templates', Color(0xFF7B61A8)),
+        _LegendData('Ready', AppColors.primary),
+        _LegendData('Running', AppColors.info),
+        _LegendData('Completed', AppColors.success),
       ],
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 360) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [chart, const SizedBox(height: 10), legend],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: chart),
+            const SizedBox(width: 12),
+            const Flexible(child: legend),
+          ],
+        );
+      },
     );
   }
 
@@ -815,6 +847,80 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  Widget _buildDataFootprint(
+    DashboardFootprint footprint, {
+    required bool hasDriveAccount,
+  }) {
+    final colors = [
+      AppColors.primary,
+      const Color(0xFF7B61A8),
+      AppColors.success,
+      AppColors.info,
+      const Color(0xFFCE7A24),
+      const Color(0xFFB14C68),
+    ];
+    final segments = footprint.segments.asMap().entries.map((entry) {
+      return _FootprintSegmentView(
+        label: entry.value.label,
+        localBytes: entry.value.localBytes,
+        syncBytes: entry.value.syncBytes,
+        color: colors[entry.key % colors.length],
+      );
+    }).toList();
+
+    if (footprint.localBytes == 0 && footprint.syncBytes == 0) {
+      return const _EmptyChart('No stored ProtocolFlow data yet.');
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _FootprintBar(
+          label: 'Local browser data',
+          totalBytes: footprint.localBytes,
+          segments: segments
+              .map(
+                (segment) => _FootprintBarSegment(
+                  bytes: segment.localBytes,
+                  color: segment.color,
+                ),
+              )
+              .toList(),
+        ),
+        const SizedBox(height: 14),
+        _FootprintBar(
+          label: hasDriveAccount ? 'Drive payload estimate' : 'Drive sync data',
+          totalBytes: hasDriveAccount ? footprint.syncBytes : 0,
+          unavailableLabel: hasDriveAccount ? null : 'Not signed in',
+          segments: segments
+              .map(
+                (segment) => _FootprintBarSegment(
+                  bytes: hasDriveAccount ? segment.syncBytes : 0,
+                  color: segment.color,
+                ),
+              )
+              .toList(),
+        ),
+        const SizedBox(height: 16),
+        Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          children: segments
+              .map(
+                (segment) => _FootprintLegendItem(
+                  label: segment.label,
+                  color: segment.color,
+                  localBytes: segment.localBytes,
+                  syncBytes: segment.syncBytes,
+                  hasDriveAccount: hasDriveAccount,
+                ),
+              )
+              .toList(),
+        ),
+      ],
+    );
+  }
+
   bool _matchesSelectedProject(Protocol protocol) {
     final selected = _selectedProjectId;
     if (selected == null) return true;
@@ -1029,6 +1135,188 @@ class _Legend extends StatelessWidget {
   }
 }
 
+class _FootprintSegmentView {
+  final String label;
+  final int localBytes;
+  final int syncBytes;
+  final Color color;
+
+  const _FootprintSegmentView({
+    required this.label,
+    required this.localBytes,
+    required this.syncBytes,
+    required this.color,
+  });
+}
+
+class _FootprintBarSegment {
+  final int bytes;
+  final Color color;
+
+  const _FootprintBarSegment({required this.bytes, required this.color});
+}
+
+class _FootprintBar extends StatelessWidget {
+  final String label;
+  final int totalBytes;
+  final List<_FootprintBarSegment> segments;
+  final String? unavailableLabel;
+
+  const _FootprintBar({
+    required this.label,
+    required this.totalBytes,
+    required this.segments,
+    this.unavailableLabel,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final visibleSegments = segments
+        .where((segment) => segment.bytes > 0)
+        .toList();
+    final isUnavailable = unavailableLabel != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+            Text(
+              unavailableLabel ?? _formatBytes(totalBytes),
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Container(
+          height: 20,
+          decoration: BoxDecoration(
+            color: AppColors.surfaceContainer,
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: Theme.of(context).dividerColor),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: isUnavailable || visibleSegments.isEmpty
+              ? const SizedBox.expand()
+              : LayoutBuilder(
+                  builder: (context, constraints) {
+                    final total = visibleSegments.fold<int>(
+                      0,
+                      (sum, segment) => sum + segment.bytes,
+                    );
+                    final minWidth =
+                        visibleSegments.length * 6 <= constraints.maxWidth
+                        ? 6.0
+                        : 0.0;
+                    final proportionalWidth =
+                        constraints.maxWidth -
+                        minWidth * visibleSegments.length;
+                    return Stack(
+                      children: [
+                        Positioned.fill(
+                          child: ColoredBox(color: AppColors.surfaceContainer),
+                        ),
+                        Row(
+                          children: visibleSegments.map((segment) {
+                            final exactWidth =
+                                minWidth +
+                                proportionalWidth * segment.bytes / total;
+                            return Container(
+                              width: exactWidth,
+                              color: segment.color,
+                            );
+                          }).toList(),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FootprintLegendItem extends StatelessWidget {
+  final String label;
+  final Color color;
+  final int localBytes;
+  final int syncBytes;
+  final bool hasDriveAccount;
+
+  const _FootprintLegendItem({
+    required this.label,
+    required this.color,
+    required this.localBytes,
+    required this.syncBytes,
+    required this.hasDriveAccount,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 136, maxWidth: 180),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            margin: const EdgeInsets.only(top: 4),
+            color: color,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  hasDriveAccount
+                      ? '${_formatBytes(localBytes)} local, ${_formatBytes(syncBytes)} sync'
+                      : '${_formatBytes(localBytes)} local',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _formatBytes(int bytes) {
+  if (bytes >= 1024 * 1024) {
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+  if (bytes >= 1024) {
+    return '${(bytes / 1024).toStringAsFixed(1)} KB';
+  }
+  return '$bytes B';
+}
+
 class _RankBar extends StatelessWidget {
   final String label;
   final int value;
@@ -1173,13 +1461,15 @@ class _DataHealthHeader extends StatelessWidget {
   );
 }
 
+const double _healthColumnWidth = 44;
+
 class _HealthColumnLabel extends StatelessWidget {
   final String label;
   const _HealthColumnLabel(this.label);
 
   @override
   Widget build(BuildContext context) => SizedBox(
-    width: 52,
+    width: _healthColumnWidth,
     child: Text(
       label,
       textAlign: TextAlign.center,
@@ -1234,7 +1524,7 @@ class _HealthValue extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SizedBox(
-    width: 52,
+    width: _healthColumnWidth,
     child: Text(
       '$value',
       textAlign: TextAlign.center,
