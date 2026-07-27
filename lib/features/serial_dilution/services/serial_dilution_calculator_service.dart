@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import '../../lab_math/lab_calculation.dart';
+import '../../measuring_tools/services/mass_measurement_optimizer_service.dart';
 import '../../measuring_tools/services/measuring_tool_service.dart';
 import '../../measuring_tools/services/transfer_optimizer_service.dart';
 import '../models/serial_dilution_input.dart';
@@ -11,6 +12,8 @@ class SerialDilutionCalculatorService {
   static const int maxDilutions = 50;
 
   final TransferOptimizerService _optimizer = const TransferOptimizerService();
+  final MassMeasurementOptimizerService _massOptimizer =
+      const MassMeasurementOptimizerService();
   final MeasuringToolService _measuringToolService =
       MeasuringToolService.instance;
 
@@ -24,13 +27,19 @@ class SerialDilutionCalculatorService {
       );
     }
 
-    final stockFamily = _getFamily(input.stockConcentrationUnit);
-    final stockBase = _convertToBaseConc(
-      input.stockConcentration,
-      input.stockConcentrationUnit,
-    );
     final startingUnit =
         input.startingDilutionConcentrationUnit ?? input.stockConcentrationUnit;
+    final isSolidSource =
+        input.startingSourceType == ReagentSourceType.solidMaterial;
+    final stockFamily = isSolidSource
+        ? _getFamily(startingUnit)
+        : _getFamily(input.stockConcentrationUnit);
+    final stockBase = isSolidSource
+        ? 0.0
+        : _convertToBaseConc(
+            input.stockConcentration,
+            input.stockConcentrationUnit,
+          );
     final startingFamily = _getFamily(startingUnit);
     if (startingFamily != stockFamily) {
       return SerialDilutionResult(
@@ -40,14 +49,44 @@ class SerialDilutionCalculatorService {
             'Cannot convert ${_unitLabel(input.stockConcentrationUnit)} to ${_unitLabel(startingUnit)} without molecular weight.',
       );
     }
+    if (isSolidSource &&
+        startingFamily != ConcentrationFamily.massVolume &&
+        startingFamily != ConcentrationFamily.percentage &&
+        startingFamily != ConcentrationFamily.molar) {
+      return SerialDilutionResult(
+        success: false,
+        title: input.title,
+        errorMessage:
+            'Solid starting source must use mass/volume, percent w/v, or molar concentration.',
+      );
+    }
+    if (isSolidSource &&
+        startingFamily == ConcentrationFamily.molar &&
+        (input.molecularWeight == null || input.molecularWeight! <= 0)) {
+      return SerialDilutionResult(
+        success: false,
+        title: input.title,
+        errorMessage:
+            'Molecular weight is required for solid starting source with molar concentration.',
+      );
+    }
 
     final startingConcentration =
         input.startingDilutionConcentration ??
-        _convertFromBaseConc(stockBase / input.dilutionFactor, startingUnit);
+        (isSolidSource
+            ? 0.0
+            : _convertFromBaseConc(
+                stockBase / input.dilutionFactor,
+                startingUnit,
+              ));
     final startingBase = _convertToBaseConc(
       startingConcentration,
       startingUnit,
     );
+    final seriesSourceBase = isSolidSource ? startingBase : stockBase;
+    final displayUnit = isSolidSource
+        ? startingUnit
+        : input.stockConcentrationUnit;
     if (startingBase <= 0) {
       return SerialDilutionResult(
         success: false,
@@ -55,7 +94,7 @@ class SerialDilutionCalculatorService {
         errorMessage: 'Starting dilution concentration must be greater than 0.',
       );
     }
-    if (startingBase > stockBase) {
+    if (!isSolidSource && startingBase > stockBase) {
       return SerialDilutionResult(
         success: false,
         title: input.title,
@@ -66,7 +105,7 @@ class SerialDilutionCalculatorService {
 
     final dilutionCount = _resolveDilutionCount(
       input,
-      stockBase,
+      seriesSourceBase,
       startingBase,
       stockFamily,
     );
@@ -92,25 +131,28 @@ class SerialDilutionCalculatorService {
           ? preparedVolumeUl - (preparedVolumeUl / input.dilutionFactor)
           : preparedVolumeUl;
 
-      final rows = <SerialDilutionRow>[
-        SerialDilutionRow(
-          dilutionName: input.stockSolutionName.isEmpty
-              ? 'Stock'
-              : input.stockSolutionName,
-          concentrationBaseUnit: stockBase,
-          formattedConcentration: _formatConcentration(
-            stockBase,
-            input.stockConcentrationUnit,
+      final rows = <SerialDilutionRow>[];
+      if (!isSolidSource) {
+        rows.add(
+          SerialDilutionRow(
+            dilutionName: input.stockSolutionName.isEmpty
+                ? 'Stock'
+                : input.stockSolutionName,
+            concentrationBaseUnit: stockBase,
+            formattedConcentration: _formatConcentration(
+              stockBase,
+              input.stockConcentrationUnit,
+            ),
+            transferFrom: '-',
+            transferVolumeUl: 0,
+            formattedTransferVolume: '-',
+            solventVolumeUl: 0,
+            formattedSolventVolume: '-',
+            finalVolumeUl: 0,
+            formattedFinalVolume: '-',
           ),
-          transferFrom: '-',
-          transferVolumeUl: 0,
-          formattedTransferVolume: '-',
-          solventVolumeUl: 0,
-          formattedSolventVolume: '-',
-          finalVolumeUl: 0,
-          formattedFinalVolume: '-',
-        ),
-      ];
+        );
+      }
       final warnings = <String>[];
       final evaluations = <TransferEvaluationResult>[];
 
@@ -126,8 +168,9 @@ class SerialDilutionCalculatorService {
         final sourceBase =
             transferFrom == 'Stock' ||
                 transferFrom == input.stockSolutionName ||
-                transferFrom == '-'
-            ? stockBase
+                transferFrom == '-' ||
+                (isSolidSource && transferFrom == 'D0')
+            ? seriesSourceBase
             : concentrationBase * input.dilutionFactor;
         final suggestionMessage = transferVolumeUl > 0
             ? _optimizer.suggestIntermediateDilution(
@@ -168,7 +211,7 @@ class SerialDilutionCalculatorService {
           final intermediate = LabCalculation.intermediateDilutionSuggestion(
             stockConcentrationBase: sourceBase,
             targetConcentrationBase: concentrationBase,
-            targetDisplayUnit: input.stockConcentrationUnit,
+            targetDisplayUnit: displayUnit,
             totalVolumeUl: finalVolumeUl,
           );
           if (intermediate != null) {
@@ -182,7 +225,7 @@ class SerialDilutionCalculatorService {
           concentrationBaseUnit: concentrationBase,
           formattedConcentration: _formatConcentration(
             concentrationBase,
-            input.stockConcentrationUnit,
+            displayUnit,
           ),
           transferFrom: transferFrom,
           transferVolumeUl: transferVolumeUl,
@@ -199,27 +242,75 @@ class SerialDilutionCalculatorService {
         );
       }
 
-      final d0TransferVolumeUl = preparedVolumeUl * (startingBase / stockBase);
-      final d0SolventVolumeUl = preparedVolumeUl - d0TransferVolumeUl;
-      rows.add(
-        buildMeasuredRow(
-          name: 'D0',
-          concentrationBase: startingBase,
-          transferFrom: input.stockSolutionName.isEmpty
-              ? 'Stock'
-              : input.stockSolutionName,
-          transferVolumeUl: d0TransferVolumeUl,
-          solventVolumeUl: d0SolventVolumeUl,
-          finalVolumeUl: preparedVolumeUl,
-        ),
-      );
+      if (isSolidSource) {
+        final massGrams = LabCalculation.solidMassForConcentration(
+          concentration: startingConcentration,
+          unit: startingUnit,
+          volumeUl: preparedVolumeUl,
+          molecularWeight: input.molecularWeight,
+        );
+        if (massGrams == null) {
+          return _SerialDilutionCandidate.invalid(extraPercent);
+        }
+        final massEvaluation = _massOptimizer.evaluateMass(
+          massGrams * 1000,
+          tools,
+          componentName: input.stockSolutionName,
+        );
+        final rowWarnings = <String>[
+          if (massEvaluation.warningMessage != null)
+            massEvaluation.warningMessage!,
+        ];
+        warnings.addAll(rowWarnings.map((warning) => 'D0: $warning'));
+        rows.add(
+          SerialDilutionRow(
+            dilutionName: 'D0',
+            concentrationBaseUnit: startingBase,
+            formattedConcentration: _formatConcentration(
+              startingBase,
+              startingUnit,
+            ),
+            transferFrom: input.stockSolutionName.isEmpty
+                ? 'Solid material'
+                : input.stockSolutionName,
+            transferVolumeUl: 0,
+            formattedTransferVolume: LabCalculation.formatMass(
+              massGrams,
+              unicodeMicro: true,
+            ),
+            solventVolumeUl: preparedVolumeUl,
+            formattedSolventVolume:
+                'Bring to ${_formatVolume(preparedVolumeUl)}',
+            finalVolumeUl: preparedVolumeUl,
+            formattedFinalVolume: _formatVolume(preparedVolumeUl),
+            warnings: rowWarnings,
+            massEvaluation: massEvaluation,
+          ),
+        );
+      } else {
+        final d0TransferVolumeUl =
+            preparedVolumeUl * (startingBase / stockBase);
+        final d0SolventVolumeUl = preparedVolumeUl - d0TransferVolumeUl;
+        rows.add(
+          buildMeasuredRow(
+            name: 'D0',
+            concentrationBase: startingBase,
+            transferFrom: input.stockSolutionName.isEmpty
+                ? 'Stock'
+                : input.stockSolutionName,
+            transferVolumeUl: d0TransferVolumeUl,
+            solventVolumeUl: d0SolventVolumeUl,
+            finalVolumeUl: preparedVolumeUl,
+          ),
+        );
+      }
 
       for (var i = 1; i <= dilutionCount.count; i++) {
         final concentrationBase =
             startingBase / pow(input.dilutionFactor, i).toDouble();
         final ratio = input.dilutionMode == DilutionMode.forward
             ? 1 / input.dilutionFactor
-            : concentrationBase / stockBase;
+            : concentrationBase / seriesSourceBase;
         final transferVolumeUl = preparedVolumeUl * ratio;
         final solventVolumeUl = preparedVolumeUl - transferVolumeUl;
         rows.add(
@@ -228,6 +319,8 @@ class SerialDilutionCalculatorService {
             concentrationBase: concentrationBase,
             transferFrom: input.dilutionMode == DilutionMode.forward
                 ? (i == 1 ? 'D0' : 'D${i - 1}')
+                : isSolidSource
+                ? 'D0'
                 : (input.stockSolutionName.isEmpty
                       ? 'Stock'
                       : input.stockSolutionName),
@@ -275,6 +368,16 @@ class SerialDilutionCalculatorService {
           })()
         : buildCandidate(input.extraVolumePercent);
 
+    if (selected.rows.isEmpty) {
+      return SerialDilutionResult(
+        success: false,
+        title: input.title,
+        errorMessage: selected.warnings.isEmpty
+            ? 'Could not calculate this serial dilution.'
+            : selected.warnings.first,
+      );
+    }
+
     return SerialDilutionResult(
       success: true,
       title: input.title,
@@ -299,12 +402,16 @@ class SerialDilutionCalculatorService {
     int dilutionCount;
     if (input.seriesLengthMode == SeriesLengthMode.targetLowestConcentration) {
       final targetUnit =
-          input.targetLowestConcentrationUnit ?? input.stockConcentrationUnit;
+          input.targetLowestConcentrationUnit ??
+          (input.startingSourceType == ReagentSourceType.solidMaterial
+              ? input.startingDilutionConcentrationUnit ??
+                    input.stockConcentrationUnit
+              : input.stockConcentrationUnit);
       final targetFamily = _getFamily(targetUnit);
       if (targetFamily != stockFamily) {
         return _DilutionCountResult(
           errorMessage:
-              'Cannot convert ${_unitLabel(input.stockConcentrationUnit)} to ${_unitLabel(targetUnit)} without molecular weight.',
+              'Cannot convert ${_unitLabel(input.startingSourceType == ReagentSourceType.solidMaterial ? input.startingDilutionConcentrationUnit ?? input.stockConcentrationUnit : input.stockConcentrationUnit)} to ${_unitLabel(targetUnit)}.',
         );
       }
 
@@ -351,7 +458,8 @@ class SerialDilutionCalculatorService {
   }
 
   String? _validateBasics(SerialDilutionInput input) {
-    if (input.stockConcentration <= 0 || input.stockConcentration.isNaN) {
+    if (input.startingSourceType == ReagentSourceType.liquidStock &&
+        (input.stockConcentration <= 0 || input.stockConcentration.isNaN)) {
       return 'Stock concentration must be greater than 0.';
     }
     if (input.dilutionFactor <= 1 || input.dilutionFactor.isNaN) {
@@ -360,11 +468,15 @@ class SerialDilutionCalculatorService {
     if (input.finalVolume <= 0 || input.finalVolume.isNaN) {
       return 'Final volume must be greater than 0.';
     }
-    if (_getFamily(input.stockConcentrationUnit) ==
-        ConcentrationFamily.molecularWeight) {
+    final sourceUnit =
+        input.startingSourceType == ReagentSourceType.solidMaterial
+        ? input.startingDilutionConcentrationUnit ??
+              input.stockConcentrationUnit
+        : input.stockConcentrationUnit;
+    if (_getFamily(sourceUnit) == ConcentrationFamily.molecularWeight) {
       return 'Molecular weight cannot be used as a serial dilution concentration unit.';
     }
-    if (_getFamily(input.stockConcentrationUnit) == ConcentrationFamily.fold) {
+    if (_getFamily(sourceUnit) == ConcentrationFamily.fold) {
       return 'Fold units cannot be used as serial dilution concentration units.';
     }
     return null;
@@ -417,6 +529,22 @@ class _SerialDilutionCandidate {
     required this.summary,
     this.autoReason,
   });
+
+  factory _SerialDilutionCandidate.invalid(double extraPercent) {
+    return _SerialDilutionCandidate(
+      extraPercent: extraPercent,
+      optimizedFinalVolumeUl: 0,
+      retainedVolumeUl: 0,
+      rows: const [],
+      warnings: const ['Could not calculate the solid starting material mass.'],
+      summary: const MixEvaluationSummary(
+        componentEvaluations: [],
+        minComponentScore: 0,
+        avgComponentScore: 0,
+        warningCount: 1,
+      ),
+    );
+  }
 
   _SerialDilutionCandidate copyWith({String? autoReason}) {
     return _SerialDilutionCandidate(

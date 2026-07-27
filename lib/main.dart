@@ -6,6 +6,7 @@ import 'screens/create_protocol_screen.dart';
 import 'screens/lab_tools_screen.dart';
 import 'screens/projects_screen.dart';
 import 'screens/saved_tables_screen.dart';
+import 'screens/user_guide_screen.dart';
 import 'theme/app_theme.dart';
 import 'data/completed_protocols_data.dart';
 import 'features/measuring_tools/services/measuring_tool_service.dart';
@@ -35,6 +36,7 @@ class ProtocolFlowApp extends StatelessWidget {
         '/projects': (context) => const ProjectsScreen(),
         '/lab_tools': (context) => const LabToolsScreen(),
         '/saved_tables': (context) => const SavedTablesScreen(),
+        '/user_guide': (context) => const UserGuideScreen(),
         '/task_history': (context) => const TaskHistoryScreen(),
       },
     );

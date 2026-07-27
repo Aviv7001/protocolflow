@@ -2,8 +2,10 @@ import 'dart:convert';
 
 import '../../../models/protocol_table.dart';
 import '../../lab_math/lab_calculation.dart';
+import '../../measuring_tools/services/mass_measurement_optimizer_service.dart';
 import '../../measuring_tools/services/transfer_optimizer_service.dart';
 import '../services/serial_dilution_calculator_service.dart';
+import 'serial_dilution_row.dart';
 
 enum DilutionMode { forward, independent }
 
@@ -11,9 +13,11 @@ enum SeriesLengthMode { numberOfDilutions, targetLowestConcentration }
 
 class SerialDilutionInput {
   final String title;
+  final ReagentSourceType startingSourceType;
   final String stockSolutionName;
   final double stockConcentration;
   final ConcentrationUnit stockConcentrationUnit;
+  final double? molecularWeight;
   final double? startingDilutionConcentration;
   final ConcentrationUnit? startingDilutionConcentrationUnit;
   final String solventName;
@@ -31,9 +35,11 @@ class SerialDilutionInput {
 
   SerialDilutionInput({
     this.title = 'Serial Dilution Table',
+    this.startingSourceType = ReagentSourceType.liquidStock,
     this.stockSolutionName = 'Stock',
     this.stockConcentration = 1000,
     this.stockConcentrationUnit = ConcentrationUnit.ngML,
+    this.molecularWeight,
     this.startingDilutionConcentration,
     this.startingDilutionConcentrationUnit,
     this.solventName = 'PBS',
@@ -53,9 +59,11 @@ class SerialDilutionInput {
   Map<String, dynamic> toJson() {
     return {
       'title': title,
+      'startingSourceType': startingSourceType.name,
       'stockSolutionName': stockSolutionName,
       'stockConcentration': stockConcentration,
       'stockConcentrationUnit': stockConcentrationUnit.name,
+      'molecularWeight': molecularWeight,
       'startingDilutionConcentration': startingDilutionConcentration,
       'startingDilutionConcentrationUnit':
           startingDilutionConcentrationUnit?.name,
@@ -77,12 +85,17 @@ class SerialDilutionInput {
   factory SerialDilutionInput.fromJson(Map<String, dynamic> json) {
     return SerialDilutionInput(
       title: json['title'] ?? 'Serial Dilution Table',
+      startingSourceType: ReagentSourceType.values.firstWhere(
+        (e) => e.name == json['startingSourceType'],
+        orElse: () => ReagentSourceType.liquidStock,
+      ),
       stockSolutionName: json['stockSolutionName'] ?? 'Stock',
       stockConcentration: (json['stockConcentration'] ?? 1000).toDouble(),
       stockConcentrationUnit: ConcentrationUnit.values.firstWhere(
         (e) => e.name == json['stockConcentrationUnit'],
         orElse: () => ConcentrationUnit.ngML,
       ),
+      molecularWeight: (json['molecularWeight'] as num?)?.toDouble(),
       startingDilutionConcentration:
           (json['startingDilutionConcentration'] as num?)?.toDouble(),
       startingDilutionConcentrationUnit:
@@ -125,9 +138,12 @@ class SerialDilutionInput {
 
   SerialDilutionInput copyWith({
     String? title,
+    ReagentSourceType? startingSourceType,
     String? stockSolutionName,
     double? stockConcentration,
     ConcentrationUnit? stockConcentrationUnit,
+    double? molecularWeight,
+    bool clearMolecularWeight = false,
     double? startingDilutionConcentration,
     ConcentrationUnit? startingDilutionConcentrationUnit,
     String? solventName,
@@ -145,10 +161,14 @@ class SerialDilutionInput {
   }) {
     return SerialDilutionInput(
       title: title ?? this.title,
+      startingSourceType: startingSourceType ?? this.startingSourceType,
       stockSolutionName: stockSolutionName ?? this.stockSolutionName,
       stockConcentration: stockConcentration ?? this.stockConcentration,
       stockConcentrationUnit:
           stockConcentrationUnit ?? this.stockConcentrationUnit,
+      molecularWeight: clearMolecularWeight
+          ? null
+          : molecularWeight ?? this.molecularWeight,
       startingDilutionConcentration:
           startingDilutionConcentration ?? this.startingDilutionConcentration,
       startingDilutionConcentrationUnit:
@@ -180,7 +200,7 @@ class SerialDilutionInput {
       'Dilution',
       'Concentration',
       'Transfer From',
-      'Transfer Volume',
+      'Transfer Amount',
       'Solvent Volume',
       'Final Volume',
       'Suggested Transfer',
@@ -199,7 +219,8 @@ class SerialDilutionInput {
                   row.formattedSolventVolume,
                   row.formattedFinalVolume,
                   _transferLabel(row.transferEvaluation),
-                  _toolLabel(row.transferEvaluation),
+                  row.massEvaluation?.recommendedToolName ??
+                      _toolLabel(row.transferEvaluation),
                   _statusText(row),
                 ],
               )
@@ -249,12 +270,14 @@ class SerialDilutionInput {
     return evaluation?.recommendedToolName as String? ?? '-';
   }
 
-  String _statusText(dynamic row) {
+  String _statusText(SerialDilutionRow row) {
     final status = row.transferEvaluation?.status;
     final statusName = status is TransferStatus ? status.label : null;
     if (statusName != null && statusName.isNotEmpty) {
       return statusName;
     }
+    final massStatus = row.massEvaluation?.status.label;
+    if (massStatus != null && massStatus.isNotEmpty) return massStatus;
     return [
       if (row.warnings.isNotEmpty) 'Warning',
       if (row.suggestions.isNotEmpty) 'Suggestion',

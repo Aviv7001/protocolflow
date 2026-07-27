@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 enum VolumeUnit { nL, uL, mL, L }
 
+enum ReagentSourceType { liquidStock, solidMaterial }
+
 enum ConcentrationUnit {
   M,
   mM,
@@ -315,6 +317,30 @@ class LabCalculation {
   }) {
     final fraction = totalUl <= 0 ? 0 : transferUl / totalUl;
     return 'Direct transfer is ${formatNumber(fraction * 100)}% of the final volume. For better accuracy, use at least ${formatNumber(minimumFraction * 100)}% or prepare an intermediate stock.';
+  }
+
+  static double? solidMassForConcentration({
+    required double concentration,
+    required ConcentrationUnit unit,
+    required double volumeUl,
+    double? molecularWeight,
+  }) {
+    if (concentration <= 0 || volumeUl <= 0) return null;
+    final volumeL = volumeUl / 1e6;
+    final family = familyOf(unit);
+    if (family == ConcentrationFamily.molar) {
+      if (molecularWeight == null || molecularWeight <= 0) return null;
+      return concentrationToBase(concentration, unit) *
+          volumeL *
+          molecularWeight;
+    }
+    if (family == ConcentrationFamily.massVolume) {
+      return concentrationToBase(concentration, unit) * volumeL;
+    }
+    if (family == ConcentrationFamily.percentage) {
+      return (concentration / 100.0) * (volumeL * 1000);
+    }
+    return null;
   }
 
   static IntermediateDilutionSuggestion? intermediateDilutionSuggestion({

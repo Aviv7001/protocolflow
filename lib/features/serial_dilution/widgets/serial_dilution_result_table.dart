@@ -8,6 +8,7 @@ import '../../../widgets/table_export_actions.dart';
 import '../../../widgets/transfer_status_icons.dart';
 import '../../../theme/app_colors.dart';
 import '../../lab_math/lab_calculation.dart';
+import '../../measuring_tools/services/mass_measurement_optimizer_service.dart';
 
 class SerialDilutionResultTable extends StatelessWidget {
   final SerialDilutionInput input;
@@ -63,7 +64,7 @@ class SerialDilutionResultTable extends StatelessWidget {
                 DataColumn(label: _HeaderCell('Dilution')),
                 DataColumn(label: _HeaderCell('Concentration')),
                 DataColumn(label: _HeaderCell('Transfer From')),
-                DataColumn(label: _HeaderCell('Transfer')),
+                DataColumn(label: _HeaderCell('Transfer Amount')),
                 DataColumn(label: _HeaderCell('Solvent')),
                 DataColumn(label: _HeaderCell('Final')),
                 DataColumn(label: _HeaderCell('Suggested')),
@@ -127,7 +128,9 @@ class SerialDilutionResultTable extends StatelessWidget {
                         ),
                         DataCell(
                           Text(
-                            row.transferEvaluation?.recommendedToolName ?? '-',
+                            row.massEvaluation?.recommendedToolName ??
+                                row.transferEvaluation?.recommendedToolName ??
+                                '-',
                             style: const TextStyle(fontSize: 10),
                           ),
                         ),
@@ -136,6 +139,7 @@ class SerialDilutionResultTable extends StatelessWidget {
                             warnings: row.warnings,
                             suggestions: row.suggestions,
                             evaluation: row.transferEvaluation,
+                            statusText: row.massEvaluation?.status.label,
                           ),
                         ),
                       ],

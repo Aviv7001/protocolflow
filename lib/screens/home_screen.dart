@@ -19,6 +19,7 @@ import 'run_protocol_screen.dart';
 import 'protocol_detail_screen.dart';
 import 'saved_tables_screen.dart';
 import 'dashboard_screen.dart';
+import 'user_guide_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -488,10 +489,16 @@ class _HomeScreenState extends State<HomeScreen> {
         selected: _selectedDesktopIndex == 6,
       ),
       _DesktopNavItem(
-        icon: Icons.settings_outlined,
-        label: 'Settings',
+        icon: Icons.menu_book_outlined,
+        label: 'User Guide',
         onTap: () => _selectPage(7),
         selected: _selectedDesktopIndex == 7,
+      ),
+      _DesktopNavItem(
+        icon: Icons.settings_outlined,
+        label: 'Settings',
+        onTap: () => _selectPage(8),
+        selected: _selectedDesktopIndex == 8,
       ),
     ];
 
@@ -531,8 +538,12 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
-          for (final item in items) _buildSidebarButton(item),
-          const Spacer(),
+          Expanded(
+            child: ListView(
+              padding: EdgeInsets.zero,
+              children: [for (final item in items) _buildSidebarButton(item)],
+            ),
+          ),
           const Divider(color: AppColors.onPrimary),
           _buildSidebarAction(
             icon: _isSyncing
@@ -725,6 +736,9 @@ class _HomeScreenState extends State<HomeScreen> {
       return const MeasuringToolsManagerScreen(embedded: true);
     }
     if (_selectedDesktopIndex == 7) {
+      return const UserGuideScreen(embedded: true);
+    }
+    if (_selectedDesktopIndex == 8) {
       return _buildSettingsWorkspace();
     }
 
@@ -1138,13 +1152,31 @@ class _HomeScreenState extends State<HomeScreen> {
                   builder: (context, constraints) {
                     final narrow = constraints.maxWidth < 460;
                     final content = Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: const [
-                        Icon(Icons.cloud_sync_outlined),
+                        Padding(
+                          padding: EdgeInsets.only(top: 2),
+                          child: Icon(Icons.cloud_sync_outlined),
+                        ),
                         SizedBox(width: 16),
                         Expanded(
-                          child: Text(
-                            'Google Drive synchronization keeps protocols, tables, and history available across devices.',
-                            softWrap: true,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Google Drive synchronization keeps protocols, tables, and history available across devices.',
+                                softWrap: true,
+                              ),
+                              SizedBox(height: 8),
+                              Text(
+                                'Drive sync is currently in limited testing. Your Google account must be approved before you can connect. Contact Aviv at Aviv7001@gmail.com and ask for access.',
+                                softWrap: true,
+                                style: TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],

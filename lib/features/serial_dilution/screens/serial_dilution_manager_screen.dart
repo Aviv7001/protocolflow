@@ -43,13 +43,24 @@ class _SerialDilutionManagerScreenState
     ConcentrationUnit.X,
     ConcentrationUnit.ratio,
     ConcentrationUnit.cellsML,
-    ConcentrationUnit.gMol,
+  ];
+  static const _solidConcentrationUnits = [
+    ConcentrationUnit.M,
+    ConcentrationUnit.mM,
+    ConcentrationUnit.uM,
+    ConcentrationUnit.nM,
+    ConcentrationUnit.pM,
+    ConcentrationUnit.gL,
+    ConcentrationUnit.mgML,
+    ConcentrationUnit.ugML,
+    ConcentrationUnit.ngML,
+    ConcentrationUnit.percent,
   ];
 
   @override
   void initState() {
     super.initState();
-    _input = widget.input;
+    _input = _normalizeInputForEditor(widget.input);
   }
 
   @override
@@ -164,55 +175,132 @@ class _SerialDilutionManagerScreenState
                   setState(() => _input = _input.copyWith(title: v)),
             ),
             const SizedBox(height: 12),
-            _DelayedTextField(
-              decoration: const InputDecoration(
-                labelText: 'Stock Solution Name',
-                border: OutlineInputBorder(),
-              ),
-              initialValue: _input.stockSolutionName,
-              style: const TextStyle(fontSize: _uniformFontSize),
-              onCommit: (v) => setState(
-                () => _input = _input.copyWith(stockSolutionName: v),
-              ),
-            ),
-            const SizedBox(height: 12),
-            _buildConcRow(
-              'Stock Concentration',
-              _input.stockConcentration,
-              _input.stockConcentrationUnit,
-              (v) => setState(
-                () => _input = _input.copyWith(stockConcentration: v),
-              ),
-              (u) => setState(
-                () => _input = _input.copyWith(
-                  stockConcentrationUnit: u,
-                  startingDilutionConcentrationUnit:
-                      _sameFamily(u, _input.startingDilutionConcentrationUnit)
-                      ? _input.startingDilutionConcentrationUnit
-                      : u,
-                  targetLowestConcentrationUnit:
-                      _sameFamily(u, _input.targetLowestConcentrationUnit)
-                      ? _input.targetLowestConcentrationUnit
-                      : u,
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            _buildStartingConcRow(),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: () => setState(
-                  () => _input = _input.copyWith(
-                    startingDilutionConcentration: _input.stockConcentration,
-                    startingDilutionConcentrationUnit:
-                        _input.stockConcentrationUnit,
+            Row(
+              children: [
+                Expanded(
+                  child: _DelayedTextField(
+                    decoration: InputDecoration(
+                      labelText:
+                          _input.startingSourceType ==
+                              ReagentSourceType.solidMaterial
+                          ? 'Solid Material Name'
+                          : 'Stock Solution Name',
+                      border: const OutlineInputBorder(),
+                    ),
+                    initialValue: _input.stockSolutionName,
+                    style: const TextStyle(fontSize: _uniformFontSize),
+                    onCommit: (v) => setState(
+                      () => _input = _input.copyWith(stockSolutionName: v),
+                    ),
                   ),
                 ),
-                icon: const Icon(Icons.science, size: 18),
-                label: const Text('Use stock as D0'),
-              ),
+                const SizedBox(width: 8),
+                SegmentedButton<ReagentSourceType>(
+                  segments: const [
+                    ButtonSegment(
+                      value: ReagentSourceType.liquidStock,
+                      label: Text('Liquid'),
+                    ),
+                    ButtonSegment(
+                      value: ReagentSourceType.solidMaterial,
+                      label: Text('Solid'),
+                    ),
+                  ],
+                  selected: {_input.startingSourceType},
+                  onSelectionChanged: (selection) {
+                    final sourceType = selection.first;
+                    setState(() {
+                      final stockUnit = _coerceUnitForSource(
+                        _input.stockConcentrationUnit,
+                        sourceType,
+                      );
+                      final startingUnit = _coerceUnitForSource(
+                        _input.startingDilutionConcentrationUnit ?? stockUnit,
+                        sourceType,
+                      );
+                      final targetUnits = _compatibleUnits(startingUnit);
+                      final currentTarget =
+                          _input.targetLowestConcentrationUnit;
+                      _input = _input.copyWith(
+                        startingSourceType: sourceType,
+                        stockConcentrationUnit: stockUnit,
+                        startingDilutionConcentrationUnit: startingUnit,
+                        targetLowestConcentrationUnit:
+                            currentTarget != null &&
+                                targetUnits.contains(currentTarget)
+                            ? currentTarget
+                            : startingUnit,
+                      );
+                    });
+                  },
+                  style: const ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+              ],
             ),
+            if (_input.startingSourceType == ReagentSourceType.liquidStock) ...[
+              const SizedBox(height: 12),
+              _buildConcRow(
+                'Stock Concentration',
+                _input.stockConcentration,
+                _input.stockConcentrationUnit,
+                _allowedConcentrationUnits,
+                (v) => setState(
+                  () => _input = _input.copyWith(stockConcentration: v),
+                ),
+                (u) => setState(
+                  () => _input = _input.copyWith(
+                    stockConcentrationUnit: u,
+                    startingDilutionConcentrationUnit:
+                        _sameFamily(u, _input.startingDilutionConcentrationUnit)
+                        ? _input.startingDilutionConcentrationUnit
+                        : u,
+                    targetLowestConcentrationUnit:
+                        _sameFamily(u, _input.targetLowestConcentrationUnit)
+                        ? _input.targetLowestConcentrationUnit
+                        : u,
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            _buildStartingConcRow(),
+            if (_needsMolecularWeight()) ...[
+              const SizedBox(height: 12),
+              _DelayedTextField(
+                decoration: const InputDecoration(
+                  labelText: 'Molecular weight (g/mol)',
+                  border: OutlineInputBorder(),
+                ),
+                initialValue: _input.molecularWeight?.toString() ?? '',
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                style: const TextStyle(fontSize: _uniformFontSize),
+                onCommit: (v) => setState(
+                  () => _input = _input.copyWith(
+                    molecularWeight: double.tryParse(v),
+                    clearMolecularWeight: v.trim().isEmpty,
+                  ),
+                ),
+              ),
+            ],
+            if (_input.startingSourceType == ReagentSourceType.liquidStock)
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () => setState(
+                    () => _input = _input.copyWith(
+                      startingDilutionConcentration: _input.stockConcentration,
+                      startingDilutionConcentrationUnit:
+                          _input.stockConcentrationUnit,
+                    ),
+                  ),
+                  icon: const Icon(Icons.science, size: 18),
+                  label: const Text('Use stock as D0'),
+                ),
+              ),
             const SizedBox(height: 12),
             _DelayedTextField(
               decoration: const InputDecoration(
@@ -395,16 +483,32 @@ class _SerialDilutionManagerScreenState
         _input.startingDilutionConcentrationUnit ??
         _input.stockConcentrationUnit;
     return ConcentrationInputRow(
-      label: 'Starting Dilution Concentration (D0)',
+      label: _input.startingSourceType == ReagentSourceType.solidMaterial
+          ? 'D0 Final Concentration'
+          : 'Starting Dilution Concentration (D0)',
       value: _input.startingDilutionConcentration ?? 0,
       unit: unit,
-      units: _compatibleUnits(_input.stockConcentrationUnit),
+      units: _input.startingSourceType == ReagentSourceType.solidMaterial
+          ? _solidConcentrationUnits
+          : _compatibleUnits(_input.stockConcentrationUnit),
       onValueChanged: (value) => setState(
         () => _input = _input.copyWith(startingDilutionConcentration: value),
       ),
-      onUnitChanged: (unit) => setState(
-        () => _input = _input.copyWith(startingDilutionConcentrationUnit: unit),
-      ),
+      onUnitChanged: (unit) => setState(() {
+        final targetUnits = _compatibleUnits(unit);
+        final currentTarget = _input.targetLowestConcentrationUnit;
+        _input = _input.copyWith(
+          stockConcentrationUnit:
+              _input.startingSourceType == ReagentSourceType.solidMaterial
+              ? unit
+              : _input.stockConcentrationUnit,
+          startingDilutionConcentrationUnit: unit,
+          targetLowestConcentrationUnit:
+              currentTarget != null && targetUnits.contains(currentTarget)
+              ? currentTarget
+              : unit,
+        );
+      }),
       fontSize: _uniformFontSize,
     );
   }
@@ -457,13 +561,12 @@ class _SerialDilutionManagerScreenState
   }
 
   Widget _buildTargetConcRow() {
-    final unit =
-        _input.targetLowestConcentrationUnit ?? _input.stockConcentrationUnit;
+    final unit = _input.targetLowestConcentrationUnit ?? _seriesBaseUnit();
     return ConcentrationInputRow(
       label: 'Target Lowest Concentration',
       value: _input.targetLowestConcentration ?? 0,
       unit: unit,
-      units: _compatibleUnits(_input.stockConcentrationUnit),
+      units: _compatibleUnits(_seriesBaseUnit()),
       onValueChanged: (value) => setState(
         () => _input = _input.copyWith(targetLowestConcentration: value),
       ),
@@ -478,6 +581,7 @@ class _SerialDilutionManagerScreenState
     String label,
     double value,
     ConcentrationUnit unit,
+    List<ConcentrationUnit> units,
     Function(double) onVal,
     Function(ConcentrationUnit) onUnit,
   ) {
@@ -485,7 +589,7 @@ class _SerialDilutionManagerScreenState
       label: label,
       value: value,
       unit: unit,
-      units: _allowedConcentrationUnits,
+      units: units,
       onValueChanged: onVal,
       onUnitChanged: onUnit,
       fontSize: _uniformFontSize,
@@ -620,6 +724,54 @@ class _SerialDilutionManagerScreenState
     return _allowedConcentrationUnits
         .where((u) => _family(u) == family)
         .toList();
+  }
+
+  ConcentrationUnit _seriesBaseUnit() {
+    return _input.startingSourceType == ReagentSourceType.solidMaterial
+        ? _input.startingDilutionConcentrationUnit ??
+              _input.stockConcentrationUnit
+        : _input.stockConcentrationUnit;
+  }
+
+  ConcentrationUnit _coerceUnitForSource(
+    ConcentrationUnit unit,
+    ReagentSourceType sourceType,
+  ) {
+    final allowed = sourceType == ReagentSourceType.solidMaterial
+        ? _solidConcentrationUnits
+        : _allowedConcentrationUnits;
+    return allowed.contains(unit) ? unit : allowed.first;
+  }
+
+  SerialDilutionInput _normalizeInputForEditor(SerialDilutionInput input) {
+    final stockUnit = _coerceUnitForSource(
+      input.stockConcentrationUnit,
+      input.startingSourceType,
+    );
+    final startingUnit = _coerceUnitForSource(
+      input.startingDilutionConcentrationUnit ?? stockUnit,
+      input.startingSourceType,
+    );
+    final targetUnits = _compatibleUnits(startingUnit);
+    final currentTarget = input.targetLowestConcentrationUnit;
+    return input.copyWith(
+      stockConcentrationUnit: stockUnit,
+      startingDilutionConcentrationUnit: startingUnit,
+      targetLowestConcentrationUnit:
+          currentTarget != null && targetUnits.contains(currentTarget)
+          ? currentTarget
+          : startingUnit,
+    );
+  }
+
+  bool _needsMolecularWeight() {
+    if (_input.startingSourceType != ReagentSourceType.solidMaterial) {
+      return false;
+    }
+    final unit =
+        _input.startingDilutionConcentrationUnit ??
+        _input.stockConcentrationUnit;
+    return LabCalculation.familyOf(unit) == ConcentrationFamily.molar;
   }
 
   bool _sameFamily(ConcentrationUnit unit, ConcentrationUnit? other) {

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'protocol_table.dart';
 import '../features/lab_math/lab_calculation.dart';
+import '../features/measuring_tools/services/mass_measurement_optimizer_service.dart';
 import '../features/measuring_tools/services/transfer_optimizer_service.dart';
 import '../features/master_mix/services/master_mix_calculator_service.dart';
 
@@ -121,7 +122,7 @@ class MasterMixWizard {
       'Reagent name',
       'Stock conc',
       'final conc',
-      'final volume',
+      'Amount',
       'Suggested transfer',
       'Tool',
       'Status',
@@ -154,11 +155,13 @@ class MasterMixWizard {
           reagent.formattedFinalConcentration,
           reagent.formattedReagentVolume,
           _transferLabel(reagent.transferEvaluation),
-          _toolLabel(reagent.transferEvaluation),
+          reagent.massEvaluation?.recommendedToolName ??
+              _toolLabel(reagent.transferEvaluation),
           _statusText(
             reagent.transferEvaluation,
             reagent.warnings.isNotEmpty,
             reagent.suggestions.isNotEmpty,
+            statusText: reagent.massEvaluation?.status.label,
           ),
         ]);
       }
@@ -218,8 +221,10 @@ class MasterMixWizard {
   String _statusText(
     dynamic evaluation,
     bool hasWarnings,
-    bool hasSuggestions,
-  ) {
+    bool hasSuggestions, {
+    String? statusText,
+  }) {
+    if (statusText != null && statusText.isNotEmpty) return statusText;
     final status = evaluation?.status;
     final statusName = status is TransferStatus ? status.label : null;
     if (statusName != null && statusName.isNotEmpty) {
@@ -314,6 +319,7 @@ class MasterMixItem {
 }
 
 class MasterMixReagentItem {
+  final ReagentSourceType sourceType;
   final String name;
   final double stockConc;
   final ConcentrationUnit stockUnit;
@@ -322,6 +328,7 @@ class MasterMixReagentItem {
   final double? mw;
 
   MasterMixReagentItem({
+    this.sourceType = ReagentSourceType.liquidStock,
     this.name = '',
     this.stockConc = 0,
     this.stockUnit = ConcentrationUnit.mM,
@@ -333,6 +340,7 @@ class MasterMixReagentItem {
   Map<String, dynamic> toJson() {
     return {
       'name': name,
+      'sourceType': sourceType.name,
       'stockConc': stockConc,
       'stockUnit': stockUnit.name,
       'finalConc': finalConc,
@@ -342,42 +350,79 @@ class MasterMixReagentItem {
   }
 
   factory MasterMixReagentItem.fromJson(Map<String, dynamic> json) {
+    final stockConcentration = (json['stockConc'] ?? 0).toDouble();
+    final finalConcentration = (json['finalConc'] ?? 0).toDouble();
+    final stockUnit = ConcentrationUnit.values.firstWhere(
+      (e) => e.name == json['stockUnit'],
+      orElse: () => ConcentrationUnit.mM,
+    );
+    final finalUnit = ConcentrationUnit.values.firstWhere(
+      (e) => e.name == json['finalUnit'],
+      orElse: () => ConcentrationUnit.uM,
+    );
+    final legacyMolecularWeight = stockUnit == ConcentrationUnit.gMol
+        ? stockConcentration
+        : finalUnit == ConcentrationUnit.gMol
+        ? finalConcentration
+        : null;
+    final hasLegacyMolecularWeightUnit = legacyMolecularWeight != null;
+    final migratedFinalUnit = stockUnit == ConcentrationUnit.gMol
+        ? finalUnit
+        : finalUnit == ConcentrationUnit.gMol
+        ? stockUnit
+        : finalUnit;
+    final migratedFinalConcentration = stockUnit == ConcentrationUnit.gMol
+        ? finalConcentration
+        : finalUnit == ConcentrationUnit.gMol
+        ? stockConcentration
+        : finalConcentration;
+
     return MasterMixReagentItem(
+      sourceType: hasLegacyMolecularWeightUnit
+          ? ReagentSourceType.solidMaterial
+          : ReagentSourceType.values.firstWhere(
+              (e) => e.name == json['sourceType'],
+              orElse: () => ReagentSourceType.liquidStock,
+            ),
       name: json['name'] ?? '',
-      stockConc: (json['stockConc'] ?? 0).toDouble(),
-      stockUnit: ConcentrationUnit.values.firstWhere(
-        (e) => e.name == json['stockUnit'],
-        orElse: () => ConcentrationUnit.mM,
-      ),
-      finalConc: (json['finalConc'] ?? 0).toDouble(),
-      finalUnit: ConcentrationUnit.values.firstWhere(
-        (e) => e.name == json['finalUnit'],
-        orElse: () => ConcentrationUnit.uM,
-      ),
-      mw: json['mw'] != null ? (json['mw'] as num).toDouble() : null,
+      stockConc: hasLegacyMolecularWeightUnit
+          ? migratedFinalConcentration
+          : stockConcentration,
+      stockUnit: hasLegacyMolecularWeightUnit ? migratedFinalUnit : stockUnit,
+      finalConc: migratedFinalConcentration,
+      finalUnit: migratedFinalUnit == ConcentrationUnit.gMol
+          ? ConcentrationUnit.mgML
+          : migratedFinalUnit,
+      mw: json['mw'] != null
+          ? (json['mw'] as num).toDouble()
+          : legacyMolecularWeight,
     );
   }
 
   MasterMixReagentItem copyWith({
+    ReagentSourceType? sourceType,
     String? name,
     double? stockConc,
     ConcentrationUnit? stockUnit,
     double? finalConc,
     ConcentrationUnit? finalUnit,
     double? mw,
+    bool clearMw = false,
   }) {
     return MasterMixReagentItem(
+      sourceType: sourceType ?? this.sourceType,
       name: name ?? this.name,
       stockConc: stockConc ?? this.stockConc,
       stockUnit: stockUnit ?? this.stockUnit,
       finalConc: finalConc ?? this.finalConc,
       finalUnit: finalUnit ?? this.finalUnit,
-      mw: mw ?? this.mw,
+      mw: clearMw ? null : mw ?? this.mw,
     );
   }
 
   MasterMixReagentInput toInput() {
     return MasterMixReagentInput(
+      sourceType: sourceType,
       reagentName: name,
       stockConcentration: stockConc,
       stockConcentrationUnit: stockUnit,

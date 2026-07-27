@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:protocolflow/main.dart';
 import 'package:protocolflow/screens/library_screen.dart';
+import 'package:protocolflow/screens/user_guide_screen.dart';
 
 void main() {
   setUp(() {
@@ -45,6 +46,21 @@ void main() {
     expect(find.byType(LibraryScreen), findsOneWidget);
     final tabBar = tester.widget<TabBar>(find.byType(TabBar));
     expect(tabBar.controller?.index, 1);
+  });
+
+  testWidgets('sidebar opens the user guide', (tester) async {
+    await tester.pumpWidget(const ProtocolFlowApp());
+    await tester.pump();
+
+    await tester.tap(find.byTooltip('Open sidebar'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('User Guide'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('User Guide'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(UserGuideScreen), findsOneWidget);
+    expect(find.text('Installing ProtocolFlow'), findsOneWidget);
   });
 
   testWidgets('Today tasks shows status and collapses its rows', (

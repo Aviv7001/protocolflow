@@ -39,7 +39,18 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
     ConcentrationUnit.X,
     ConcentrationUnit.ratio,
     ConcentrationUnit.cellsML,
-    ConcentrationUnit.gMol,
+  ];
+  static const List<ConcentrationUnit> _solidConcentrationUnits = [
+    ConcentrationUnit.M,
+    ConcentrationUnit.mM,
+    ConcentrationUnit.uM,
+    ConcentrationUnit.nM,
+    ConcentrationUnit.pM,
+    ConcentrationUnit.gL,
+    ConcentrationUnit.mgML,
+    ConcentrationUnit.ugML,
+    ConcentrationUnit.ngML,
+    ConcentrationUnit.percent,
   ];
   bool _canActuallyPop = false;
   final Set<int> _collapsedMixIndexes = {};
@@ -47,9 +58,18 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
   @override
   void initState() {
     super.initState();
-    _wizard = widget.wizard.mixes.isEmpty
+    final initialWizard = widget.wizard.mixes.isEmpty
         ? widget.wizard.copyWith(mixes: [MasterMixItem()])
         : widget.wizard;
+    _wizard = initialWizard.copyWith(
+      mixes: initialWizard.mixes
+          .map(
+            (mix) => mix.copyWith(
+              reagents: mix.reagents.map(_normalizeReagentForEditor).toList(),
+            ),
+          )
+          .toList(),
+    );
   }
 
   void _addMix() {
@@ -469,6 +489,32 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
                 ),
               ),
             ),
+            const SizedBox(width: 8),
+            SegmentedButton<ReagentSourceType>(
+              segments: const [
+                ButtonSegment(
+                  value: ReagentSourceType.liquidStock,
+                  label: Text('Liquid'),
+                ),
+                ButtonSegment(
+                  value: ReagentSourceType.solidMaterial,
+                  label: Text('Solid'),
+                ),
+              ],
+              selected: {item.sourceType},
+              onSelectionChanged: (selection) {
+                final sourceType = selection.first;
+                _updateReagent(
+                  mixIndex,
+                  reagentIndex,
+                  item.copyWith(
+                    sourceType: sourceType,
+                    finalUnit: _coerceUnitForSource(item.finalUnit, sourceType),
+                  ),
+                );
+              },
+              style: const ButtonStyle(visualDensity: VisualDensity.compact),
+            ),
             IconButton(
               tooltip: 'Remove reagent',
               icon: const Icon(Icons.delete_outline, color: Colors.red),
@@ -477,26 +523,34 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
           ],
         ),
         const SizedBox(height: 12),
-        _buildConcRow(
-          'C1 (Stock Conc.)',
-          item.stockConc,
-          item.stockUnit,
-          (v) => _updateReagent(
-            mixIndex,
-            reagentIndex,
-            item.copyWith(stockConc: v),
+        if (item.sourceType == ReagentSourceType.liquidStock) ...[
+          _buildConcRow(
+            'C1 (Stock Conc.)',
+            item.stockConc,
+            item.stockUnit,
+            _masterMixConcentrationUnits,
+            (v) => _updateReagent(
+              mixIndex,
+              reagentIndex,
+              item.copyWith(stockConc: v),
+            ),
+            (u) => _updateReagent(
+              mixIndex,
+              reagentIndex,
+              item.copyWith(stockUnit: u),
+            ),
           ),
-          (u) => _updateReagent(
-            mixIndex,
-            reagentIndex,
-            item.copyWith(stockUnit: u),
-          ),
-        ),
-        const SizedBox(height: 12),
+          const SizedBox(height: 12),
+        ],
         _buildConcRow(
-          'C2 (Final Conc.)',
+          item.sourceType == ReagentSourceType.solidMaterial
+              ? 'Final Concentration'
+              : 'C2 (Final Conc.)',
           item.finalConc,
           item.finalUnit,
+          item.sourceType == ReagentSourceType.solidMaterial
+              ? _solidConcentrationUnits
+              : _masterMixConcentrationUnits,
           (v) => _updateReagent(
             mixIndex,
             reagentIndex,
@@ -508,6 +562,23 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
             item.copyWith(finalUnit: u),
           ),
         ),
+        if (_needsMolecularWeight(item)) ...[
+          const SizedBox(height: 12),
+          _DelayedTextField(
+            initialValue: item.mw?.toString() ?? '',
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Molecular weight (g/mol)',
+              border: OutlineInputBorder(),
+            ),
+            style: const TextStyle(fontSize: _uniformFontSize),
+            onCommit: (v) => _updateReagent(
+              mixIndex,
+              reagentIndex,
+              item.copyWith(mw: double.tryParse(v), clearMw: v.trim().isEmpty),
+            ),
+          ),
+        ],
         if (reagentResult != null) ...[
           const Divider(height: 24),
           _buildReagentResultPreview(
@@ -821,6 +892,7 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
     String label,
     double value,
     ConcentrationUnit unit,
+    List<ConcentrationUnit> units,
     Function(double) onVal,
     Function(ConcentrationUnit) onUnit,
   ) {
@@ -828,11 +900,68 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
       label: label,
       value: value,
       unit: unit,
-      units: _masterMixConcentrationUnits,
+      units: units,
       onValueChanged: onVal,
       onUnitChanged: onUnit,
       fontSize: _uniformFontSize,
     );
+  }
+
+  ConcentrationUnit _coerceUnitForSource(
+    ConcentrationUnit unit,
+    ReagentSourceType sourceType,
+  ) {
+    final allowed = sourceType == ReagentSourceType.solidMaterial
+        ? _solidConcentrationUnits
+        : _masterMixConcentrationUnits;
+    return allowed.contains(unit) ? unit : allowed.first;
+  }
+
+  MasterMixReagentItem _normalizeReagentForEditor(MasterMixReagentItem item) {
+    if (item.stockUnit == ConcentrationUnit.gMol ||
+        item.finalUnit == ConcentrationUnit.gMol) {
+      final molecularWeight = item.stockUnit == ConcentrationUnit.gMol
+          ? item.stockConc
+          : item.finalConc;
+      final concentration = item.stockUnit == ConcentrationUnit.gMol
+          ? item.finalConc
+          : item.stockConc;
+      final unit = item.stockUnit == ConcentrationUnit.gMol
+          ? item.finalUnit
+          : item.stockUnit;
+      final safeUnit = _coerceUnitForSource(
+        unit,
+        ReagentSourceType.solidMaterial,
+      );
+      return item.copyWith(
+        sourceType: ReagentSourceType.solidMaterial,
+        stockConc: concentration,
+        stockUnit: safeUnit,
+        finalConc: concentration,
+        finalUnit: safeUnit,
+        mw: molecularWeight,
+      );
+    }
+    return item.copyWith(
+      stockUnit: _coerceUnitForSource(
+        item.stockUnit,
+        ReagentSourceType.liquidStock,
+      ),
+      finalUnit: _coerceUnitForSource(item.finalUnit, item.sourceType),
+    );
+  }
+
+  bool _needsMolecularWeight(MasterMixReagentItem item) {
+    if (item.sourceType == ReagentSourceType.solidMaterial) {
+      return LabCalculation.familyOf(item.finalUnit) ==
+          ConcentrationFamily.molar;
+    }
+    final stockFamily = LabCalculation.familyOf(item.stockUnit);
+    final finalFamily = LabCalculation.familyOf(item.finalUnit);
+    return (stockFamily == ConcentrationFamily.molar &&
+            finalFamily == ConcentrationFamily.massVolume) ||
+        (stockFamily == ConcentrationFamily.massVolume &&
+            finalFamily == ConcentrationFamily.molar);
   }
 }
 

@@ -11,6 +11,8 @@ class MeasuringToolService {
   static final MeasuringToolService instance = MeasuringToolService._();
   static const String _storageKey = 'measuring_tools_json';
   static const String _syncUpdatedAtKey = 'measuring_tools_sync_updated_at';
+  static const String _massToolDefaultsMigratedKey =
+      'measuring_tools_mass_defaults_migrated';
 
   List<MeasuringTool>? _cachedTools;
 
@@ -213,6 +215,51 @@ class MeasuringToolService {
       incrementUl: 20000,
       accuracyRank: 1,
     ),
+    MeasuringTool(
+      id: 'balance_micro',
+      category: 'Solid',
+      toolType: 'Microbalance',
+      toolName: 'Microbalance',
+      unit: 'mg',
+      minVolumeUl: 0,
+      maxVolumeUl: 0,
+      incrementUl: 0,
+      minMassMg: 0.01,
+      preferredMinMassMg: 0.05,
+      maxMassMg: 5000,
+      incrementMassMg: 0.001,
+      accuracyRank: 4,
+    ),
+    MeasuringTool(
+      id: 'balance_analytical',
+      category: 'Solid',
+      toolType: 'Analytical balance',
+      toolName: 'Analytical balance',
+      unit: 'mg',
+      minVolumeUl: 0,
+      maxVolumeUl: 0,
+      incrementUl: 0,
+      minMassMg: 1,
+      preferredMinMassMg: 10,
+      maxMassMg: 220000,
+      incrementMassMg: 0.1,
+      accuracyRank: 3,
+    ),
+    MeasuringTool(
+      id: 'balance_top_loading',
+      category: 'Solid',
+      toolType: 'Top-loading balance',
+      toolName: 'Top-loading balance',
+      unit: 'mg',
+      minVolumeUl: 0,
+      maxVolumeUl: 0,
+      incrementUl: 0,
+      minMassMg: 10,
+      preferredMinMassMg: 100,
+      maxMassMg: 500000,
+      incrementMassMg: 1,
+      accuracyRank: 2,
+    ),
   ];
 
   Future<void> initialize() async {
@@ -249,6 +296,7 @@ class MeasuringToolService {
       if (loaded.isEmpty) {
         return defaultTools();
       }
+      await _migrateMassDefaultsIfNeeded(prefs, loaded);
       return loaded;
     } catch (_) {
       return defaultTools();
@@ -302,10 +350,37 @@ class MeasuringToolService {
       payload['updatedAt']?.toString() ??
           DateTime.fromMillisecondsSinceEpoch(0, isUtc: true).toIso8601String(),
     );
+    await prefs.setBool(_massToolDefaultsMigratedKey, true);
     _cachedTools = List<MeasuringTool>.from(tools);
   }
 
   Future<void> resetToDefaults() async {
     await saveTools(defaultTools());
+  }
+
+  Future<void> _migrateMassDefaultsIfNeeded(
+    SharedPreferences prefs,
+    List<MeasuringTool> loaded,
+  ) async {
+    if (prefs.getBool(_massToolDefaultsMigratedKey) ?? false) return;
+    final existingIds = loaded.map((tool) => tool.id).toSet();
+    final missingMassDefaults = _defaultTools
+        .where((tool) => tool.isMassTool && !existingIds.contains(tool.id))
+        .toList();
+    if (missingMassDefaults.isEmpty) {
+      await prefs.setBool(_massToolDefaultsMigratedKey, true);
+      return;
+    }
+    loaded.addAll(missingMassDefaults);
+    await prefs.setString(
+      _storageKey,
+      jsonEncode(loaded.map((tool) => tool.toJson()).toList()),
+    );
+    await prefs.setString(_syncUpdatedAtKey, DateTime.now().toIso8601String());
+    await prefs.setBool(_massToolDefaultsMigratedKey, true);
+    await StorageService().saveSyncBundleState(
+      SyncBundleType.measuringTools,
+      SyncBundleState.pending,
+    );
   }
 }

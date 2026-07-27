@@ -1,4 +1,5 @@
 import '../../lab_math/lab_calculation.dart';
+import '../../measuring_tools/services/mass_measurement_optimizer_service.dart';
 import '../../measuring_tools/services/transfer_optimizer_service.dart';
 
 class SerialDilutionRow {
@@ -16,6 +17,7 @@ class SerialDilutionRow {
   final List<String> warnings;
   final List<IntermediateDilutionSuggestion> suggestions;
   final TransferEvaluationResult? transferEvaluation;
+  final MassMeasurementEvaluationResult? massEvaluation;
   final TransferEvaluationResult? solventTransferEvaluation;
 
   SerialDilutionRow({
@@ -33,6 +35,7 @@ class SerialDilutionRow {
     this.warnings = const [],
     this.suggestions = const [],
     this.transferEvaluation,
+    this.massEvaluation,
     this.solventTransferEvaluation,
   });
 }

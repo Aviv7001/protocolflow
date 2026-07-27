@@ -7,6 +7,7 @@ import '../../../widgets/horizontal_table_scroll.dart';
 import '../../../widgets/table_export_actions.dart';
 import '../../../widgets/transfer_status_icons.dart';
 import '../../lab_math/lab_calculation.dart';
+import '../../measuring_tools/services/mass_measurement_optimizer_service.dart';
 import '../services/master_mix_calculator_service.dart';
 
 class MasterMixResultTable extends StatelessWidget {
@@ -49,7 +50,7 @@ class MasterMixResultTable extends StatelessWidget {
                 DataColumn(label: _HeaderCell('Reagent')),
                 DataColumn(label: _HeaderCell('Stock')),
                 DataColumn(label: _HeaderCell('Final')),
-                DataColumn(label: _HeaderCell('Volume')),
+                DataColumn(label: _HeaderCell('Amount')),
                 DataColumn(label: _HeaderCell('Transfer')),
                 DataColumn(label: _HeaderCell('Tool')),
                 DataColumn(label: _HeaderCell('Status')),
@@ -137,13 +138,18 @@ class MasterMixResultTable extends StatelessWidget {
             ),
             DataCell(_CellText(_transferLabel(r.transferEvaluation))),
             DataCell(
-              _CellText(r.transferEvaluation?.recommendedToolName ?? '-'),
+              _CellText(
+                r.massEvaluation?.recommendedToolName ??
+                    r.transferEvaluation?.recommendedToolName ??
+                    '-',
+              ),
             ),
             DataCell(
               TransferStatusIcons(
                 warnings: r.warnings,
                 suggestions: r.suggestions,
                 evaluation: r.transferEvaluation,
+                statusText: r.massEvaluation?.status.label,
               ),
             ),
           ],
