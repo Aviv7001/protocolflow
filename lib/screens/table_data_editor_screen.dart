@@ -4,6 +4,7 @@ import '../models/protocol_table.dart';
 import '../models/plate_wizard.dart';
 import '../models/master_mix_wizard.dart';
 import 'plate_wizard_samples_screen.dart';
+import '../widgets/protocolflow_app_bar.dart';
 import '../features/staining_table/models/staining_wizard.dart';
 import '../widgets/horizontal_table_scroll.dart';
 
@@ -342,14 +343,12 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
         }
       },
       child: Scaffold(
-        appBar: AppBar(
-          title: Text(
-            _type == TableType.materialList
-                ? 'Material List Editor'
-                : _type == TableType.generic
-                ? 'Generic Table Editor'
-                : 'Edit Table',
-          ),
+        appBar: ProtocolFlowAppBar(
+          title: _type == TableType.materialList
+              ? 'Material List Editor'
+              : _type == TableType.generic
+              ? 'Generic Table Editor'
+              : 'Edit Table',
           actions: [
             IconButton(
               tooltip: 'Save table',

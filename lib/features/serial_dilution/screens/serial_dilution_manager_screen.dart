@@ -6,6 +6,7 @@ import '../models/serial_dilution_input.dart';
 import '../services/serial_dilution_calculator_service.dart';
 import '../widgets/serial_dilution_result_table.dart';
 import '../../../widgets/unsaved_changes_pop_scope.dart';
+import '../../../widgets/protocolflow_app_bar.dart';
 
 class SerialDilutionManagerScreen extends StatefulWidget {
   final SerialDilutionInput input;
@@ -72,10 +73,11 @@ class _SerialDilutionManagerScreenState
       message:
           'You have unsaved changes in this table. Are you sure you want to exit?',
       child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Serial Dilution Manager'),
+        appBar: ProtocolFlowAppBar(
+          title: 'Serial Dilution Manager',
           actions: [
             IconButton(
+              tooltip: 'Save table',
               icon: const Icon(Icons.save),
               onPressed: () => _handleDone(context),
             ),

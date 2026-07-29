@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../models/master_mix_wizard.dart';
 import '../../../widgets/unsaved_changes_pop_scope.dart';
+import '../../../widgets/protocolflow_app_bar.dart';
 import '../../lab_math/lab_calculation.dart';
 import '../../lab_math/widgets/concentration_input_row.dart';
 import '../services/master_mix_calculator_service.dart';
@@ -168,10 +169,11 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
       message:
           'You have unsaved changes in this table. Are you sure you want to exit?',
       child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Master Mix Manager'),
+        appBar: ProtocolFlowAppBar(
+          title: 'Master Mix Manager',
           actions: [
             IconButton(
+              tooltip: 'Save table',
               icon: const Icon(Icons.save),
               onPressed: () => _handleDone(context),
             ),

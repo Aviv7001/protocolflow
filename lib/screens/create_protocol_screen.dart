@@ -13,6 +13,7 @@ import '../theme/app_colors.dart';
 import '../widgets/protocol_table_preview.dart';
 import '../widgets/protocol_step_actions_table.dart';
 import '../widgets/protocol_step_notes_table.dart';
+import '../widgets/protocolflow_app_bar.dart';
 import '../services/auth_service.dart';
 import '../services/drive_sync_service.dart';
 import '../services/picked_image_store.dart';
@@ -62,6 +63,8 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
   late final bool _isInProgress;
   ProtocolStep? _stepClipboard;
   bool _stepClipboardWasCut = false;
+  final Map<String, FocusNode> _instructionFocusNodes = {};
+  final Map<String, int> _instructionFieldVersions = {};
 
   @override
   void initState() {
@@ -107,6 +110,9 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
 
   @override
   void dispose() {
+    for (final focusNode in _instructionFocusNodes.values) {
+      focusNode.dispose();
+    }
     _titleController.dispose();
     _objectiveController.dispose();
     _descriptionController.dispose();
@@ -291,9 +297,153 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
   }
 
   void _addNewPhase() {
-    final phaseCount = _steps.map((s) => s.phaseName).toSet().length + 1;
-    final newPhaseName = 'Phase $phaseCount';
-    _addNewStep(phaseName: newPhaseName);
+    setState(() {
+      final marker = '__new_phase_${DateTime.now().microsecondsSinceEpoch}';
+      _steps.add(_createBlankStep(phaseName: marker));
+      _renumberDefaultPhases(insertedMarker: marker);
+    });
+  }
+
+  List<({String? name, int start, int end})> _phaseRanges() {
+    if (_steps.isEmpty) return [];
+    final ranges = <({String? name, int start, int end})>[];
+    var start = 0;
+    var phaseName = _steps.first.phaseName;
+    for (var index = 1; index < _steps.length; index++) {
+      if (_steps[index].phaseName == phaseName) continue;
+      ranges.add((name: phaseName, start: start, end: index - 1));
+      start = index;
+      phaseName = _steps[index].phaseName;
+    }
+    ranges.add((name: phaseName, start: start, end: _steps.length - 1));
+    return ranges;
+  }
+
+  bool _rangeContainsLockedStep(({String? name, int start, int end}) range) {
+    for (var index = range.start; index <= range.end; index++) {
+      if (widget.lockedStepIds?.contains(_steps[index].id) ?? false) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void _renumberDefaultPhases({String? insertedMarker}) {
+    final defaultPhaseName = RegExp(r'^Phase \d+$');
+    final ranges = _phaseRanges();
+    for (var phaseIndex = 0; phaseIndex < ranges.length; phaseIndex++) {
+      final range = ranges[phaseIndex];
+      final shouldRenumber =
+          range.name == insertedMarker ||
+          (range.name != null && defaultPhaseName.hasMatch(range.name!));
+      if (!shouldRenumber) continue;
+      final name = 'Phase ${phaseIndex + 1}';
+      for (var stepIndex = range.start; stepIndex <= range.end; stepIndex++) {
+        _steps[stepIndex] = _steps[stepIndex].copyWith(phaseName: name);
+      }
+    }
+  }
+
+  void _insertPhaseAfterStep(int stepIndex) {
+    if (stepIndex < 0 || stepIndex >= _steps.length - 1) return;
+    final sourcePhase = _steps[stepIndex].phaseName;
+    if (_steps[stepIndex + 1].phaseName != sourcePhase) return;
+
+    var endIndex = stepIndex + 1;
+    while (endIndex + 1 < _steps.length &&
+        _steps[endIndex + 1].phaseName == sourcePhase) {
+      endIndex++;
+    }
+    for (var index = stepIndex + 1; index <= endIndex; index++) {
+      if (widget.lockedStepIds?.contains(_steps[index].id) ?? false) return;
+    }
+
+    setState(() {
+      final marker = '__new_phase_${DateTime.now().microsecondsSinceEpoch}';
+      for (var index = stepIndex + 1; index <= endIndex; index++) {
+        _steps[index] = _steps[index].copyWith(phaseName: marker);
+      }
+      _renumberDefaultPhases(insertedMarker: marker);
+    });
+  }
+
+  void _movePhase(int firstStepIndex, int direction) {
+    final ranges = _phaseRanges();
+    final phaseIndex = ranges.indexWhere(
+      (range) => range.start == firstStepIndex,
+    );
+    if (phaseIndex <= 0 || (direction != -1 && direction != 1)) return;
+
+    final currentRange = ranges[phaseIndex];
+    final previousRange = ranges[phaseIndex - 1];
+    final movingUp = direction == -1;
+    final donorRange = movingUp ? previousRange : currentRange;
+    if (donorRange.end == donorRange.start ||
+        _rangeContainsLockedStep(currentRange) ||
+        _rangeContainsLockedStep(previousRange)) {
+      return;
+    }
+
+    setState(() {
+      final transferredStepIndex = movingUp
+          ? previousRange.end
+          : currentRange.start;
+      final targetPhaseName = movingUp ? currentRange.name : previousRange.name;
+      _steps[transferredStepIndex] = _steps[transferredStepIndex].copyWith(
+        phaseName: targetPhaseName,
+      );
+    });
+  }
+
+  Future<void> _deletePhase(int firstStepIndex) async {
+    final ranges = _phaseRanges();
+    final phaseIndex = ranges.indexWhere(
+      (range) => range.start == firstStepIndex,
+    );
+    if (phaseIndex < 0 || _rangeContainsLockedStep(ranges[phaseIndex])) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete phase?'),
+        content: Text(
+          ranges.length == 1
+              ? 'The phase grouping will be removed. All protocol steps will be preserved.'
+              : 'The phase will be merged with the adjacent phase. All protocol steps will be preserved.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            child: const Text('Delete phase'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() {
+      if (ranges.length == 1) {
+        _usePhases = false;
+        for (var index = 0; index < _steps.length; index++) {
+          _steps[index] = _steps[index].copyWith(clearPhaseName: true);
+        }
+        return;
+      }
+
+      final targetRange = phaseIndex > 0
+          ? ranges[phaseIndex - 1]
+          : ranges[phaseIndex + 1];
+      final sourceRange = ranges[phaseIndex];
+      for (var index = sourceRange.start; index <= sourceRange.end; index++) {
+        _steps[index] = _steps[index].copyWith(phaseName: targetRange.name);
+      }
+      _renumberDefaultPhases();
+    });
   }
 
   void _addNewTable() async {
@@ -767,14 +917,12 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
         }
       },
       child: Scaffold(
-        appBar: AppBar(
-          title: Text(
-            widget.initialProtocol != null
-                ? 'Edit Protocol'
-                : 'Create Protocol',
-          ),
+        backgroundColor: AppColors.scaffoldBackground,
+        appBar: ProtocolFlowAppBar(
+          title: 'Protocol Builder',
           actions: [
             PopupMenuButton<bool>(
+              tooltip: 'Save protocol',
               icon: const Icon(Icons.save),
               onSelected: (isTemplate) => _saveProtocol(isTemplate: isTemplate),
               itemBuilder: (context) => [
@@ -800,256 +948,448 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
         ),
         body: Form(
           key: _formKey,
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildProtocolTitleSection(),
-                const Divider(height: 32),
-
-                _buildFieldSection('Objective', _objectiveController),
-                _buildFieldSection(
-                  'Description',
-                  _descriptionController,
-                  maxLines: 3,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final desktop = constraints.maxWidth >= 1000;
+              return SingleChildScrollView(
+                padding: EdgeInsets.fromLTRB(
+                  desktop ? 24 : 12,
+                  desktop ? 24 : 16,
+                  desktop ? 24 : 12,
+                  80,
                 ),
-
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24),
-                  child: Divider(indent: 24, endIndent: 24, thickness: 1),
-                ),
-
-                _buildSectionHeader('Samples'),
-                const SizedBox(height: 8),
-                ..._samples.asMap().entries.map((entry) {
-                  final idx = entry.key;
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 8.0),
-                    child: Row(
-                      children: [
-                        const Text('• ', style: TextStyle(color: Colors.grey)),
-                        Expanded(
-                          child: TextFormField(
-                            initialValue: entry.value,
-                            decoration: const InputDecoration(
-                              hintText: 'Sample name (e.g. THP1 cell line)',
-                              border: InputBorder.none,
-                            ),
-                            onChanged: (v) => _samples[idx] = v,
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(
-                            Icons.remove_circle_outline,
-                            size: 20,
-                            color: Colors.red,
-                          ),
-                          onPressed: () =>
-                              setState(() => _samples.removeAt(idx)),
-                        ),
-                      ],
-                    ),
-                  );
-                }),
-                const SizedBox(height: 8),
-                Center(
-                  child: ElevatedButton.icon(
-                    onPressed: _addNewSample,
-                    icon: const Icon(Icons.add),
-                    label: const Text('Add Sample'),
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1800),
+                    child: _buildBuilderWorkspace(desktop: desktop),
                   ),
                 ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
 
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24),
-                  child: Divider(indent: 24, endIndent: 24, thickness: 1),
-                ),
+  Widget _buildBuilderWorkspace({required bool desktop}) {
+    final status = widget.initialProtocol == null
+        ? 'NEW PROTOCOL'
+        : widget.initialProtocol!.isTemplate
+        ? 'EDITING TEMPLATE'
+        : 'EDITING PROTOCOL';
+    final statusIcon = widget.initialProtocol?.isTemplate ?? false
+        ? Icons.copy_all_outlined
+        : Icons.edit_note_outlined;
 
-                _buildSectionHeader('Material List'),
-                const SizedBox(height: 8),
-                _buildMaterialsTable(),
+    final statusBadge = Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        key: const Key('protocol-builder-status'),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: AppColors.primary.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppColors.primary.withValues(alpha: 0.30)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(statusIcon, size: 14, color: AppColors.primary),
+            const SizedBox(width: 6),
+            Text(
+              status,
+              style: const TextStyle(
+                color: AppColors.primary,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
 
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24),
-                  child: Divider(indent: 24, endIndent: 24, thickness: 1),
-                ),
+    if (!desktop) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          statusBadge,
+          const SizedBox(height: 20),
+          _buildProtocolInformationSection(),
+          const SizedBox(height: 24),
+          _buildSamplesSection(),
+          const SizedBox(height: 24),
+          _buildMaterialsSection(),
+          const SizedBox(height: 24),
+          _buildStepsArea(),
+          const SizedBox(height: 24),
+          _buildTablesSection(),
+          const SizedBox(height: 24),
+          _buildAdditionalDataSection(),
+        ],
+      );
+    }
 
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        statusBadge,
+        const SizedBox(height: 20),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              flex: 5,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildProtocolInformationSection(),
+                  const SizedBox(height: 24),
+                  _buildTablesSection(),
+                  const SizedBox(height: 24),
+                  _buildAdditionalDataSection(),
+                ],
+              ),
+            ),
+            const SizedBox(width: 32),
+            Expanded(
+              flex: 7,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildSamplesSection(),
+                  const SizedBox(height: 24),
+                  _buildMaterialsSection(),
+                  const SizedBox(height: 24),
+                  _buildStepsArea(),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildProtocolInformationSection() {
+    return _buildSectionSurface(
+      key: const Key('builder-protocol-information'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildSectionHeader('Protocol Information'),
+          const SizedBox(height: 16),
+          _buildProtocolTitleSection(),
+          _buildFieldSection('Objective', _objectiveController, maxLines: 2),
+          _buildFieldSection(
+            'Description',
+            _descriptionController,
+            maxLines: 4,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSamplesSection() {
+    return _buildSectionSurface(
+      key: const Key('builder-samples'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildSectionHeader('Samples'),
+          const SizedBox(height: 12),
+          if (_samples.isEmpty)
+            _buildEmptyState('No samples added.')
+          else
+            ..._samples.asMap().entries.map((entry) {
+              final index = entry.key;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Row(
                   children: [
-                    Text(
-                      'Steps',
-                      style: Theme.of(context).textTheme.titleLarge,
+                    const Icon(
+                      Icons.biotech_outlined,
+                      size: 20,
+                      color: AppColors.primary,
                     ),
-                    Row(
-                      children: [
-                        const Text(
-                          'Set Phases',
-                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextFormField(
+                        initialValue: entry.value,
+                        readOnly: _isInProgress,
+                        decoration: const InputDecoration(
+                          hintText: 'Sample name (e.g. THP1 cell line)',
                         ),
-                        Switch(
-                          value: _usePhases,
-                          onChanged: _isInProgress
-                              ? null
-                              : (val) {
-                                  setState(() {
-                                    _usePhases = val;
-                                    if (_usePhases && _steps.isNotEmpty) {
-                                      // If enabling phases and we have steps, assign them to "Phase 1" if they don't have one
-                                      for (int i = 0; i < _steps.length; i++) {
-                                        if (_steps[i].phaseName == null ||
-                                            _steps[i].phaseName!.isEmpty) {
-                                          _steps[i] = _steps[i].copyWith(
-                                            phaseName: 'Phase 1',
-                                          );
-                                        }
-                                      }
-                                    }
-                                  });
-                                },
-                        ),
-                      ],
+                        onChanged: (value) => _samples[index] = value,
+                      ),
                     ),
+                    if (!_isInProgress)
+                      IconButton(
+                        tooltip: 'Remove sample',
+                        icon: const Icon(
+                          Icons.remove_circle_outline,
+                          color: AppColors.error,
+                        ),
+                        onPressed: () =>
+                            setState(() => _samples.removeAt(index)),
+                      ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                ..._buildStepsSection(),
+              );
+            }),
+          const SizedBox(height: 6),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: ElevatedButton.icon(
+              onPressed: _isInProgress ? null : _addNewSample,
+              icon: const Icon(Icons.add),
+              label: const Text('Add Sample'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24),
-                  child: Divider(indent: 24, endIndent: 24, thickness: 1),
-                ),
+  Widget _buildMaterialsSection() {
+    return _buildSectionSurface(
+      key: const Key('builder-materials'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildSectionHeader('Material List'),
+          const SizedBox(height: 10),
+          _buildMaterialsTable(),
+        ],
+      ),
+    );
+  }
 
-                _buildSectionHeader('Tables'),
-                const SizedBox(height: 8),
-                if (_regularTables.isEmpty)
-                  const Center(
-                    child: Text(
-                      'No tables added.',
-                      style: TextStyle(color: Colors.grey),
+  Widget _buildStepsArea() {
+    return _buildSectionSurface(
+      key: const Key('builder-steps'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final phases = Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Set Phases',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
                     ),
-                  )
-                else
-                  LinkedProtocolTablesSection(
-                    tables: _regularTables,
-                    isReadOnly: _isInProgress,
-                    initiallyCollapsed: true,
-                    onSave: _isInProgress
-                        ? null
-                        : (updated) {
-                            setState(() {
-                              final index = _tables.indexWhere(
-                                (candidate) => candidate.id == updated.id,
-                              );
-                              if (index != -1) _tables[index] = updated;
-                            });
-                            _syncMaterialsFromTable(updated);
-                          },
-                    onDelete: _isInProgress
-                        ? null
-                        : (table) => setState(() {
-                            _tables.removeWhere(
-                              (candidate) => candidate.id == table.id,
-                            );
-                            for (
-                              var index = 0;
-                              index < _steps.length;
-                              index++
-                            ) {
-                              _steps[index] = _steps[index].copyWith(
-                                tableIds: _steps[index].tableIds
-                                    .where((id) => id != table.id)
-                                    .toList(),
-                              );
-                            }
-                          }),
                   ),
-                const SizedBox(height: 16),
-                Center(
-                  child: ElevatedButton.icon(
-                    onPressed: _addNewTable,
-                    icon: const Icon(Icons.add),
-                    label: const Text('Add Table'),
+                  Switch(
+                    value: _usePhases,
+                    onChanged: _isInProgress ? null : _setPhasesEnabled,
                   ),
-                ),
-                const SizedBox(height: 24),
-                _buildSectionHeader('Additional Data'),
-                const SizedBox(height: 8),
-                if (_additionalData.isEmpty)
-                  const Center(
-                    child: Text(
-                      'No additional data added.',
-                      style: TextStyle(color: Colors.grey),
-                    ),
-                  )
-                else
-                  ..._additionalData.asMap().entries.map((entry) {
-                    final idx = entry.key;
-                    final data = entry.value;
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      child: ListTile(
-                        leading: Icon(
-                          data.photoPaths.isNotEmpty
-                              ? Icons.photo_library_outlined
-                              : Icons.link,
+                ],
+              );
+              if (constraints.maxWidth < 360) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [_buildSectionHeader('Steps'), phases],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(child: _buildSectionHeader('Steps')),
+                  phases,
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 8),
+          ..._buildStepsSection(),
+        ],
+      ),
+    );
+  }
+
+  void _setPhasesEnabled(bool enabled) {
+    setState(() {
+      _usePhases = enabled;
+      if (_steps.isEmpty) return;
+      if (!_usePhases) {
+        for (var index = 0; index < _steps.length; index++) {
+          _steps[index] = _steps[index].copyWith(clearPhaseName: true);
+        }
+        return;
+      }
+      for (var index = 0; index < _steps.length; index++) {
+        if (_steps[index].phaseName == null ||
+            _steps[index].phaseName!.isEmpty) {
+          _steps[index] = _steps[index].copyWith(phaseName: 'Phase 1');
+        }
+      }
+    });
+  }
+
+  Widget _buildTablesSection() {
+    return _buildSectionSurface(
+      key: const Key('builder-tables'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildSectionHeader('Tables'),
+          const SizedBox(height: 10),
+          if (_regularTables.isEmpty)
+            _buildEmptyState('No tables added.')
+          else
+            LinkedProtocolTablesSection(
+              tables: _regularTables,
+              isReadOnly: _isInProgress,
+              initiallyCollapsed: true,
+              onSave: _isInProgress
+                  ? null
+                  : (updated) {
+                      setState(() {
+                        final index = _tables.indexWhere(
+                          (candidate) => candidate.id == updated.id,
+                        );
+                        if (index != -1) _tables[index] = updated;
+                      });
+                      _syncMaterialsFromTable(updated);
+                    },
+              onDelete: _isInProgress ? null : _removeTable,
+            ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: ElevatedButton.icon(
+              onPressed: _isInProgress ? null : _addNewTable,
+              icon: const Icon(Icons.add),
+              label: const Text('Add Table'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _removeTable(ProtocolTable table) {
+    setState(() {
+      _tables.removeWhere((candidate) => candidate.id == table.id);
+      for (var index = 0; index < _steps.length; index++) {
+        _steps[index] = _steps[index].copyWith(
+          tableIds: _steps[index].tableIds
+              .where((id) => id != table.id)
+              .toList(),
+        );
+      }
+    });
+  }
+
+  Widget _buildAdditionalDataSection() {
+    return _buildSectionSurface(
+      key: const Key('builder-additional-data'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildSectionHeader('Additional Data'),
+          const SizedBox(height: 10),
+          if (_additionalData.isEmpty)
+            _buildEmptyState('No additional data added.')
+          else
+            ..._additionalData.asMap().entries.map((entry) {
+              final index = entry.key;
+              final data = entry.value;
+              return Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: ListTile(
+                  leading: Icon(
+                    data.photoPaths.isNotEmpty
+                        ? Icons.photo_library_outlined
+                        : Icons.link,
+                  ),
+                  title: Text(data.title),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (data.description.isNotEmpty)
+                        Text(
+                          data.description,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        title: Text(data.title),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (data.description.isNotEmpty)
-                              Text(
-                                data.description,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            if (data.link.isNotEmpty)
-                              Text(
-                                data.link,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(color: Colors.blue),
-                              ),
-                            if (data.photoPaths.isNotEmpty)
-                              Text('${data.photoPaths.length} photo(s)'),
-                          ],
+                      if (data.link.isNotEmpty)
+                        Text(
+                          data.link,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: AppColors.info),
                         ),
-                        trailing: Row(
+                      if (data.photoPaths.isNotEmpty)
+                        Text('${data.photoPaths.length} photo(s)'),
+                    ],
+                  ),
+                  trailing: _isInProgress
+                      ? null
+                      : Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             IconButton(
+                              tooltip: 'Edit additional data',
                               icon: const Icon(Icons.edit_outlined),
-                              onPressed: () => _editAdditionalData(idx),
+                              onPressed: () => _editAdditionalData(index),
                             ),
                             IconButton(
+                              tooltip: 'Delete additional data',
                               icon: const Icon(
                                 Icons.delete_outline,
-                                color: Colors.red,
+                                color: AppColors.error,
                               ),
-                              onPressed: () =>
-                                  setState(() => _additionalData.removeAt(idx)),
+                              onPressed: () => setState(
+                                () => _additionalData.removeAt(index),
+                              ),
                             ),
                           ],
                         ),
-                      ),
-                    );
-                  }),
-                const SizedBox(height: 8),
-                Center(
-                  child: ElevatedButton.icon(
-                    onPressed: _addAdditionalData,
-                    icon: const Icon(Icons.add_link),
-                    label: const Text('Add Additional Data'),
-                  ),
                 ),
-
-                const SizedBox(height: 80),
-              ],
+              );
+            }),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: ElevatedButton.icon(
+              onPressed: _isInProgress ? null : _addAdditionalData,
+              icon: const Icon(Icons.add_link),
+              label: const Text('Add Additional Data'),
             ),
           ),
-        ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionSurface({Key? key, required Widget child}) {
+    final expanded = MediaQuery.sizeOf(context).width >= 1000;
+    return Card(
+      key: key,
+      margin: EdgeInsets.zero,
+      child: Padding(padding: EdgeInsets.all(expanded ? 24 : 16), child: child),
+    );
+  }
+
+  Widget _buildEmptyState(String message) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 22),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainer,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.outlineVariant),
+      ),
+      child: Text(
+        message,
+        textAlign: TextAlign.center,
+        style: const TextStyle(color: AppColors.textSecondary),
       ),
     );
   }
@@ -1063,21 +1403,25 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 4),
+        Text(
+          label,
+          style: Theme.of(
+            context,
+          ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 8),
         TextFormField(
           controller: controller,
           maxLines: maxLines,
           validator: validator,
           readOnly: _isInProgress,
           decoration: InputDecoration(
-            border: InputBorder.none,
             hintText: 'Enter text...',
             fillColor: _isInProgress ? Colors.grey.shade100 : null,
             filled: _isInProgress,
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 20),
       ],
     );
   }
@@ -1086,31 +1430,46 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                'Protocol Title',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-            ),
-            _buildProjectMenuChip(),
-          ],
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final label = Text(
+              'Protocol Title',
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+            );
+            if (constraints.maxWidth < 420) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  label,
+                  const SizedBox(height: 8),
+                  _buildProjectMenuChip(),
+                ],
+              );
+            }
+            return Row(
+              children: [
+                Expanded(child: label),
+                const SizedBox(width: 12),
+                Flexible(child: _buildProjectMenuChip()),
+              ],
+            );
+          },
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 8),
         TextFormField(
           controller: _titleController,
           validator: (value) =>
               value == null || value.isEmpty ? 'Please enter a title' : null,
           readOnly: _isInProgress,
           decoration: InputDecoration(
-            border: InputBorder.none,
             hintText: 'Enter text...',
             fillColor: _isInProgress ? Colors.grey.shade100 : null,
             filled: _isInProgress,
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 20),
       ],
     );
   }
@@ -1236,7 +1595,14 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
   Widget _buildSectionHeader(String title) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [Text(title, style: Theme.of(context).textTheme.titleLarge)],
+      children: [
+        Text(
+          title,
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+        ),
+      ],
     );
   }
 
@@ -1244,7 +1610,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
     if (!_usePhases) {
       return [
         ..._steps.asMap().entries.map(
-          (entry) => _buildStepEditor(entry.key, entry.value),
+          (entry) => _buildTimelineStep(entry.key, entry.value),
         ),
         const SizedBox(height: 8),
         Center(
@@ -1267,7 +1633,13 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
         currentPhase = step.phaseName;
         items.add(_buildPhaseHeader(currentPhase, i));
       }
-      items.add(_buildStepEditor(i, step));
+      items.add(_buildTimelineStep(i, step));
+
+      final canCreateBoundary =
+          i < _steps.length - 1 && _steps[i + 1].phaseName == currentPhase;
+      if (canCreateBoundary) {
+        items.add(_buildInsertPhaseButton(i));
+      }
 
       // If next step is different phase or this is last step
       bool isLastInPhase =
@@ -1310,13 +1682,129 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
     return items;
   }
 
+  Widget _buildTimelineStep(int index, ProtocolStep step) {
+    return CustomPaint(
+      key: Key('step-connector-${index + 1}'),
+      painter: _StepTimelinePainter(
+        drawAbove: index > 0,
+        drawBelow: index < _steps.length - 1,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 44,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 18),
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: Container(
+                  key: Key('step-number-${index + 1}'),
+                  width: 32,
+                  height: 32,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryContainer,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppColors.primary, width: 2),
+                  ),
+                  child: Text(
+                    '${index + 1}',
+                    style: const TextStyle(
+                      color: AppColors.onPrimaryContainer,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: KeyedSubtree(
+              key: Key('step-card-${index + 1}'),
+              child: KeyedSubtree(
+                key: ValueKey('step-editor-${step.id}'),
+                child: _buildStepEditor(index, step),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInsertPhaseButton(int stepIndex) {
+    var endIndex = stepIndex + 1;
+    final phaseName = _steps[stepIndex].phaseName;
+    while (endIndex + 1 < _steps.length &&
+        _steps[endIndex + 1].phaseName == phaseName) {
+      endIndex++;
+    }
+    var hasLockedTail = false;
+    for (var index = stepIndex + 1; index <= endIndex; index++) {
+      if (widget.lockedStepIds?.contains(_steps[index].id) ?? false) {
+        hasLockedTail = true;
+        break;
+      }
+    }
+
+    return SizedBox(
+      height: 42,
+      child: Row(
+        children: [
+          SizedBox(
+            width: 44,
+            child: Center(
+              child: Container(width: 2, color: AppColors.outlineVariant),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Row(
+              children: [
+                const Expanded(child: Divider()),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  key: Key('insert-phase-after-${stepIndex + 1}'),
+                  onPressed: hasLockedTail
+                      ? null
+                      : () => _insertPhaseAfterStep(stepIndex),
+                  icon: const Icon(Icons.add, size: 16),
+                  label: const Text('Insert phase'),
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Expanded(child: Divider()),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildPhaseHeader(String? phaseName, int firstStepIdx) {
     String displayName = phaseName ?? 'Unnamed Phase';
-    // Determine if this phase is locked (all its steps are locked)
-    final phaseSteps = _steps.where((s) => s.phaseName == phaseName);
-    final bool isPhaseLocked =
-        phaseSteps.isNotEmpty &&
-        phaseSteps.every((s) => widget.lockedStepIds?.contains(s.id) ?? false);
+    final ranges = _phaseRanges();
+    final phaseIndex = ranges.indexWhere(
+      (range) => range.start == firstStepIdx,
+    );
+    final range = ranges[phaseIndex];
+    final isPhaseLocked = _rangeContainsLockedStep(range);
+    final canMoveUp =
+        phaseIndex > 0 &&
+        ranges[phaseIndex - 1].end > ranges[phaseIndex - 1].start &&
+        !isPhaseLocked &&
+        !_rangeContainsLockedStep(ranges[phaseIndex - 1]);
+    final canMoveDown =
+        phaseIndex > 0 &&
+        range.end > range.start &&
+        !isPhaseLocked &&
+        !_rangeContainsLockedStep(ranges[phaseIndex - 1]);
 
     return Container(
       margin: const EdgeInsets.only(top: 16, bottom: 8),
@@ -1324,12 +1812,12 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
       decoration: BoxDecoration(
         color: isPhaseLocked
             ? Colors.grey.withValues(alpha: 0.1)
-            : Colors.blue.withValues(alpha: 0.1),
+            : AppColors.primary.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: isPhaseLocked
               ? Colors.grey.withValues(alpha: 0.3)
-              : Colors.blue.withValues(alpha: 0.3),
+              : AppColors.primary.withValues(alpha: 0.28),
         ),
       ),
       child: Row(
@@ -1337,7 +1825,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
           Icon(
             Icons.layers,
             size: 18,
-            color: isPhaseLocked ? Colors.grey : Colors.blue,
+            color: isPhaseLocked ? Colors.grey : AppColors.primary,
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -1345,16 +1833,63 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
               initialValue: displayName,
               readOnly: isPhaseLocked,
               onChanged: (v) {
-                // Update all steps in this phase
                 setState(() {
-                  for (int i = 0; i < _steps.length; i++) {
-                    if (_steps[i].phaseName == phaseName) {
-                      _steps[i] = _steps[i].copyWith(phaseName: v);
-                    }
+                  for (var index = range.start; index <= range.end; index++) {
+                    _steps[index] = _steps[index].copyWith(phaseName: v);
                   }
                 });
               },
             ),
+          ),
+          PopupMenuButton<_PhaseMenuAction>(
+            key: Key('phase-menu-${firstStepIdx + 1}'),
+            tooltip: 'Phase actions',
+            icon: const Icon(Icons.more_vert),
+            onSelected: (action) {
+              switch (action) {
+                case _PhaseMenuAction.moveUp:
+                  _movePhase(firstStepIdx, -1);
+                  return;
+                case _PhaseMenuAction.moveDown:
+                  _movePhase(firstStepIdx, 1);
+                  return;
+                case _PhaseMenuAction.delete:
+                  _deletePhase(firstStepIdx);
+                  return;
+              }
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: _PhaseMenuAction.moveUp,
+                enabled: canMoveUp,
+                child: const ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.arrow_upward),
+                  title: Text('Move phase up'),
+                ),
+              ),
+              PopupMenuItem(
+                value: _PhaseMenuAction.moveDown,
+                enabled: canMoveDown,
+                child: const ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.arrow_downward),
+                  title: Text('Move phase down'),
+                ),
+              ),
+              PopupMenuItem(
+                value: _PhaseMenuAction.delete,
+                enabled: !isPhaseLocked,
+                child: const ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.delete_outline, color: AppColors.error),
+                  title: Text('Delete phase'),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -1389,17 +1924,9 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
           children: [
             Row(
               children: [
-                CircleAvatar(
-                  radius: 12,
-                  backgroundColor: isLocked ? Colors.grey : null,
-                  child: Text(
-                    '${index + 1}',
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                ),
-                const SizedBox(width: 12),
                 Expanded(
                   child: TextFormField(
+                    key: Key('step-title-field-${index + 1}'),
                     initialValue: step.title,
                     readOnly: isLocked,
                     decoration: const InputDecoration(
@@ -1418,14 +1945,17 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
                 if (!isLocked) _buildStepActions(index, step),
               ],
             ),
-            Focus(
-              onFocusChange: (hasFocus) {
-                if (!hasFocus && !isLocked) {
-                  _syncActionsFromInstructions(index);
-                }
-              },
+            SizedBox(
+              key: Key('step-title-instructions-gap-${index + 1}'),
+              height: 12,
+            ),
+            KeyedSubtree(
+              key: Key('step-instructions-field-${index + 1}'),
               child: TextFormField(
-                key: ValueKey('instructions_${step.id}_${step.instructions}'),
+                key: ValueKey(
+                  'instructions_${step.id}_${_instructionFieldVersions[step.id] ?? 0}',
+                ),
+                focusNode: _instructionFocusNode(step.id),
                 initialValue: step.instructions,
                 readOnly: isLocked,
                 decoration: const InputDecoration(
@@ -1438,8 +1968,15 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
                   fontSize: _uniformFontSize,
                   color: isLocked ? Colors.grey : null,
                 ),
-                onChanged: (v) =>
-                    _steps[index] = _steps[index].copyWith(instructions: v),
+                onTapOutside: (_) {
+                  if (!isLocked) _instructionFocusNode(step.id).unfocus();
+                },
+                onEditingComplete: () {
+                  if (!isLocked) _instructionFocusNode(step.id).unfocus();
+                },
+                onChanged: (value) {
+                  _steps[index] = _steps[index].copyWith(instructions: value);
+                },
               ),
             ),
             if (step.actionItems.isEmpty)
@@ -1570,93 +2107,150 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
                 onDelete: (noteIndex) =>
                     _deleteProtocolStepNote(index, noteIndex),
               ),
-            if (_regularTables.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(
-                'Linked Tables',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: _uniformFontSize,
-                  color: isLocked ? Colors.grey : null,
-                ),
-              ),
-              const SizedBox(height: 8),
-              if (step.tableIds.isEmpty)
-                const Text(
-                  'No tables linked to this step.',
-                  style: TextStyle(
-                    fontSize: _uniformFontSize - 2,
-                    color: AppColors.textSecondary,
-                  ),
-                )
-              else
-                LinkedProtocolTablesSection(
-                  tables: _linkedTablesForStep(step),
-                  isReadOnly: isLocked,
-                  onSave: isLocked
-                      ? null
-                      : (updated) {
-                          setState(() {
-                            final idx = _tables.indexWhere(
-                              (t) => t.id == updated.id,
-                            );
-                            if (idx != -1) _tables[idx] = updated;
-                          });
-                        },
-                  showOrderControls: !isLocked,
-                  onMoveUp: (tableIndex) =>
-                      _moveLinkedTable(index, tableIndex, -1),
-                  onMoveDown: (tableIndex) =>
-                      _moveLinkedTable(index, tableIndex, 1),
-                  onUnlink: isLocked
-                      ? null
-                      : (table) => _unlinkTableFromStep(index, table.id),
-                ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 4,
-                runSpacing: 4,
-                children: _regularTables
-                    .where((t) => !step.tableIds.contains(t.id))
-                    .map((t) {
-                      final tableColor = _tableColor(t);
-                      return ActionChip(
-                        avatar: Icon(
-                          _tableTypeIcon(t.type),
-                          size: 16,
-                          color: tableColor,
-                        ),
-                        label: Text(
-                          t.title.isEmpty ? 'Untitled Table' : t.title,
-                          style: const TextStyle(
-                            fontSize: _uniformFontSize - 2,
-                          ),
-                        ),
-                        side: BorderSide(
-                          color: tableColor.withValues(alpha: 0.5),
-                        ),
-                        onPressed: isLocked
-                            ? null
-                            : () {
-                                setState(() {
-                                  final currentStep = _steps[index];
-                                  final newTableIds = List<String>.from(
-                                    currentStep.tableIds,
-                                  )..add(t.id);
-                                  _steps[index] = currentStep.copyWith(
-                                    tableIds: newTableIds,
-                                  );
-                                });
-                              },
-                      );
-                    })
-                    .toList(),
-              ),
-            ],
+            const SizedBox(height: 8),
+            _buildStepTableLinks(index, step, isLocked: isLocked),
+            SizedBox(
+              key: Key('step-linked-tables-bottom-gap-${index + 1}'),
+              height: 12,
+            ),
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildStepTableLinks(
+    int stepIndex,
+    ProtocolStep step, {
+    required bool isLocked,
+  }) {
+    final linkedTables = _linkedTablesForStep(step);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        PopupMenuButton<String>(
+          key: Key('step-table-menu-${stepIndex + 1}'),
+          enabled: !isLocked,
+          tooltip: 'Link tables to step ${stepIndex + 1}',
+          onSelected: (value) {
+            if (value == '__add_table__') {
+              _addNewTable();
+              return;
+            }
+            _toggleTableLink(stepIndex, value);
+          },
+          itemBuilder: (context) => [
+            if (_regularTables.isEmpty)
+              const PopupMenuItem<String>(
+                enabled: false,
+                child: ListTile(
+                  leading: Icon(Icons.table_chart_outlined),
+                  title: Text('No tables available'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            for (final table in _regularTables)
+              PopupMenuItem<String>(
+                value: table.id,
+                child: ListTile(
+                  leading: Icon(
+                    _tableTypeIcon(table.type),
+                    color: _tableColor(table),
+                  ),
+                  title: Text(
+                    table.title.isEmpty ? 'Untitled Table' : table.title,
+                  ),
+                  trailing: step.tableIds.contains(table.id)
+                      ? const Icon(Icons.check, color: AppColors.primary)
+                      : null,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            const PopupMenuDivider(),
+            const PopupMenuItem<String>(
+              value: '__add_table__',
+              child: ListTile(
+                leading: Icon(Icons.add_chart_outlined),
+                title: Text('Add table'),
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+          ],
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.link,
+                  size: 20,
+                  color: isLocked ? Colors.grey : AppColors.primary,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Link table',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: _uniformFontSize,
+                    color: isLocked ? Colors.grey : AppColors.primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (linkedTables.isEmpty)
+          const Text(
+            'No tables linked to this step.',
+            style: TextStyle(
+              fontSize: _uniformFontSize - 2,
+              color: AppColors.textSecondary,
+            ),
+          )
+        else
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: linkedTables.map((table) {
+              final tableColor = _tableColor(table);
+              return InputChip(
+                key: Key('linked-table-${step.id}-${table.id}'),
+                avatar: Icon(
+                  _tableTypeIcon(table.type),
+                  size: 16,
+                  color: tableColor,
+                ),
+                label: Text(
+                  table.title.isEmpty ? 'Untitled Table' : table.title,
+                  style: const TextStyle(fontSize: _uniformFontSize - 2),
+                ),
+                side: BorderSide(color: tableColor.withValues(alpha: 0.5)),
+                deleteIcon: const Icon(Icons.close, size: 16),
+                onDeleted: isLocked
+                    ? null
+                    : () => _unlinkTableFromStep(stepIndex, table.id),
+              );
+            }).toList(),
+          ),
+      ],
+    );
+  }
+
+  void _toggleTableLink(int stepIndex, String tableId) {
+    if (stepIndex < 0 || stepIndex >= _steps.length) return;
+    if (!_regularTables.any((table) => table.id == tableId)) return;
+
+    setState(() {
+      final step = _steps[stepIndex];
+      final tableIds = List<String>.from(step.tableIds);
+      if (tableIds.contains(tableId)) {
+        tableIds.remove(tableId);
+      } else {
+        tableIds.add(tableId);
+      }
+      _steps[stepIndex] = step.copyWith(tableIds: tableIds);
+    });
   }
 
   Widget _buildStepActions(int index, ProtocolStep step) {
@@ -1767,6 +2361,21 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
     }
   }
 
+  FocusNode _instructionFocusNode(String stepId) {
+    return _instructionFocusNodes.putIfAbsent(stepId, () {
+      final focusNode = FocusNode();
+      focusNode.addListener(() {
+        if (focusNode.hasFocus || !mounted) return;
+
+        final stepIndex = _steps.indexWhere((step) => step.id == stepId);
+        if (stepIndex == -1) return;
+        if (widget.lockedStepIds?.contains(stepId) ?? false) return;
+        _syncActionsFromInstructions(stepIndex);
+      });
+      return focusNode;
+    });
+  }
+
   void _syncActionsFromInstructions(int stepIndex, {bool rebuild = true}) {
     final step = _steps[stepIndex];
     final parsed = _extractActionsAndNotesFromInstructions(step.instructions);
@@ -1798,6 +2407,8 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
         actionTimers: parsedTimers,
         notes: newNotes,
       );
+      _instructionFieldVersions[step.id] =
+          (_instructionFieldVersions[step.id] ?? 0) + 1;
     }
 
     if (rebuild) {
@@ -1811,48 +2422,20 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
   _extractActionsAndNotesFromInstructions(String instructions) {
     final actions = <String>[];
     final notes = <String>[];
-    final current = <String>[];
     final keptInstructionLines = <String>[];
-    _StepIntakeKind currentKind = _StepIntakeKind.none;
-
-    void flushCurrent() {
-      final text = current.join('\n').trim();
-      if (text.isNotEmpty) {
-        switch (currentKind) {
-          case _StepIntakeKind.action:
-            actions.add(text);
-            break;
-          case _StepIntakeKind.note:
-            notes.add(text);
-            break;
-          case _StepIntakeKind.none:
-            break;
-        }
-      }
-      current.clear();
-    }
 
     for (final line in instructions.split(RegExp(r'\r?\n'))) {
       final trimmedLeft = line.trimLeft();
       if (RegExp(r'^-\s+').hasMatch(trimmedLeft)) {
-        flushCurrent();
-        currentKind = _StepIntakeKind.action;
-        current.add(trimmedLeft.substring(1).trim());
+        final action = trimmedLeft.substring(1).trim();
+        if (action.isNotEmpty) actions.add(action);
       } else if (RegExp(r'^\*\s+').hasMatch(trimmedLeft)) {
-        flushCurrent();
-        currentKind = _StepIntakeKind.note;
-        current.add(trimmedLeft.substring(1).trim());
-      } else if (RegExp(r'^[-*]\S').hasMatch(trimmedLeft)) {
-        flushCurrent();
-        currentKind = _StepIntakeKind.none;
-        keptInstructionLines.add(line);
-      } else if (currentKind != _StepIntakeKind.none) {
-        current.add(line.trim());
+        final note = trimmedLeft.substring(1).trim();
+        if (note.isNotEmpty) notes.add(note);
       } else {
         keptInstructionLines.add(line);
       }
     }
-    flushCurrent();
 
     return (
       actions: actions,
@@ -2050,18 +2633,6 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
     return linkedTables;
   }
 
-  void _moveLinkedTable(int stepIndex, int tableIndex, int delta) {
-    final newIndex = tableIndex + delta;
-    final ids = List<String>.from(_steps[stepIndex].tableIds);
-    if (newIndex < 0 || newIndex >= ids.length) return;
-
-    setState(() {
-      final id = ids.removeAt(tableIndex);
-      ids.insert(newIndex, id);
-      _steps[stepIndex] = _steps[stepIndex].copyWith(tableIds: ids);
-    });
-  }
-
   void _unlinkTableFromStep(int stepIndex, String tableId) {
     setState(() {
       final ids = List<String>.from(_steps[stepIndex].tableIds)
@@ -2071,7 +2642,56 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
   }
 }
 
-enum _StepIntakeKind { none, action, note }
+class _StepTimelinePainter extends CustomPainter {
+  const _StepTimelinePainter({
+    required this.drawAbove,
+    required this.drawBelow,
+  });
+
+  final bool drawAbove;
+  final bool drawBelow;
+
+  static const double _markerCenterX = 22;
+  static const double _markerCenterY = 34;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = AppColors.primary.withValues(alpha: 0.55)
+      ..strokeWidth = 1.5
+      ..strokeCap = StrokeCap.round;
+    const x = _markerCenterX;
+
+    if (drawAbove) {
+      _drawDottedLine(canvas, paint, Offset(x, 0), Offset(x, _markerCenterY));
+    }
+    if (drawBelow) {
+      _drawDottedLine(
+        canvas,
+        paint,
+        Offset(x, _markerCenterY),
+        Offset(x, size.height),
+      );
+    }
+  }
+
+  void _drawDottedLine(Canvas canvas, Paint paint, Offset start, Offset end) {
+    const dashLength = 3.0;
+    const gapLength = 4.0;
+    var y = start.dy;
+    while (y < end.dy) {
+      final dashEnd = (y + dashLength).clamp(start.dy, end.dy);
+      canvas.drawLine(Offset(start.dx, y), Offset(end.dx, dashEnd), paint);
+      y += dashLength + gapLength;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _StepTimelinePainter oldDelegate) {
+    return drawAbove != oldDelegate.drawAbove ||
+        drawBelow != oldDelegate.drawBelow;
+  }
+}
 
 class _ProjectDialogContent extends StatefulWidget {
   static Color lastSelectedColor = AppColors.primary;
@@ -2262,6 +2882,8 @@ class _ActionTimerInputState extends State<_ActionTimerInput> {
     widget.onChanged(total);
   }
 }
+
+enum _PhaseMenuAction { moveUp, moveDown, delete }
 
 class _PhaseNameField extends StatefulWidget {
   final String initialValue;

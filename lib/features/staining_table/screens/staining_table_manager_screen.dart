@@ -5,6 +5,7 @@ import '../models/staining_wizard.dart';
 import '../services/staining_table_generator_service.dart';
 import '../widgets/staining_result_table.dart';
 import '../../../widgets/unsaved_changes_pop_scope.dart';
+import '../../../widgets/protocolflow_app_bar.dart';
 
 class StainingTableManagerScreen extends StatefulWidget {
   final StainingWizard wizard;
@@ -135,10 +136,11 @@ class _StainingTableManagerScreenState
       message:
           'You have unsaved changes in this table. Are you sure you want to exit?',
       child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Staining Manager'),
+        appBar: ProtocolFlowAppBar(
+          title: 'Staining Manager',
           actions: [
             IconButton(
+              tooltip: 'Save table',
               icon: const Icon(Icons.save),
               onPressed: () => _handleDone(context),
             ),

@@ -112,4 +112,28 @@ void main() {
     expect(tableSynced.data, '1');
     expectNoFlutterException(tester);
   });
+
+  testWidgets('dashboard panels expand into substantial desktop columns', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.binding.setSurfaceSize(const Size(1800, 1600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: DashboardScreen())),
+    );
+    await tester.pump(const Duration(milliseconds: 500));
+
+    final activityCard = find
+        .ancestor(
+          of: find.text('Protocol activity'),
+          matching: find.byType(Card),
+        )
+        .first;
+    final size = tester.getSize(activityCard);
+    expect(size.width, greaterThan(800));
+    expect(size.height, greaterThanOrEqualTo(300));
+    expectNoFlutterException(tester);
+  });
 }

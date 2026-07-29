@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:protocolflow/models/completed_protocol.dart';
 import 'package:protocolflow/models/protocol_additional_data.dart';
+import 'package:protocolflow/models/project.dart';
 import 'package:protocolflow/models/protocol_step.dart';
 import 'package:protocolflow/models/step_note.dart';
 import 'package:protocolflow/models/protocol_table.dart';
@@ -9,21 +10,45 @@ import 'package:protocolflow/widgets/local_image.dart';
 import 'package:protocolflow/widgets/protocol_step_actions_table.dart';
 import 'package:protocolflow/widgets/protocol_step_notes_table.dart';
 import 'package:protocolflow/widgets/protocol_table_preview.dart';
-import 'package:protocolflow/widgets/protocol_table_widget.dart';
+import 'package:protocolflow/widgets/protocolflow_app_bar.dart';
+import 'package:protocolflow/widgets/responsive_layout.dart';
+import 'package:protocolflow/widgets/sync_status_chip.dart';
 import 'package:protocolflow/data/completed_protocols_data.dart';
 import 'package:protocolflow/services/docx_export_service.dart';
 import 'package:protocolflow/services/pdf_service.dart';
 import 'package:protocolflow/services/export_service.dart';
+import 'package:protocolflow/services/storage_service.dart';
 import 'package:protocolflow/theme/app_colors.dart';
 import 'package:protocolflow/utils/date_time_format.dart';
 
-class CompletedProtocolDetailScreen extends StatelessWidget {
+class CompletedProtocolDetailScreen extends StatefulWidget {
   final CompletedProtocol completedProtocol;
 
   const CompletedProtocolDetailScreen({
     super.key,
     required this.completedProtocol,
   });
+
+  @override
+  State<CompletedProtocolDetailScreen> createState() =>
+      _CompletedProtocolDetailScreenState();
+}
+
+class _CompletedProtocolDetailScreenState
+    extends State<CompletedProtocolDetailScreen> {
+  CompletedProtocol get completedProtocol => widget.completedProtocol;
+  List<Project> _projects = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProjects();
+  }
+
+  Future<void> _loadProjects() async {
+    final projects = await StorageService().loadProjects();
+    if (mounted) setState(() => _projects = projects);
+  }
 
   void _confirmDelete(BuildContext context) {
     showDialog(
@@ -108,12 +133,11 @@ class CompletedProtocolDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final protocol = completedProtocol.protocol;
     final dateStr = formatDateTime(completedProtocol.completedAt);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Completed Protocol Detail'),
+      appBar: ProtocolFlowAppBar(
+        title: 'Completed Protocol Detail',
         actions: [
           IconButton(
             icon: const Icon(Icons.share),
@@ -127,86 +151,473 @@ class CompletedProtocolDetailScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              protocol.title,
-              style: Theme.of(
+      body: _buildDetailBody(context, dateStr),
+    );
+  }
+
+  Widget _buildDetailBody(BuildContext context, String completedDate) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final desktop = constraints.maxWidth >= ProtocolFlowBreakpoints.desktop;
+        return SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(
+            desktop ? 24 : 12,
+            desktop ? 24 : 16,
+            desktop ? 24 : 12,
+            48,
+          ),
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1800),
+              child: _buildDetailWorkspace(
                 context,
-              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Created on: ${formatDate(protocol.createdAt)}',
-              style: const TextStyle(fontStyle: FontStyle.italic),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Created by: ${protocol.createdByName ?? 'Unknown user'}',
-              style: const TextStyle(fontStyle: FontStyle.italic),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Completed on: $dateStr',
-              style: const TextStyle(fontStyle: FontStyle.italic),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Completed by: '
-              '${completedProtocol.completedByName ?? 'Unknown user'}',
-              style: const TextStyle(fontStyle: FontStyle.italic),
-            ),
-            const Divider(height: 32),
-
-            _buildSection(context, 'Objective', protocol.objective),
-            _buildSection(context, 'Description', protocol.description),
-
-            const SizedBox(height: 16),
-            Text(
-              'Material List',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 8),
-            if (protocol.materialListTable != null)
-              LinkedProtocolTablesSection(
-                tables: [protocol.materialListTable!],
+                completedDate: completedDate,
+                desktop: desktop,
               ),
-            if (protocol.materialListTable == null)
-              const Text('No material list table linked.'),
-            ..._buildNotesSection(
-              completedProtocol.notes
-                  .where((n) => n.stepId == 'materials')
-                  .toList(),
             ),
+          ),
+        );
+      },
+    );
+  }
 
+  Widget _buildDetailWorkspace(
+    BuildContext context, {
+    required String completedDate,
+    required bool desktop,
+  }) {
+    final protocol = completedProtocol.protocol;
+    final regularTables = protocol.tables
+        .where((table) => table.type != TableType.materialList)
+        .toList();
+    final overviewNotes = completedProtocol.notes
+        .where((note) => note.stepId == 'overview')
+        .toList();
+    final hasAdditionalData =
+        protocol.files.isNotEmpty || protocol.additionalData.isNotEmpty;
+
+    final information = _buildProtocolInformationSection(
+      context,
+      completedDate,
+    );
+    final samples = protocol.samples.isEmpty
+        ? null
+        : _buildSamplesSection(context);
+    final materials = _buildMaterialListSection(context);
+    final steps = _buildStepsSurface(context);
+    final generalNotes = overviewNotes.isEmpty
+        ? null
+        : _buildGeneralNotesSurface(context, overviewNotes);
+    final tables = regularTables.isEmpty
+        ? null
+        : _buildTablesSurface(context, regularTables);
+    final additionalData = hasAdditionalData
+        ? _buildAdditionalDataSurface(context)
+        : null;
+
+    if (!desktop) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          information,
+          if (samples != null) ...[const SizedBox(height: 24), samples],
+          const SizedBox(height: 24),
+          materials,
+          const SizedBox(height: 24),
+          steps,
+          if (generalNotes != null) ...[
             const SizedBox(height: 24),
-            Text('Steps', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 8),
-            ..._buildGroupedSteps(context),
+            generalNotes,
+          ],
+          if (tables != null) ...[const SizedBox(height: 24), tables],
+          if (additionalData != null) ...[
+            const SizedBox(height: 24),
+            additionalData,
+          ],
+        ],
+      );
+    }
 
-            if (completedProtocol.notes.any((n) => n.stepId == 'overview')) ...[
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          flex: 5,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              information,
+              if (generalNotes != null) ...[
+                const SizedBox(height: 24),
+                generalNotes,
+              ],
+              if (tables != null) ...[const SizedBox(height: 24), tables],
+              if (additionalData != null) ...[
+                const SizedBox(height: 24),
+                additionalData,
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(width: 32),
+        Expanded(
+          flex: 7,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (samples != null) ...[samples, const SizedBox(height: 24)],
+              materials,
               const SizedBox(height: 24),
-              Text(
-                'General Notes',
-                style: Theme.of(context).textTheme.titleLarge,
+              steps,
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildProtocolInformationSection(
+    BuildContext context,
+    String completedDate,
+  ) {
+    final protocol = completedProtocol.protocol;
+    return _buildSectionSurface(
+      context,
+      key: const Key('completed-detail-protocol-information'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildSectionHeader(context, 'Protocol Information'),
+          const SizedBox(height: 16),
+          Text(
+            protocol.title,
+            style: Theme.of(
+              context,
+            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              _buildDetailBadge(
+                icon: Icons.check_circle_outline,
+                label: 'COMPLETED',
+                color: AppColors.success,
               ),
-              const SizedBox(height: 8),
-              ..._buildNotesSection(
-                completedProtocol.notes
-                    .where((n) => n.stepId == 'overview')
-                    .toList(),
+              SyncStatusChip(status: protocol.syncStatus, compact: true),
+              _buildDetailBadge(
+                icon: Icons.folder_outlined,
+                label: 'Project: ${_projectNameFor(protocol.projectId)}',
               ),
             ],
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 18,
+            runSpacing: 8,
+            children: [
+              _buildMetadataItem(
+                context,
+                icon: Icons.calendar_today_outlined,
+                text: 'Created on: ${formatDate(protocol.createdAt)}',
+              ),
+              _buildMetadataItem(
+                context,
+                icon: Icons.person_outline,
+                text:
+                    'Created by: '
+                    '${protocol.createdByName ?? 'Unknown user'}',
+              ),
+              _buildMetadataItem(
+                context,
+                icon: Icons.event_available_outlined,
+                text: 'Completed on: $completedDate',
+              ),
+              _buildMetadataItem(
+                context,
+                icon: Icons.person_pin_outlined,
+                text:
+                    'Completed by: '
+                    '${completedProtocol.completedByName ?? 'Unknown user'}',
+              ),
+            ],
+          ),
+          const Divider(height: 32),
+          _buildReadOnlyField('Objective', protocol.objective),
+          const SizedBox(height: 18),
+          _buildReadOnlyField('Description', protocol.description),
+        ],
+      ),
+    );
+  }
 
-            // Supplementary Section
-            _buildSupplementarySection(context),
+  Widget _buildDetailBadge({
+    required IconData icon,
+    required String label,
+    Color color = AppColors.primary,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.28)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-            const SizedBox(height: 32),
-          ],
+  Widget _buildMetadataItem(
+    BuildContext context, {
+    required IconData icon,
+    required String text,
+  }) {
+    final maxWidth = (MediaQuery.sizeOf(context).width - 32)
+        .clamp(0.0, 360.0)
+        .toDouble();
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxWidth),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: AppColors.textSecondary),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              text,
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _projectNameFor(String? projectId) {
+    if (projectId == null || projectId.isEmpty) return 'Unassigned';
+    for (final project in _projects) {
+      if (project.id == projectId) return project.name;
+    }
+    return 'Unassigned';
+  }
+
+  Widget _buildReadOnlyField(String title, String content) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
         ),
+        const SizedBox(height: 6),
+        Text(
+          content.trim().isEmpty ? 'Not provided.' : content,
+          style: TextStyle(
+            color: content.trim().isEmpty
+                ? AppColors.textSecondary
+                : AppColors.textPrimary,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSamplesSection(BuildContext context) {
+    return _buildSectionSurface(
+      context,
+      key: const Key('completed-detail-samples'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildSectionHeader(context, 'Samples'),
+          const SizedBox(height: 12),
+          ...completedProtocol.protocol.samples.map(
+            (sample) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.biotech_outlined,
+                    size: 18,
+                    color: AppColors.primary,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(child: Text(sample)),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMaterialListSection(BuildContext context) {
+    final protocol = completedProtocol.protocol;
+    final materialNotes = completedProtocol.notes
+        .where((note) => note.stepId == 'materials')
+        .toList();
+    return _buildSectionSurface(
+      context,
+      key: const Key('completed-detail-materials'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildSectionHeader(context, 'Material List'),
+          const SizedBox(height: 10),
+          if (protocol.materialListTable != null)
+            LinkedProtocolTablesSection(tables: [protocol.materialListTable!])
+          else
+            _buildEmptyState('No material list table linked.'),
+          if (materialNotes.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const Text(
+              'Recorded notes',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            ..._buildNotesSection(materialNotes),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStepsSurface(BuildContext context) {
+    return _buildSectionSurface(
+      context,
+      key: const Key('completed-detail-steps'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildSectionHeader(context, 'Steps'),
+          const SizedBox(height: 8),
+          if (completedProtocol.protocol.steps.isEmpty)
+            _buildEmptyState('No steps recorded.')
+          else
+            ..._buildGroupedSteps(context),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGeneralNotesSurface(BuildContext context, List<StepNote> notes) {
+    return _buildSectionSurface(
+      context,
+      key: const Key('completed-detail-general-notes'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildSectionHeader(context, 'General Notes'),
+          const SizedBox(height: 8),
+          ..._buildNotesSection(notes),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTablesSurface(BuildContext context, List<ProtocolTable> tables) {
+    return _buildSectionSurface(
+      context,
+      key: const Key('completed-detail-tables'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildSectionHeader(context, 'Tables'),
+          const SizedBox(height: 10),
+          LinkedProtocolTablesSection(tables: tables, initiallyCollapsed: true),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAdditionalDataSurface(BuildContext context) {
+    final protocol = completedProtocol.protocol;
+    return _buildSectionSurface(
+      context,
+      key: const Key('completed-detail-additional-data'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildSectionHeader(context, 'Additional Data'),
+          if (protocol.files.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Text(
+              'Attached Files',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            ...protocol.files.map(
+              (file) => ListTile(
+                leading: const Icon(Icons.insert_drive_file_outlined),
+                title: Text(file),
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+          ],
+          if (protocol.additionalData.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            ...protocol.additionalData.map(
+              (data) => _buildAdditionalDataCard(context, data),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionSurface(
+    BuildContext context, {
+    Key? key,
+    required Widget child,
+  }) {
+    final expanded = MediaQuery.sizeOf(context).width >= 1000;
+    return Card(
+      key: key,
+      margin: EdgeInsets.zero,
+      child: Padding(padding: EdgeInsets.all(expanded ? 24 : 16), child: child),
+    );
+  }
+
+  Widget _buildSectionHeader(BuildContext context, String title) {
+    return Text(
+      title,
+      style: Theme.of(
+        context,
+      ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+    );
+  }
+
+  Widget _buildEmptyState(String message) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 22),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainer,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.outlineVariant),
+      ),
+      child: Text(
+        message,
+        style: const TextStyle(color: AppColors.textSecondary),
       ),
     );
   }
@@ -250,7 +661,7 @@ class CompletedProtocolDetailScreen extends StatelessWidget {
         );
 
         for (var step in stepsByPhase[phase]!) {
-          widgets.add(_buildStepCard(context, step, globalStepIdx));
+          widgets.add(_buildTimelineStepCard(context, step, globalStepIdx));
           globalStepIdx++;
         }
       }
@@ -281,7 +692,7 @@ class CompletedProtocolDetailScreen extends StatelessWidget {
         );
 
         for (var step in stepsByDay[day]!) {
-          widgets.add(_buildStepCard(context, step, globalStepIdx));
+          widgets.add(_buildTimelineStepCard(context, step, globalStepIdx));
           globalStepIdx++;
         }
       }
@@ -289,133 +700,150 @@ class CompletedProtocolDetailScreen extends StatelessWidget {
     }
   }
 
-  Widget _buildStepCard(BuildContext context, ProtocolStep step, int index) {
+  Widget _buildTimelineStepCard(
+    BuildContext context,
+    ProtocolStep step,
+    int index,
+  ) {
     final stepNotes = completedProtocol.notes
         .where((n) => n.stepId == step.id)
         .toList();
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Step ${index + 1}: ${step.title}',
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-            const SizedBox(height: 4),
-            Text(step.instructions),
-            if (step.actionItems.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              ProtocolStepActionsTable(
-                actions: step.actionItems,
-                trailingBuilder: (context, actionIndex) {
-                  final timer = step.actionTimers[actionIndex];
-                  if (timer == null) return null;
-                  final timerLabel = timer >= 3600
-                      ? '${timer ~/ 3600}h'
-                      : timer >= 60
-                      ? '${timer ~/ 60}m'
-                      : '${timer}s';
-                  return Chip(
-                    avatar: const Icon(Icons.timer_outlined, size: 16),
-                    label: Text(timerLabel),
-                    visualDensity: VisualDensity.compact,
-                  );
-                },
-              ),
-            ],
-            if (step.notes.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              ProtocolStepNotesTable(notes: step.notes),
-            ],
-            if (step.tableIds.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              LinkedProtocolTablesSection(tables: _linkedTablesForStep(step)),
-            ],
-            if (stepNotes.isNotEmpty) ...[
-              const Divider(),
-              const Text(
-                'User Notes:',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textSecondary,
+    return CustomPaint(
+      key: Key('completed-detail-step-connector-${index + 1}'),
+      painter: _CompletedStepTimelinePainter(
+        drawAbove: index > 0,
+        drawBelow: index < completedProtocol.protocol.steps.length - 1,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 44,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 18),
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: Container(
+                  key: Key('completed-detail-step-number-${index + 1}'),
+                  width: 32,
+                  height: 32,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: AppColors.success.withValues(alpha: 0.14),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppColors.success, width: 2),
+                  ),
+                  child: Text(
+                    '${index + 1}',
+                    style: const TextStyle(
+                      color: AppColors.success,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ),
               ),
-              ..._buildNotesSection(stepNotes),
-            ],
-          ],
-        ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Card(
+              key: Key('completed-detail-step-card-${index + 1}'),
+              margin: const EdgeInsets.symmetric(vertical: 8),
+              color: AppColors.success.withValues(alpha: 0.08),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            step.title.isEmpty ? 'Untitled step' : step.title,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: AppColors.success,
+                            ),
+                          ),
+                        ),
+                        const Icon(
+                          Icons.check_circle,
+                          color: AppColors.success,
+                          size: 18,
+                        ),
+                      ],
+                    ),
+                    if (step.instructions.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        step.instructions,
+                        style: const TextStyle(color: AppColors.textSecondary),
+                      ),
+                    ],
+                    if (step.actionItems.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      ProtocolStepActionsTable(
+                        actions: step.actionItems,
+                        trailingBuilder: (context, actionIndex) {
+                          final timer = step.actionTimers[actionIndex];
+                          if (timer == null) return null;
+                          final timerLabel = timer >= 3600
+                              ? '${timer ~/ 3600}h'
+                              : timer >= 60
+                              ? '${timer ~/ 60}m'
+                              : '${timer}s';
+                          return Chip(
+                            avatar: const Icon(Icons.timer_outlined, size: 16),
+                            label: Text(timerLabel),
+                            visualDensity: VisualDensity.compact,
+                          );
+                        },
+                      ),
+                    ],
+                    if (step.notes.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      ProtocolStepNotesTable(notes: step.notes),
+                    ],
+                    if (step.tableIds.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      const Row(
+                        children: [
+                          Icon(Icons.link, size: 18, color: AppColors.primary),
+                          SizedBox(width: 6),
+                          Text(
+                            'Linked tables',
+                            style: TextStyle(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      LinkedProtocolTablesSection(
+                        tables: _linkedTablesForStep(step),
+                      ),
+                    ],
+                    if (stepNotes.isNotEmpty) ...[
+                      const Divider(height: 28),
+                      const Text(
+                        'Recorded notes',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      ..._buildNotesSection(stepNotes),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
-    );
-  }
-
-  Widget _buildSupplementarySection(BuildContext context) {
-    final protocol = completedProtocol.protocol;
-    final assignedTableIds = protocol.steps.expand((s) => s.tableIds).toSet();
-    final unassignedTables = protocol.tables
-        .where(
-          (t) =>
-              t.type != TableType.materialList &&
-              !assignedTableIds.contains(t.id),
-        )
-        .toList();
-
-    if (protocol.files.isEmpty &&
-        unassignedTables.isEmpty &&
-        protocol.additionalData.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 32),
-        const Divider(),
-        Text('Supplementary', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 8),
-        if (protocol.files.isNotEmpty) ...[
-          const Text(
-            'Attached Files:',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: AppColors.textSecondary,
-            ),
-          ),
-          ...protocol.files.map(
-            (file) => ListTile(
-              leading: const Icon(Icons.insert_drive_file_outlined),
-              title: Text(file),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-            ),
-          ),
-          const SizedBox(height: 16),
-        ],
-        if (unassignedTables.isNotEmpty) ...[
-          const Text(
-            'Reference Tables:',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: AppColors.textSecondary,
-            ),
-          ),
-          ...unassignedTables.map((table) => ProtocolTableWidget(table: table)),
-          const SizedBox(height: 16),
-        ],
-        if (protocol.additionalData.isNotEmpty) ...[
-          const Text(
-            'Additional Data:',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: AppColors.textSecondary,
-            ),
-          ),
-          ...protocol.additionalData.map(
-            (data) => _buildAdditionalDataCard(context, data),
-          ),
-        ],
-      ],
     );
   }
 
@@ -486,18 +914,6 @@ class CompletedProtocolDetailScreen extends StatelessWidget {
         borderRadius: BorderRadius.circular(4),
         child: buildLocalImage(photoPaths[index]),
       ),
-    );
-  }
-
-  Widget _buildSection(BuildContext context, String title, String content) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 4),
-        Text(content),
-        const SizedBox(height: 16),
-      ],
     );
   }
 
@@ -626,5 +1042,60 @@ class CompletedProtocolDetailScreen extends StatelessWidget {
       }
     }
     return linkedTables;
+  }
+}
+
+class _CompletedStepTimelinePainter extends CustomPainter {
+  const _CompletedStepTimelinePainter({
+    required this.drawAbove,
+    required this.drawBelow,
+  });
+
+  final bool drawAbove;
+  final bool drawBelow;
+
+  static const double _markerCenterX = 22;
+  static const double _markerCenterY = 34;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = AppColors.success.withValues(alpha: 0.55)
+      ..strokeWidth = 1.5
+      ..strokeCap = StrokeCap.round;
+
+    if (drawAbove) {
+      _drawDottedLine(
+        canvas,
+        paint,
+        const Offset(_markerCenterX, 0),
+        const Offset(_markerCenterX, _markerCenterY),
+      );
+    }
+    if (drawBelow) {
+      _drawDottedLine(
+        canvas,
+        paint,
+        const Offset(_markerCenterX, _markerCenterY),
+        Offset(_markerCenterX, size.height),
+      );
+    }
+  }
+
+  void _drawDottedLine(Canvas canvas, Paint paint, Offset start, Offset end) {
+    const dashLength = 3.0;
+    const gapLength = 4.0;
+    var y = start.dy;
+    while (y < end.dy) {
+      final dashEnd = (y + dashLength).clamp(start.dy, end.dy);
+      canvas.drawLine(Offset(start.dx, y), Offset(end.dx, dashEnd), paint);
+      y += dashLength + gapLength;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _CompletedStepTimelinePainter oldDelegate) {
+    return drawAbove != oldDelegate.drawAbove ||
+        drawBelow != oldDelegate.drawBelow;
   }
 }

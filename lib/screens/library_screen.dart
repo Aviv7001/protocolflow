@@ -8,6 +8,7 @@ import '../services/export_service.dart';
 import '../services/import_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/sync_status_chip.dart';
+import '../widgets/running_protocol_summary_card.dart';
 import '../utils/date_time_format.dart';
 import 'protocol_detail_screen.dart';
 import 'projects_screen.dart';
@@ -110,7 +111,7 @@ class _LibraryScreenState extends State<LibraryScreen>
           Tab(text: 'Templates', icon: Icon(Icons.copy_all, size: 20)),
           Tab(text: 'Protocols', icon: Icon(Icons.description, size: 20)),
           Tab(text: 'Running', icon: Icon(Icons.play_circle_outline, size: 20)),
-          Tab(text: 'History', icon: Icon(Icons.history, size: 20)),
+          Tab(text: 'Completed', icon: Icon(Icons.check_circle, size: 20)),
         ],
       ),
     );
@@ -254,38 +255,18 @@ class _LibraryScreenState extends State<LibraryScreen>
         itemBuilder: (context, index) {
           if (index == 0) return _buildProjectFilter();
           final protocol = filteredProtocols[index - 1];
-          return ListTile(
-            leading: Icon(
-              isTemplate ? Icons.copy_all : Icons.article_outlined,
-              color: isTemplate ? Colors.purple : Colors.blue,
-            ),
-            title: Text(protocol.title),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  protocol.objective,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  'Created on: ${formatDate(protocol.createdAt)}',
-                  style: const TextStyle(fontSize: 12),
-                ),
-                Text(
-                  'Created by: ${protocol.createdByName ?? 'Unknown user'}',
-                  style: const TextStyle(fontSize: 12),
-                ),
-                Text(
-                  'Project: ${_projectNameFor(protocol.projectId)}',
-                  style: const TextStyle(fontSize: 12),
-                ),
-                const SizedBox(height: 4),
-                SyncStatusChip(status: protocol.syncStatus, compact: true),
-              ],
-            ),
-            trailing: const Icon(Icons.chevron_right),
+          return _LibraryEntryCard(
+            entryId: protocol.id,
+            title: protocol.title,
+            type: isTemplate
+                ? _LibraryEntryType.template
+                : _LibraryEntryType.protocol,
+            firstLabel: 'Created by',
+            firstValue: protocol.createdByName ?? 'Unknown user',
+            secondLabel: 'Created on',
+            secondValue: formatDate(protocol.createdAt),
+            projectChip: _buildProjectChip(protocol.projectId),
+            syncStatus: protocol.syncStatus,
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
@@ -323,12 +304,24 @@ class _LibraryScreenState extends State<LibraryScreen>
     return projectId == selected;
   }
 
-  String _projectNameFor(String? projectId) {
-    if (projectId == null || projectId.isEmpty) return 'Unassigned';
+  Project? _projectFor(String? projectId) {
+    if (projectId == null || projectId.isEmpty) return null;
     for (final project in _projects) {
-      if (project.id == projectId) return project.name;
+      if (project.id == projectId) return project;
     }
-    return 'Unassigned';
+    return null;
+  }
+
+  Widget _buildProjectChip(String? projectId) {
+    final project = _projectFor(projectId);
+    final color = project == null
+        ? AppColors.textSecondary
+        : Color(project.colorValue);
+    return _LibraryBadge(
+      label: project?.name ?? 'Unassigned',
+      icon: project == null ? Icons.folder_off_outlined : Icons.folder_outlined,
+      color: color,
+    );
   }
 
   Widget _buildProjectFilter() {
@@ -483,51 +476,25 @@ class _LibraryScreenState extends State<LibraryScreen>
       }
     }
 
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      color: AppColors.primaryContainer,
-      child: ListTile(
-        leading: const Icon(
-          Icons.play_circle_fill,
-          color: AppColors.info,
-          size: 40,
-        ),
-        title: Text(
-          protocol.title,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(status, style: const TextStyle(color: AppColors.info)),
-            Text(
-              'Started: ${activeProtocol!.startedAt.toString().split('.')[0]}',
-              style: const TextStyle(fontSize: 11),
-            ),
-            Text(
-              'Project: ${_projectNameFor(protocol.projectId)}',
-              style: const TextStyle(fontSize: 11),
-            ),
-          ],
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.delete_outline, color: AppColors.error),
-              tooltip: 'Terminate progress',
-              onPressed: () => _confirmRemoveRunningProtocol(activeProtocol!),
-            ),
-            const Icon(Icons.chevron_right),
-          ],
-        ),
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => RunProtocolScreen(protocol: protocol),
-          ),
-        ).then((_) => setState(() {})),
+    final totalSteps = protocol.steps.length;
+    final completedCount = activeProtocol!.completedStepIds.length;
+    return RunningProtocolSummaryCard(
+      state: activeProtocol!,
+      detail: status,
+      progressValue: '$completedCount of $totalSteps steps',
+      project: _projectFor(protocol.projectId),
+      phaseKeyPrefix: 'active-library',
+      action: IconButton(
+        icon: const Icon(Icons.delete_outline, color: AppColors.error),
+        tooltip: 'Terminate progress',
+        onPressed: () => _confirmRemoveRunningProtocol(activeProtocol!),
       ),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => RunProtocolScreen(protocol: protocol),
+        ),
+      ).then((_) => setState(() {})),
     );
   }
 
@@ -537,58 +504,26 @@ class _LibraryScreenState extends State<LibraryScreen>
     final totalSteps = protocol.steps.length;
     final progress = totalSteps > 0 ? completedCount / totalSteps : 0.0;
 
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      child: ListTile(
-        leading: Stack(
-          alignment: Alignment.center,
-          children: [
-            CircularProgressIndicator(
-              value: progress,
-              strokeWidth: 3,
-              backgroundColor: AppColors.surfaceContainer,
-            ),
-            Text(
-              '${(progress * 100).toInt()}%',
-              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
-        title: Text(
-          protocol.title,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Steps completed: $completedCount/$totalSteps'),
-            Text(
-              'Project: ${_projectNameFor(protocol.projectId)}',
-              style: const TextStyle(fontSize: 12),
-            ),
-          ],
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.delete_outline, color: AppColors.error),
-              tooltip: 'Remove progress',
-              onPressed: () => _confirmRemoveRunningProtocol(runningState),
-            ),
-            const Icon(Icons.chevron_right),
-          ],
-        ),
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ProtocolDetailScreen(
-              protocol: protocol,
-              activeState: runningState,
-            ),
-          ),
-        ).then((_) => setState(() {})),
+    return RunningProtocolSummaryCard(
+      state: runningState,
+      detail: 'Steps completed: $completedCount/$totalSteps',
+      progressValue: '${(progress * 100).toInt()}% complete',
+      project: _projectFor(protocol.projectId),
+      phaseKeyPrefix: 'running-library',
+      action: IconButton(
+        icon: const Icon(Icons.delete_outline, color: AppColors.error),
+        tooltip: 'Remove progress',
+        onPressed: () => _confirmRemoveRunningProtocol(runningState),
       ),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ProtocolDetailScreen(
+            protocol: protocol,
+            activeState: runningState,
+          ),
+        ),
+      ).then((_) => setState(() {})),
     );
   }
 
@@ -640,7 +575,7 @@ class _LibraryScreenState extends State<LibraryScreen>
       return Column(
         children: [
           _buildProjectFilter(),
-          Expanded(child: _refreshableEmpty('No history found.')),
+          Expanded(child: _refreshableEmpty('No completed protocols found.')),
         ],
       );
     }
@@ -655,25 +590,16 @@ class _LibraryScreenState extends State<LibraryScreen>
           final completed = filteredCompleted[index - 1];
           final dateStr = formatDate(completed.completedAt);
 
-          return ListTile(
-            leading: const Icon(Icons.check_circle, color: AppColors.success),
-            title: Text(completed.protocol.title),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Completed on: $dateStr'),
-                Text(
-                  'Completed by: '
-                  '${completed.completedByName ?? 'Unknown user'}',
-                ),
-                Text(
-                  'Project: ${_projectNameFor(completed.protocol.projectId)}',
-                ),
-                const SizedBox(height: 4),
-                SyncStatusChip(status: completed.syncStatus, compact: true),
-              ],
-            ),
-            trailing: const Icon(Icons.chevron_right),
+          return _LibraryEntryCard(
+            entryId: completed.id,
+            title: completed.protocol.title,
+            type: _LibraryEntryType.completed,
+            firstLabel: 'Completed by',
+            firstValue: completed.completedByName ?? 'Unknown user',
+            secondLabel: 'Completed on',
+            secondValue: dateStr,
+            projectChip: _buildProjectChip(completed.protocol.projectId),
+            syncStatus: completed.syncStatus,
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
@@ -683,6 +609,287 @@ class _LibraryScreenState extends State<LibraryScreen>
             ).then((_) => setState(() {})),
           );
         },
+      ),
+    );
+  }
+}
+
+enum _LibraryEntryType { template, protocol, running, completed }
+
+class _LibraryEntryCard extends StatelessWidget {
+  const _LibraryEntryCard({
+    required this.entryId,
+    required this.title,
+    required this.type,
+    required this.firstLabel,
+    required this.firstValue,
+    required this.secondLabel,
+    required this.secondValue,
+    required this.projectChip,
+    required this.onTap,
+    this.syncStatus,
+  });
+
+  final String entryId;
+  final String title;
+  final _LibraryEntryType type;
+  final String firstLabel;
+  final String firstValue;
+  final String secondLabel;
+  final String secondValue;
+  final Widget projectChip;
+  final ProtocolSyncStatus? syncStatus;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: const BorderSide(color: AppColors.outlineVariant),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildHeader(context),
+              SizedBox(
+                key: Key('library-tags-placeholder-$entryId'),
+                height: 24,
+              ),
+              const Divider(height: 1),
+              const SizedBox(height: 16),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final first = _LibraryMetadata(
+                    label: firstLabel,
+                    value: firstValue,
+                    icon: Icons.person_outline,
+                  );
+                  final second = _LibraryMetadata(
+                    label: secondLabel,
+                    value: secondValue,
+                    icon: Icons.calendar_today_outlined,
+                    alignEnd: constraints.maxWidth >= 520,
+                  );
+                  if (constraints.maxWidth < 520) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [first, const SizedBox(height: 14), second],
+                    );
+                  }
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: first),
+                      const SizedBox(width: 24),
+                      Expanded(child: second),
+                    ],
+                  );
+                },
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'PROJECT',
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Container(
+                  key: Key('library-project-badge-$entryId'),
+                  child: projectChip,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context) {
+    final badges = Wrap(
+      alignment: WrapAlignment.end,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        _LibraryTypeBadge(key: Key('library-type-badge-$entryId'), type: type),
+        if (syncStatus != null)
+          SyncStatusChip(
+            key: Key('library-sync-badge-$entryId'),
+            status: syncStatus!,
+            compact: true,
+          ),
+      ],
+    );
+    final heading = Text(
+      title,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: Theme.of(
+        context,
+      ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 520) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              heading,
+              const SizedBox(height: 10),
+              Align(alignment: Alignment.centerLeft, child: badges),
+            ],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: heading),
+            const SizedBox(width: 16),
+            Flexible(child: badges),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _LibraryMetadata extends StatelessWidget {
+  const _LibraryMetadata({
+    required this.label,
+    required this.value,
+    required this.icon,
+    this.alignEnd = false,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+  final bool alignEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: alignEnd
+          ? CrossAxisAlignment.end
+          : CrossAxisAlignment.start,
+      children: [
+        Text(
+          label.toUpperCase(),
+          style: const TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          mainAxisAlignment: alignEnd
+              ? MainAxisAlignment.end
+              : MainAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 18, color: AppColors.textSecondary),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                value,
+                textAlign: alignEnd ? TextAlign.end : TextAlign.start,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _LibraryTypeBadge extends StatelessWidget {
+  const _LibraryTypeBadge({super.key, required this.type});
+
+  final _LibraryEntryType type;
+
+  @override
+  Widget build(BuildContext context) {
+    final (label, icon, color) = switch (type) {
+      _LibraryEntryType.template => (
+        'TEMPLATE',
+        Icons.copy_all_outlined,
+        AppColors.aiPrimary,
+      ),
+      _LibraryEntryType.protocol => (
+        'PROTOCOL',
+        Icons.article_outlined,
+        AppColors.primary,
+      ),
+      _LibraryEntryType.running => (
+        'RUNNING',
+        Icons.play_circle_outline,
+        AppColors.info,
+      ),
+      _LibraryEntryType.completed => (
+        'COMPLETED',
+        Icons.check_circle_outline,
+        AppColors.success,
+      ),
+    };
+    return _LibraryBadge(label: label, icon: icon, color: color);
+  }
+}
+
+class _LibraryBadge extends StatelessWidget {
+  const _LibraryBadge({
+    required this.label,
+    required this.icon,
+    required this.color,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
   }

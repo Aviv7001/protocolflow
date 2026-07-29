@@ -17,6 +17,9 @@ import '../theme/app_colors.dart';
 import '../widgets/protocol_step_actions_table.dart';
 import '../widgets/protocol_step_notes_table.dart';
 import '../widgets/protocol_table_preview.dart';
+import '../widgets/phase_segmented_progress.dart';
+import '../widgets/protocolflow_app_bar.dart';
+import '../widgets/responsive_layout.dart';
 import '../utils/date_time_format.dart';
 import 'run_protocol_screen.dart';
 import 'create_protocol_screen.dart';
@@ -291,8 +294,8 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Protocol Detail'),
+      appBar: ProtocolFlowAppBar(
+        title: 'Protocol Detail',
         actions: [
           if (activeState == null)
             IconButton(
@@ -312,122 +315,12 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    protocol.title,
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                if (protocol.isTemplate)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryContainer,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.primary),
-                    ),
-                    child: Text(
-                      'TEMPLATE',
-                      style: TextStyle(
-                        color: AppColors.onPrimaryContainer,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                const SizedBox(width: 8),
-                SyncStatusChip(status: protocol.syncStatus, compact: true),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 18,
-              runSpacing: 6,
-              children: [
-                _ProtocolMetadataItem(
-                  icon: Icons.calendar_today_outlined,
-                  text: 'Created on: ${formatDate(protocol.createdAt)}',
-                ),
-                _ProtocolMetadataItem(
-                  icon: Icons.person_outline,
-                  text:
-                      'Created by: '
-                      '${protocol.createdByName ?? 'Unknown user'}',
-                ),
-                _ProtocolMetadataItem(
-                  icon: Icons.folder_outlined,
-                  text: 'Project: ${_projectNameFor(protocol.projectId)}',
-                ),
-              ],
-            ),
-            const Divider(height: 32),
-
-            _buildSection(context, 'Objective', protocol.objective),
-            _buildSection(context, 'Description', protocol.description),
-
-            if (protocol.samples.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              Text('Samples', style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 8),
-              ...protocol.samples.map(
-                (sample) => Padding(
-                  padding: const EdgeInsets.only(bottom: 4.0),
-                  child: Text('• $sample'),
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
-
-            const SizedBox(height: 16),
-            Text(
-              'Material List',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 8),
-            if (protocol.materialListTable != null)
-              LinkedProtocolTablesSection(
-                tables: [protocol.materialListTable!],
-              ),
-            if (protocol.materialListTable == null)
-              const Text('No material list table linked.'),
-
-            const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('Steps', style: Theme.of(context).textTheme.titleLarge),
-              ],
-            ),
-            const SizedBox(height: 8),
-            ..._buildGroupedSteps(context),
-
-            // Supplementary Section
-            _buildSupplementarySection(context),
-
-            const SizedBox(height: 80), // Space for FAB
-          ],
-        ),
-      ),
+      body: _buildDetailBody(),
       floatingActionButton:
           (fabLabel == 'Protocol Completed' || protocol.isTemplate)
           ? null
           : FloatingActionButton.extended(
               onPressed: () {
-                if (activeState != null) {
-                  activeProtocol = activeState;
-                }
                 Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -451,6 +344,380 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
       if (project.id == projectId) return project.name;
     }
     return 'Unassigned';
+  }
+
+  Widget _buildDetailBody() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final desktop = constraints.maxWidth >= ProtocolFlowBreakpoints.desktop;
+        return SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(
+            desktop ? 24 : 12,
+            desktop ? 24 : 16,
+            desktop ? 24 : 12,
+            96,
+          ),
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1800),
+              child: _buildDetailWorkspace(desktop: desktop),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDetailWorkspace({required bool desktop}) {
+    final regularTables = protocol.tables
+        .where((table) => table.type != TableType.materialList)
+        .toList();
+    final hasAdditionalData =
+        protocol.files.isNotEmpty || protocol.additionalData.isNotEmpty;
+
+    final information = _buildProtocolInformationSection();
+    final samples = protocol.samples.isEmpty ? null : _buildSamplesSection();
+    final materials = _buildMaterialListSection();
+    final steps = _buildStepsSurface();
+    final tables = regularTables.isEmpty
+        ? null
+        : _buildTablesSurface(regularTables);
+    final additionalData = hasAdditionalData
+        ? _buildAdditionalDataSurface()
+        : null;
+    final phaseProgress = protocol.isTemplate
+        ? null
+        : _buildPhaseProgressSection();
+
+    if (!desktop) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (phaseProgress != null) ...[
+            phaseProgress,
+            const SizedBox(height: 24),
+          ],
+          information,
+          if (samples != null) ...[const SizedBox(height: 24), samples],
+          const SizedBox(height: 24),
+          materials,
+          const SizedBox(height: 24),
+          steps,
+          if (tables != null) ...[const SizedBox(height: 24), tables],
+          if (additionalData != null) ...[
+            const SizedBox(height: 24),
+            additionalData,
+          ],
+        ],
+      );
+    }
+
+    final desktopColumns = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          flex: 5,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              information,
+              if (tables != null) ...[const SizedBox(height: 24), tables],
+              if (additionalData != null) ...[
+                const SizedBox(height: 24),
+                additionalData,
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(width: 32),
+        Expanded(
+          flex: 7,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (samples != null) ...[samples, const SizedBox(height: 24)],
+              materials,
+              const SizedBox(height: 24),
+              steps,
+            ],
+          ),
+        ),
+      ],
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (phaseProgress != null) ...[
+          phaseProgress,
+          const SizedBox(height: 24),
+        ],
+        desktopColumns,
+      ],
+    );
+  }
+
+  Widget _buildPhaseProgressSection() {
+    return _buildSectionSurface(
+      key: const Key('detail-phase-progress-section'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildSectionHeader('Phase Progress'),
+          const SizedBox(height: 14),
+          PhaseSegmentedProgress(
+            key: const Key('detail-phase-progress'),
+            steps: protocol.sortedSteps,
+            currentStepIndex: activeState?.currentStepIndex ?? -1,
+            completedStepIds: activeState?.completedStepIds ?? const <String>{},
+            segmentKeyPrefix: 'detail-phase-progress',
+            onAddPhase: () => _editProtocol(context, isAddingPhase: true),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProtocolInformationSection() {
+    return _buildSectionSurface(
+      key: const Key('detail-protocol-information'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildSectionHeader('Protocol Information'),
+          const SizedBox(height: 16),
+          Text(
+            protocol.title,
+            style: Theme.of(
+              context,
+            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              _buildDetailBadge(
+                icon: protocol.isTemplate
+                    ? Icons.copy_all_outlined
+                    : Icons.description_outlined,
+                label: protocol.isTemplate ? 'TEMPLATE' : 'PROTOCOL',
+              ),
+              SyncStatusChip(status: protocol.syncStatus, compact: true),
+              _buildDetailBadge(
+                icon: Icons.folder_outlined,
+                label: 'Project: ${_projectNameFor(protocol.projectId)}',
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 18,
+            runSpacing: 8,
+            children: [
+              _ProtocolMetadataItem(
+                icon: Icons.calendar_today_outlined,
+                text: 'Created on: ${formatDate(protocol.createdAt)}',
+              ),
+              _ProtocolMetadataItem(
+                icon: Icons.person_outline,
+                text:
+                    'Created by: '
+                    '${protocol.createdByName ?? 'Unknown user'}',
+              ),
+            ],
+          ),
+          const Divider(height: 32),
+          _buildReadOnlyField('Objective', protocol.objective),
+          const SizedBox(height: 18),
+          _buildReadOnlyField('Description', protocol.description),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailBadge({required IconData icon, required String label}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.28)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: AppColors.primary),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              color: AppColors.primary,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReadOnlyField(String title, String content) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          content.trim().isEmpty ? 'Not provided.' : content,
+          style: TextStyle(
+            color: content.trim().isEmpty
+                ? AppColors.textSecondary
+                : AppColors.textPrimary,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSamplesSection() {
+    return _buildSectionSurface(
+      key: const Key('detail-samples'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildSectionHeader('Samples'),
+          const SizedBox(height: 12),
+          ...protocol.samples.map(
+            (sample) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.biotech_outlined,
+                    size: 18,
+                    color: AppColors.primary,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(child: Text(sample)),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMaterialListSection() {
+    return _buildSectionSurface(
+      key: const Key('detail-materials'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildSectionHeader('Material List'),
+          const SizedBox(height: 10),
+          if (protocol.materialListTable != null)
+            LinkedProtocolTablesSection(tables: [protocol.materialListTable!])
+          else
+            _buildEmptyState('No material list table linked.'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStepsSurface() {
+    return _buildSectionSurface(
+      key: const Key('detail-steps'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildSectionHeader('Steps'),
+          const SizedBox(height: 8),
+          if (protocol.steps.isEmpty)
+            _buildEmptyState('No steps added.')
+          else
+            ..._buildGroupedSteps(context),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTablesSurface(List<ProtocolTable> tables) {
+    return _buildSectionSurface(
+      key: const Key('detail-tables'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildSectionHeader('Tables'),
+          const SizedBox(height: 10),
+          LinkedProtocolTablesSection(tables: tables, initiallyCollapsed: true),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAdditionalDataSurface() {
+    return _buildSectionSurface(
+      key: const Key('detail-additional-data'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildSectionHeader('Additional Data'),
+          if (protocol.files.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Text(
+              'Attached Files',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            _buildFileGrid(protocol.files),
+          ],
+          if (protocol.additionalData.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            ...protocol.additionalData.map(_buildAdditionalDataCard),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionSurface({Key? key, required Widget child}) {
+    final expanded = MediaQuery.sizeOf(context).width >= 1000;
+    return Card(
+      key: key,
+      margin: EdgeInsets.zero,
+      child: Padding(padding: EdgeInsets.all(expanded ? 24 : 16), child: child),
+    );
+  }
+
+  Widget _buildSectionHeader(String title) {
+    return Text(
+      title,
+      style: Theme.of(
+        context,
+      ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+    );
+  }
+
+  Widget _buildEmptyState(String message) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 22),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainer,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.outlineVariant),
+      ),
+      child: Text(
+        message,
+        style: const TextStyle(color: AppColors.textSecondary),
+      ),
+    );
   }
 
   List<Widget> _buildGroupedSteps(BuildContext context) {
@@ -500,25 +767,31 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    children: [
-                      Text(
-                        phase,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                          color: AppColors.primary,
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            phase,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                              color: AppColors.primary,
+                            ),
+                          ),
                         ),
-                      ),
-                      if (isPhaseDone) ...[
-                        const SizedBox(width: 8),
-                        const Icon(
-                          Icons.check_circle,
-                          color: AppColors.success,
-                          size: 18,
-                        ),
+                        if (isPhaseDone) ...[
+                          const SizedBox(width: 8),
+                          const Icon(
+                            Icons.check_circle,
+                            color: AppColors.success,
+                            size: 18,
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                   if (!isPhaseDone && !protocol.isTemplate)
                     Row(
@@ -536,9 +809,6 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
                           ),
                         TextButton.icon(
                           onPressed: () {
-                            if (activeState != null) {
-                              activeProtocol = activeState;
-                            }
                             Navigator.push(
                               context,
                               MaterialPageRoute(
@@ -552,7 +822,9 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
                           },
                           icon: const Icon(Icons.play_circle_outline, size: 20),
                           label: Text(
-                            isPhaseDone ? 'Run Again' : 'Run $phase',
+                            MediaQuery.sizeOf(context).width < 600
+                                ? 'Run'
+                                : 'Run $phase',
                             style: const TextStyle(fontSize: 12),
                           ),
                         ),
@@ -565,23 +837,9 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
         );
 
         for (var step in phaseSteps) {
-          widgets.add(_buildStepCard(context, step, currentGlobalIdx));
+          widgets.add(_buildTimelineStepCard(context, step, currentGlobalIdx));
           currentGlobalIdx++;
         }
-      }
-      if (activeState != null) {
-        widgets.add(
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16.0),
-            child: Center(
-              child: OutlinedButton.icon(
-                onPressed: () => _editProtocol(context, isAddingPhase: true),
-                icon: const Icon(Icons.add_circle_outline),
-                label: const Text('Add New Phase'),
-              ),
-            ),
-          ),
-        );
       }
       return widgets;
     } else {
@@ -645,9 +903,6 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
                         ),
                       TextButton.icon(
                         onPressed: () {
-                          if (activeState != null) {
-                            activeProtocol = activeState;
-                          }
                           Navigator.push(
                             context,
                             MaterialPageRoute(
@@ -673,91 +928,161 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
         );
 
         for (var step in daySteps) {
-          widgets.add(_buildStepCard(context, step, currentGlobalIdx));
+          widgets.add(_buildTimelineStepCard(context, step, currentGlobalIdx));
           currentGlobalIdx++;
         }
-      }
-      if (activeState != null) {
-        widgets.add(
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16.0),
-            child: Center(
-              child: OutlinedButton.icon(
-                onPressed: () => _editProtocol(context, isAddingPhase: true),
-                icon: const Icon(Icons.add_circle_outline),
-                label: const Text('Add New Phase'),
-              ),
-            ),
-          ),
-        );
       }
       return widgets;
     }
   }
 
-  Widget _buildStepCard(BuildContext context, ProtocolStep step, int index) {
+  Widget _buildTimelineStepCard(
+    BuildContext context,
+    ProtocolStep step,
+    int index,
+  ) {
     final bool isDone =
         activeState != null && activeState!.completedStepIds.contains(step.id);
 
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      color: isDone ? AppColors.success.withValues(alpha: 0.08) : null,
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Step ${index + 1}: ${step.title}',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                      color: isDone ? AppColors.success : null,
+    return CustomPaint(
+      key: Key('detail-step-connector-${index + 1}'),
+      painter: _DetailStepTimelinePainter(
+        drawAbove: index > 0,
+        drawBelow: index < protocol.sortedSteps.length - 1,
+        completed: isDone,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 44,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 18),
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: Container(
+                  key: Key('detail-step-number-${index + 1}'),
+                  width: 32,
+                  height: 32,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: isDone
+                        ? AppColors.success.withValues(alpha: 0.14)
+                        : AppColors.primaryContainer,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isDone ? AppColors.success : AppColors.primary,
+                      width: 2,
                     ),
                   ),
+                  child: isDone
+                      ? const Icon(
+                          Icons.check,
+                          size: 17,
+                          color: AppColors.success,
+                        )
+                      : Text(
+                          '${index + 1}',
+                          style: const TextStyle(
+                            color: AppColors.onPrimaryContainer,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                 ),
-                if (isDone)
-                  const Icon(Icons.check, color: AppColors.success, size: 16),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              step.instructions,
-              style: TextStyle(color: isDone ? AppColors.textSecondary : null),
-            ),
-            if (step.actionItems.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              ProtocolStepActionsTable(
-                actions: step.actionItems,
-                trailingBuilder: (context, actionIndex) {
-                  final timer = step.actionTimers[actionIndex];
-                  if (timer == null) return null;
-                  final timerLabel = timer >= 3600
-                      ? '${timer ~/ 3600}h'
-                      : timer >= 60
-                      ? '${timer ~/ 60}m'
-                      : '${timer}s';
-                  return Chip(
-                    avatar: const Icon(Icons.timer_outlined, size: 16),
-                    label: Text(timerLabel),
-                    visualDensity: VisualDensity.compact,
-                  );
-                },
               ),
-            ],
-            if (step.notes.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              ProtocolStepNotesTable(notes: step.notes),
-            ],
-            if (step.tableIds.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              LinkedProtocolTablesSection(tables: _linkedTablesForStep(step)),
-            ],
-          ],
-        ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Card(
+              key: Key('detail-step-card-${index + 1}'),
+              margin: const EdgeInsets.symmetric(vertical: 8),
+              color: isDone ? AppColors.success.withValues(alpha: 0.08) : null,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            step.title.isEmpty ? 'Untitled step' : step.title,
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: isDone ? AppColors.success : null,
+                            ),
+                          ),
+                        ),
+                        if (isDone)
+                          const Icon(
+                            Icons.check_circle,
+                            color: AppColors.success,
+                            size: 18,
+                          ),
+                      ],
+                    ),
+                    if (step.instructions.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        step.instructions,
+                        style: TextStyle(
+                          color: isDone ? AppColors.textSecondary : null,
+                        ),
+                      ),
+                    ],
+                    if (step.actionItems.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      ProtocolStepActionsTable(
+                        actions: step.actionItems,
+                        trailingBuilder: (context, actionIndex) {
+                          final timer = step.actionTimers[actionIndex];
+                          if (timer == null) return null;
+                          final timerLabel = timer >= 3600
+                              ? '${timer ~/ 3600}h'
+                              : timer >= 60
+                              ? '${timer ~/ 60}m'
+                              : '${timer}s';
+                          return Chip(
+                            avatar: const Icon(Icons.timer_outlined, size: 16),
+                            label: Text(timerLabel),
+                            visualDensity: VisualDensity.compact,
+                          );
+                        },
+                      ),
+                    ],
+                    if (step.notes.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      ProtocolStepNotesTable(notes: step.notes),
+                    ],
+                    if (step.tableIds.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      const Row(
+                        children: [
+                          Icon(Icons.link, size: 18, color: AppColors.primary),
+                          SizedBox(width: 6),
+                          Text(
+                            'Linked tables',
+                            style: TextStyle(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      LinkedProtocolTablesSection(
+                        tables: _linkedTablesForStep(step),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -773,74 +1098,6 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
       }
     }
     return linkedTables;
-  }
-
-  Widget _buildSection(BuildContext context, String title, String content) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 4),
-        Text(content),
-        const SizedBox(height: 16),
-      ],
-    );
-  }
-
-  Widget _buildSupplementarySection(BuildContext context) {
-    final assignedTableIds = protocol.steps.expand((s) => s.tableIds).toSet();
-    final unassignedTables = protocol.tables
-        .where(
-          (t) =>
-              t.type != TableType.materialList &&
-              !assignedTableIds.contains(t.id),
-        )
-        .toList();
-
-    if (protocol.files.isEmpty &&
-        unassignedTables.isEmpty &&
-        protocol.additionalData.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 24),
-        const Divider(),
-        Text('Supplementary', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 8),
-        if (protocol.files.isNotEmpty) ...[
-          const Text(
-            'Attached Files:',
-            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
-          ),
-          const SizedBox(height: 8),
-          _buildFileGrid(protocol.files),
-          const SizedBox(height: 16),
-        ],
-        if (unassignedTables.isNotEmpty) ...[
-          const Text(
-            'Reference Tables:',
-            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
-          ),
-          const SizedBox(height: 8),
-          LinkedProtocolTablesSection(
-            tables: unassignedTables,
-            initiallyCollapsed: true,
-          ),
-          const SizedBox(height: 16),
-        ],
-        if (protocol.additionalData.isNotEmpty) ...[
-          const Text(
-            'Additional Data:',
-            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
-          ),
-          const SizedBox(height: 8),
-          ...protocol.additionalData.map(_buildAdditionalDataCard),
-        ],
-      ],
-    );
   }
 
   Widget _buildAdditionalDataCard(ProtocolAdditionalData data) {
@@ -946,5 +1203,65 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
         );
       },
     );
+  }
+}
+
+class _DetailStepTimelinePainter extends CustomPainter {
+  const _DetailStepTimelinePainter({
+    required this.drawAbove,
+    required this.drawBelow,
+    required this.completed,
+  });
+
+  final bool drawAbove;
+  final bool drawBelow;
+  final bool completed;
+
+  static const double _markerCenterX = 22;
+  static const double _markerCenterY = 34;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = (completed ? AppColors.success : AppColors.primary).withValues(
+        alpha: 0.55,
+      )
+      ..strokeWidth = 1.5
+      ..strokeCap = StrokeCap.round;
+
+    if (drawAbove) {
+      _drawDottedLine(
+        canvas,
+        paint,
+        const Offset(_markerCenterX, 0),
+        const Offset(_markerCenterX, _markerCenterY),
+      );
+    }
+    if (drawBelow) {
+      _drawDottedLine(
+        canvas,
+        paint,
+        const Offset(_markerCenterX, _markerCenterY),
+        Offset(_markerCenterX, size.height),
+      );
+    }
+  }
+
+  void _drawDottedLine(Canvas canvas, Paint paint, Offset start, Offset end) {
+    const dashLength = 3.0;
+    const gapLength = 4.0;
+    var y = start.dy;
+    while (y < end.dy) {
+      final dashEnd = (y + dashLength).clamp(start.dy, end.dy);
+      canvas.drawLine(Offset(start.dx, y), Offset(end.dx, dashEnd), paint);
+      y += dashLength + gapLength;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DetailStepTimelinePainter oldDelegate) {
+    return drawAbove != oldDelegate.drawAbove ||
+        drawBelow != oldDelegate.drawBelow ||
+        completed != oldDelegate.completed;
   }
 }

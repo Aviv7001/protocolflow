@@ -9,6 +9,7 @@ import '../features/serial_dilution/screens/serial_dilution_manager_screen.dart'
 import '../features/staining_table/screens/staining_table_manager_screen.dart';
 import '../services/storage_service.dart';
 import '../services/generic_table_import_service.dart';
+import '../widgets/protocolflow_app_bar.dart';
 import 'plate_wizard_samples_screen.dart';
 import 'saved_table_picker_screen.dart';
 import 'table_data_editor_screen.dart';
@@ -90,7 +91,7 @@ class TableSelectionScreen extends StatelessWidget {
     ];
 
     return Scaffold(
-      appBar: embedded ? null : AppBar(title: Text(title), centerTitle: true),
+      appBar: embedded ? null : ProtocolFlowAppBar(title: title),
       body: Padding(
         padding: const EdgeInsets.all(20.0),
         child: Column(

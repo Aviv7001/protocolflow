@@ -61,7 +61,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             alignment: Alignment.topCenter,
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                maxWidth: 1440,
+                maxWidth: 1800,
                 minHeight: math.max(0, constraints.maxHeight - 40),
               ),
               child: child,
@@ -263,27 +263,54 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _responsivePanels(List<Widget> panels, {double minPanelWidth = 380}) {
+  Widget _responsivePanels(
+    List<Widget> panels, {
+    double minPanelWidth = 380,
+    int maxColumns = 2,
+  }) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final columns = math.max(
           1,
           math.min(
-            panels.length,
-            (constraints.maxWidth / minPanelWidth).floor(),
+            maxColumns,
+            math.min(
+              panels.length,
+              (constraints.maxWidth / minPanelWidth).floor(),
+            ),
           ),
         );
         const gap = 12.0;
         final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+        final panelMinHeight = constraints.maxWidth >= 1200
+            ? 300.0
+            : constraints.maxWidth >= 900
+            ? 260.0
+            : 0.0;
         return Wrap(
           spacing: gap,
           runSpacing: gap,
           children: panels
-              .map((panel) => SizedBox(width: width, child: panel))
+              .map(
+                (panel) => SizedBox(
+                  width: width,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(minHeight: panelMinHeight),
+                    child: panel,
+                  ),
+                ),
+              )
               .toList(),
         );
       },
     );
+  }
+
+  double _chartHeight() {
+    final width = MediaQuery.sizeOf(context).width;
+    if (width >= 1500) return 260;
+    if (width >= 1100) return 225;
+    return 190;
   }
 
   Widget _buildActivityChart(
@@ -309,7 +336,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
         const SizedBox(height: 12),
         SizedBox(
-          height: 190,
+          height: _chartHeight(),
           child: LineChart(
             LineChartData(
               maxY: maxValue.toDouble() + 1,
@@ -363,7 +390,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (tasks.isEmpty) return const _EmptyChart('No tasks for today.');
     const colors = [AppColors.textSecondary, AppColors.info, AppColors.success];
     final chart = SizedBox(
-      height: 190,
+      height: _chartHeight(),
       child: PieChart(
         PieChartData(
           centerSpaceRadius: 42,
@@ -510,7 +537,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       AppColors.success,
     ];
     final chart = SizedBox(
-      height: 190,
+      height: _chartHeight(),
       child: PieChart(
         PieChartData(
           centerSpaceRadius: 38,
@@ -1052,33 +1079,36 @@ class _DashboardPanel extends StatelessWidget {
     required this.child,
   });
   @override
-  Widget build(BuildContext context) => Card(
-    margin: EdgeInsets.zero,
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            title,
-            style: Theme.of(
-              context,
-            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            subtitle,
-            style: const TextStyle(
-              fontSize: 12,
-              color: AppColors.textSecondary,
+  Widget build(BuildContext context) {
+    final expanded = MediaQuery.sizeOf(context).width >= 1100;
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: EdgeInsets.all(expanded ? 24 : 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              title,
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
             ),
-          ),
-          const SizedBox(height: 16),
-          child,
-        ],
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            SizedBox(height: expanded ? 22 : 16),
+            child,
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _EmptyChart extends StatelessWidget {
@@ -1086,7 +1116,7 @@ class _EmptyChart extends StatelessWidget {
   const _EmptyChart(this.text);
   @override
   Widget build(BuildContext context) => SizedBox(
-    height: 120,
+    height: MediaQuery.sizeOf(context).width >= 1100 ? 190 : 120,
     child: Center(
       child: Text(
         text,

@@ -4,6 +4,7 @@ import '../features/plate_wizard/models/plate_wizard_models.dart';
 import '../features/plate_wizard/services/plate_long_format_service.dart';
 import '../features/plate_wizard/widgets/plate_result_preview.dart';
 import '../widgets/unsaved_changes_pop_scope.dart';
+import '../widgets/protocolflow_app_bar.dart';
 
 class PlateWizardSamplesScreen extends StatefulWidget {
   final PlateLayoutWizard wizard;
@@ -94,8 +95,8 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
       message:
           'You have unsaved changes in this table. Are you sure you want to exit?',
       child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Sample Manager'),
+        appBar: ProtocolFlowAppBar(
+          title: 'Sample Manager',
           actions: [
             IconButton(
               icon: const Icon(Icons.upload_file),
@@ -108,6 +109,7 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
               tooltip: 'Download import template',
             ),
             IconButton(
+              tooltip: 'Save table',
               icon: const Icon(Icons.save),
               onPressed: () => _handleDone(context),
             ),

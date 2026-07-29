@@ -3,14 +3,18 @@ import 'package:flutter/material.dart';
 
 import '../models/task.dart';
 import '../models/active_protocol.dart';
+import '../models/protocol.dart';
+import '../models/project.dart';
 import '../data/completed_protocols_data.dart';
 import '../features/today_tasks/services/task_service.dart';
 import '../services/auth_service.dart';
 import '../services/drive_sync_service.dart';
 import '../services/export_service.dart';
 import '../services/import_service.dart';
+import '../services/storage_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/google_sign_in_button.dart';
+import '../widgets/running_protocol_summary_card.dart';
 import '../features/measuring_tools/screens/measuring_tools_manager_screen.dart';
 import 'lab_tools_screen.dart';
 import 'library_screen.dart';
@@ -22,7 +26,9 @@ import 'dashboard_screen.dart';
 import 'user_guide_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, this.initialLibraryTabIndex});
+
+  final int? initialLibraryTabIndex;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -30,30 +36,40 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final TaskService _taskService = TaskService();
+  final StorageService _storageService = StorageService();
   final AuthService _authService = AuthService.instance;
   final ExportService _exportService = ExportService();
   final ImportService _importService = ImportService();
   List<Task> _todayTasks = [];
+  List<Project> _projects = [];
   bool _isLoadingTasks = true;
   bool _areTasksShrunk = false;
   bool _isSigningIn = false;
   bool _isSyncing = false;
   bool _hasAttemptedStartupSync = false;
+  bool _syncHasErrors = false;
+  bool _syncHasPendingChanges = false;
+  DateTime? _lastSyncAt;
   int _selectedDesktopIndex = 0;
+  int _selectedPrimaryIndex = 0;
   int _libraryInitialTabIndex = 1;
   String? _libraryInitialProjectId;
   bool _isSidebarOpen = false;
   AppUser? _signedInUser;
   StreamSubscription<AppUser?>? _userSubscription;
 
-  Timer? _timer;
-  Duration _elapsedTime = Duration.zero;
-
   @override
   void initState() {
     super.initState();
-    _startTimer();
+    final initialLibraryTabIndex = widget.initialLibraryTabIndex;
+    if (initialLibraryTabIndex != null) {
+      _libraryInitialTabIndex = initialLibraryTabIndex;
+      _selectedDesktopIndex = 2;
+      _selectedPrimaryIndex = initialLibraryTabIndex == 2 ? 3 : 1;
+    }
     _loadTasks();
+    _loadProjects();
+    _loadSyncHealth();
     _initializeAuth();
   }
 
@@ -152,8 +168,55 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _loadProjects() async {
+    final projects = await _storageService.loadProjects();
+    if (mounted) setState(() => _projects = projects);
+  }
+
   Future<void> _refreshHome() async {
-    await Future.wait([_loadTasks(), _refreshRunningProtocols()]);
+    await Future.wait([
+      _loadTasks(),
+      _refreshRunningProtocols(),
+      _loadProjects(),
+      _loadSyncHealth(),
+    ]);
+  }
+
+  Future<void> _loadSyncHealth() async {
+    final protocols = await _storageService.loadProtocols();
+    final bundleStates = await Future.wait([
+      _storageService.loadSyncBundleState(SyncBundleType.projects),
+      _storageService.loadSyncBundleState(SyncBundleType.completedProtocols),
+      _storageService.loadSyncBundleState(SyncBundleType.tasks),
+      _storageService.loadSyncBundleState(SyncBundleType.measuringTools),
+    ]);
+    final tableState = await _storageService.loadSavedTablesSyncState();
+    final statuses = [
+      ...protocols.map((protocol) => protocol.syncStatus),
+      ...completedProtocols.map((protocol) => protocol.syncStatus),
+    ];
+    final syncTimes = [
+      ...protocols.map((protocol) => protocol.lastSyncedAt),
+      ...completedProtocols.map((protocol) => protocol.lastSyncedAt),
+    ].whereType<DateTime>().toList();
+    syncTimes.sort();
+
+    if (!mounted) return;
+    setState(() {
+      _syncHasErrors =
+          statuses.any(
+            (status) =>
+                status == ProtocolSyncStatus.error ||
+                status == ProtocolSyncStatus.conflict,
+          ) ||
+          bundleStates.contains(SyncBundleState.error) ||
+          tableState == SavedTablesSyncState.error;
+      _syncHasPendingChanges =
+          statuses.any((status) => status != ProtocolSyncStatus.synced) ||
+          bundleStates.contains(SyncBundleState.pending) ||
+          tableState == SavedTablesSyncState.pending;
+      _lastSyncAt = syncTimes.isEmpty ? null : syncTimes.last;
+    });
   }
 
   void _showAddTaskDialog() {
@@ -198,7 +261,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
-    _timer?.cancel();
     _userSubscription?.cancel();
     super.dispose();
   }
@@ -264,7 +326,9 @@ class _HomeScreenState extends State<HomeScreen> {
       promptIfNecessary: promptIfNecessary,
     );
     await _loadTasks();
+    await _loadProjects();
     await loadPersistentProtocols();
+    await _loadSyncHealth();
     if (mounted) {
       setState(() => _isSyncing = false);
       if (!showSnackBar) return;
@@ -365,27 +429,6 @@ class _HomeScreenState extends State<HomeScreen> {
     return 'Google Sign-In failed: $error';
   }
 
-  void _startTimer() {
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (activeProtocol != null) {
-        setState(() {
-          _elapsedTime = DateTime.now().difference(activeProtocol!.startedAt);
-        });
-      }
-    });
-  }
-
-  String _formatDuration(Duration duration) {
-    String twoDigits(int n) => n.toString().padLeft(2, "0");
-    String twoDigitMinutes = twoDigits(duration.inMinutes.remainder(60));
-    String twoDigitSeconds = twoDigits(duration.inSeconds.remainder(60));
-    if (duration.inHours > 0) {
-      return "${twoDigits(duration.inHours)}:$twoDigitMinutes:$twoDigitSeconds";
-    } else {
-      return "$twoDigitMinutes:$twoDigitSeconds";
-    }
-  }
-
   void _resumeProtocol() async {
     if (activeProtocol != null) {
       await Navigator.push(
@@ -415,6 +458,9 @@ class _HomeScreenState extends State<HomeScreen> {
       },
       child: Scaffold(
         backgroundColor: AppColors.scaffoldBackground,
+        bottomNavigationBar: MediaQuery.sizeOf(context).width < 760
+            ? _buildPrimaryNavigation()
+            : null,
         body: SafeArea(
           child: Stack(
             children: [
@@ -651,8 +697,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildTopBar() {
     return Container(
-      height: 40,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      height: 64,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: const BoxDecoration(
         color: AppColors.surface,
         border: Border(bottom: BorderSide(color: AppColors.outlineVariant)),
@@ -662,28 +708,88 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             tooltip: _isSidebarOpen ? 'Close sidebar' : 'Open sidebar',
             onPressed: _toggleSidebar,
+            constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+            padding: const EdgeInsets.all(8),
             icon: const Icon(Icons.menu),
           ),
-          const Expanded(child: SizedBox.shrink()),
-          const Text(
-            'ProtocolFlow',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-          ),
-          Expanded(
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: IconButton(
-                tooltip: _signedInUser == null ? 'Sign in' : 'Account',
-                onPressed: _isSigningIn ? null : _handleProfilePressed,
-                icon: const Icon(Icons.account_circle),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Text(
+              'ProtocolFlow',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: AppColors.primary,
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
               ),
             ),
+          ),
+          IconButton(
+            tooltip: 'Settings',
+            onPressed: () => _selectPage(8),
+            constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+            padding: const EdgeInsets.all(8),
+            icon: const Icon(Icons.settings_outlined),
+          ),
+          IconButton(
+            tooltip: _signedInUser == null ? 'Sign in' : 'Account',
+            onPressed: _isSigningIn ? null : _handleProfilePressed,
+            constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+            padding: const EdgeInsets.all(5),
+            icon: _buildUserAvatar(_signedInUser, size: 30),
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildPrimaryNavigation() {
+    return NavigationBar(
+      height: 68,
+      selectedIndex: _selectedPrimaryIndex,
+      onDestinationSelected: _selectPrimaryDestination,
+      destinations: const [
+        NavigationDestination(
+          icon: Icon(Icons.home_outlined),
+          selectedIcon: Icon(Icons.home),
+          label: 'Home',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.library_books_outlined),
+          selectedIcon: Icon(Icons.library_books),
+          label: 'Library',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.folder_outlined),
+          selectedIcon: Icon(Icons.folder),
+          label: 'Projects',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.play_circle_outline),
+          selectedIcon: Icon(Icons.play_circle),
+          label: 'Active',
+        ),
+      ],
+    );
+  }
+
+  void _selectPrimaryDestination(int index) {
+    setState(() => _selectedPrimaryIndex = index);
+    switch (index) {
+      case 0:
+        _selectPage(0);
+        return;
+      case 1:
+        _openLibraryTab(1);
+        return;
+      case 2:
+        _selectPage(3);
+        return;
+      case 3:
+        _openLibraryTab(2);
+        return;
+    }
   }
 
   void _toggleSidebar() {
@@ -691,7 +797,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _selectPage(int index) {
-    setState(() => _selectedDesktopIndex = index);
+    setState(() {
+      _selectedDesktopIndex = index;
+      if (index == 0) _selectedPrimaryIndex = 0;
+      if (index == 3) _selectedPrimaryIndex = 2;
+    });
     if (index == 0) {
       _refreshRunningProtocols();
     }
@@ -703,6 +813,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _libraryInitialTabIndex = tabIndex;
       _libraryInitialProjectId = projectId;
       _selectedDesktopIndex = 2;
+      _selectedPrimaryIndex = tabIndex == 2 ? 3 : 1;
       _isSidebarOpen = false;
     });
   }
@@ -747,38 +858,89 @@ class _HomeScreenState extends State<HomeScreen> {
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(12, 16, 12, 24),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1440),
-          child: _buildHomeWorkspace(),
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1800),
+            child: _buildHomeWorkspace(),
+          ),
         ),
       ),
     );
   }
 
   Widget _buildHomeWorkspace() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Hello ${_signedInUser?.displayName ?? 'there'}',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: Theme.of(context).textTheme.headlineSmall,
-        ),
-        const SizedBox(height: 4),
-        const Text(
-          'Resume lab work, start common workflows, and keep your data in sync.',
-          softWrap: true,
-          style: TextStyle(color: AppColors.textSecondary),
-        ),
-        const SizedBox(height: 20),
-        _buildResumeWorkSection(),
-        const SizedBox(height: 20),
-        _buildTasksSection(),
-        const SizedBox(height: 20),
-        _buildSectionTitle('Quick Start'),
-        _buildWorkspaceActions(),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final desktop = constraints.maxWidth >= 900;
+        final greeting = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Hello ${_signedInUser?.displayName ?? 'there'}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                color: AppColors.primary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Resume lab work, start common workflows, and keep your data in sync.',
+              softWrap: true,
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 16),
+            ),
+          ],
+        );
+        final primaryColumn = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildTasksSection(expanded: desktop),
+            const SizedBox(height: 24),
+            _buildResumeWorkSection(expanded: desktop),
+          ],
+        );
+        final secondaryColumn = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildQuickStartSection(expanded: desktop),
+            const SizedBox(height: 24),
+            _buildSyncStatusCard(expanded: desktop),
+            const SizedBox(height: 20),
+            _buildUserGuideCard(expanded: desktop),
+          ],
+        );
+
+        if (!desktop) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              greeting,
+              const SizedBox(height: 28),
+              primaryColumn,
+              const SizedBox(height: 24),
+              secondaryColumn,
+            ],
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            greeting,
+            const SizedBox(height: 40),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(flex: 3, child: primaryColumn),
+                const SizedBox(width: 32),
+                Expanded(flex: 2, child: secondaryColumn),
+              ],
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -786,187 +948,216 @@ class _HomeScreenState extends State<HomeScreen> {
     return const DashboardScreen();
   }
 
-  Widget _buildResumeWorkSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionHeader('Resume Work'),
-        if (activeProtocol != null || runningProtocols.isNotEmpty)
-          Column(
-            children: [
-              if (activeProtocol != null) _buildRunningProtocolCard(),
-              if (runningProtocols.isNotEmpty)
-                ...runningProtocols
-                    .where(
-                      (p) =>
-                          activeProtocol == null ||
-                          p.protocol.id != activeProtocol!.protocol.id,
-                    )
-                    .take(3)
-                    .map((p) => _buildInProgressItem(p)),
-              if (_runningProtocolCount > 3)
+  Widget _buildResumeWorkSection({bool expanded = false}) {
+    final visibleStates = <ActiveProtocol>[
+      ?activeProtocol,
+      ...runningProtocols.where(
+        (state) =>
+            activeProtocol == null ||
+            state.protocol.id != activeProtocol!.protocol.id,
+      ),
+    ].take(3).toList();
+
+    return _buildHomeSectionFrame(
+      key: const Key('home-resume-work-section'),
+      title: 'Resume Work',
+      expanded: expanded,
+      trailing: Text(
+        '$_runningProtocolCount running ${_runningProtocolCount == 1 ? 'protocol' : 'protocols'}',
+        key: const Key('home-running-count'),
+        style: const TextStyle(
+          color: AppColors.textSecondary,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      child: visibleStates.isNotEmpty
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var index = 0; index < visibleStates.length; index++) ...[
+                  _buildHomeRunningProtocolCard(
+                    visibleStates[index],
+                    isActive:
+                        activeProtocol?.protocol.id ==
+                        visibleStates[index].protocol.id,
+                  ),
+                  if (index < visibleStates.length - 1)
+                    const SizedBox(height: 12),
+                ],
                 Align(
                   alignment: Alignment.centerLeft,
                   child: TextButton.icon(
+                    key: const Key('home-view-all-running'),
                     onPressed: () => _openLibraryTab(2),
                     icon: const Icon(Icons.play_circle_outline),
                     label: const Text('View all running'),
                   ),
                 ),
-            ],
-          )
-        else
-          Card(
-            margin: EdgeInsets.zero,
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final narrow = constraints.maxWidth < 360;
-                  final content = [
-                    const Icon(
-                      Icons.play_circle_outline,
-                      color: AppColors.info,
-                    ),
-                    const SizedBox(width: 14, height: 12),
-                    const Expanded(
-                      child: Text(
-                        'No protocols are currently running.',
-                        softWrap: true,
-                        style: TextStyle(color: AppColors.textSecondary),
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: () => _openLibraryTab(1),
-                      child: const Text(
-                        'Open library',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ];
-
-                  if (!narrow) return Row(children: content);
-
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(children: content.take(3).toList()),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        width: double.infinity,
-                        child: TextButton(
-                          onPressed: () => _openLibraryTab(1),
-                          child: const Text('Open library'),
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildTasksSection() {
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      margin: EdgeInsets.zero,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          ListTile(
-            dense: true,
-            leading: const Icon(Icons.today_outlined, color: AppColors.primary),
-            title: Text(
-              'Today\'s Tasks',
-              style: Theme.of(
-                context,
-              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            subtitle: Text(
-              '${_todayTasks.length} '
-              '${_todayTasks.length == 1 ? 'task' : 'tasks'}',
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  tooltip: 'Task history',
-                  icon: const Icon(Icons.history),
-                  onPressed: () =>
-                      Navigator.pushNamed(context, '/task_history'),
-                ),
-                IconButton(
-                  tooltip: _areTasksShrunk ? 'Expand tasks' : 'Shrink tasks',
-                  icon: Icon(
-                    _areTasksShrunk ? Icons.unfold_more : Icons.unfold_less,
-                  ),
-                  onPressed: () =>
-                      setState(() => _areTasksShrunk = !_areTasksShrunk),
-                ),
               ],
-            ),
-          ),
-          if (!_areTasksShrunk) ...[
-            const Divider(height: 1),
-            if (_isLoadingTasks)
-              const Padding(
-                padding: EdgeInsets.all(20),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (_todayTasks.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-                child: Text(
-                  'No tasks for today.',
-                  style: TextStyle(color: AppColors.textSecondary),
-                ),
-              )
-            else
-              ..._todayTasks.asMap().entries.map((entry) {
-                return Column(
-                  children: [
-                    _buildTaskItem(entry.value, entry.key),
-                    if (entry.key < _todayTasks.length - 1)
-                      const Divider(height: 1, indent: 54),
-                  ],
-                );
-              }),
-            const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.all(8),
-              child: Wrap(
-                alignment: WrapAlignment.center,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 8,
-                runSpacing: 4,
+            )
+          : Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: expanded ? 32 : 16,
+                vertical: expanded ? 48 : 24,
+              ),
+              child: Column(
                 children: [
-                  ElevatedButton.icon(
-                    onPressed: _showAddTaskDialog,
-                    icon: const Icon(Icons.add),
-                    label: const Text('Add Task'),
-                  ),
-                  if (_todayTasks.any(
-                    (task) => task.status == TaskStatus.completed,
-                  ))
-                    TextButton.icon(
-                      onPressed: _archiveTasks,
-                      icon: const Icon(Icons.archive_outlined),
-                      label: const Text('Move completed to history'),
+                  const CircleAvatar(
+                    radius: 34,
+                    backgroundColor: AppColors.surfaceContainer,
+                    child: Icon(
+                      Icons.science_outlined,
+                      color: AppColors.primary,
+                      size: 34,
                     ),
+                  ),
+                  const SizedBox(height: 18),
+                  const Text(
+                    'No protocols are currently running. Your active experiments will appear here.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: AppColors.textSecondary),
+                  ),
+                  const SizedBox(height: 18),
+                  ElevatedButton.icon(
+                    onPressed: () => _openLibraryTab(1),
+                    icon: const Icon(Icons.open_in_new, size: 18),
+                    label: const Text('Open library'),
+                  ),
                 ],
               ),
             ),
-          ],
+    );
+  }
+
+  Widget _buildTasksSection({bool expanded = false}) {
+    final remaining = _todayTasks
+        .where((task) => task.status != TaskStatus.completed)
+        .length;
+    return _buildHomeSectionFrame(
+      key: const Key('home-today-tasks-section'),
+      title: 'Today\'s Tasks',
+      expanded: expanded,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            tooltip: 'Task history',
+            icon: const Icon(Icons.history),
+            onPressed: () => Navigator.pushNamed(context, '/task_history'),
+          ),
+          IconButton(
+            tooltip: _areTasksShrunk ? 'Expand tasks' : 'Shrink tasks',
+            icon: Icon(_areTasksShrunk ? Icons.unfold_more : Icons.unfold_less),
+            onPressed: () => setState(() => _areTasksShrunk = !_areTasksShrunk),
+          ),
         ],
+      ),
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        margin: EdgeInsets.zero,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ListTile(
+              leading: const Icon(
+                Icons.calendar_today_outlined,
+                color: AppColors.primary,
+              ),
+              title: const Text(
+                'Today\'s Schedule',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              subtitle: Text(
+                '$remaining ${remaining == 1 ? 'task' : 'tasks'} remaining',
+              ),
+            ),
+            if (!_areTasksShrunk) ...[
+              const Divider(height: 1),
+              if (_isLoadingTasks)
+                const Padding(
+                  padding: EdgeInsets.all(28),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (_todayTasks.isEmpty)
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    24,
+                    expanded ? 58 : 30,
+                    24,
+                    expanded ? 42 : 18,
+                  ),
+                  child: Column(
+                    children: [
+                      const Text(
+                        'No tasks for today. Start by adding a new laboratory action.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      ElevatedButton.icon(
+                        onPressed: _showAddTaskDialog,
+                        icon: const Icon(Icons.add),
+                        label: const Text('Add Task'),
+                      ),
+                    ],
+                  ),
+                )
+              else ...[
+                ..._todayTasks.asMap().entries.map((entry) {
+                  return Column(
+                    children: [
+                      _buildTaskItem(entry.value, entry.key),
+                      if (entry.key < _todayTasks.length - 1)
+                        const Divider(height: 1, indent: 54),
+                    ],
+                  );
+                }),
+                const Divider(height: 1),
+                Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: _showAddTaskDialog,
+                        icon: const Icon(Icons.add),
+                        label: const Text('Add Task'),
+                      ),
+                      if (_todayTasks.any(
+                        (task) => task.status == TaskStatus.completed,
+                      ))
+                        TextButton.icon(
+                          onPressed: _archiveTasks,
+                          icon: const Icon(Icons.archive_outlined),
+                          label: const Text('Move completed to history'),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildWorkspaceActions() {
+  Widget _buildQuickStartSection({bool expanded = false}) {
+    return _buildHomeSectionFrame(
+      key: const Key('home-quick-start-section'),
+      title: 'Quick Start',
+      expanded: expanded,
+      child: _buildWorkspaceActions(expanded: expanded),
+    );
+  }
+
+  Widget _buildWorkspaceActions({bool expanded = false}) {
     final actions = [
       _WorkspaceAction(
         icon: Icons.edit_note,
@@ -1011,53 +1202,54 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
+        final itemWidth = (constraints.maxWidth - 12) / 2;
         return Wrap(
           spacing: 12,
           runSpacing: 12,
-          children: [
-            for (final action in actions)
-              SizedBox(
-                width: constraints.maxWidth,
-                child: _buildWorkspaceAction(action),
-              ),
-          ],
+          children: actions
+              .map(
+                (action) => SizedBox(
+                  width: itemWidth,
+                  height: expanded ? 156 : 128,
+                  child: _buildWorkspaceAction(action, expanded: expanded),
+                ),
+              )
+              .toList(),
         );
       },
     );
   }
 
-  Widget _buildWorkspaceAction(_WorkspaceAction action) {
+  Widget _buildWorkspaceAction(
+    _WorkspaceAction action, {
+    required bool expanded,
+  }) {
     return Card(
       margin: EdgeInsets.zero,
       child: InkWell(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(8),
         onTap: action.onTap,
         child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
+          padding: EdgeInsets.all(expanded ? 20 : 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(action.icon, color: AppColors.primary, size: 28),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      action.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      action.description,
-                      softWrap: true,
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
+              Icon(action.icon, color: AppColors.primary, size: 26),
+              SizedBox(height: expanded ? 20 : 14),
+              Text(
+                action.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                action.description,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 12,
                 ),
               ),
             ],
@@ -1065,6 +1257,225 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildSyncStatusCard({bool expanded = false}) {
+    final signedIn =
+        _signedInUser != null && _authService.hasAuthenticatedAccount;
+    final label = _isSyncing
+        ? 'SYNCING NOW'
+        : !signedIn
+        ? 'LOCAL DATA ONLY'
+        : _syncHasErrors
+        ? 'SYNC NEEDS ATTENTION'
+        : _syncHasPendingChanges
+        ? 'CHANGES READY TO SYNC'
+        : 'ALL SYSTEMS ONLINE';
+    final statusColor = _syncHasErrors ? AppColors.warning : AppColors.success;
+    final detail = !signedIn
+        ? 'Sign in to keep protocols and lab data backed up in Google Drive.'
+        : _lastSyncAt == null
+        ? 'Google Drive is connected and ready to keep your data secure.'
+        : 'Last cloud sync ${_relativeTime(_lastSyncAt!)}. Your ProtocolFlow data is backed up.';
+
+    return ConstrainedBox(
+      constraints: BoxConstraints(minHeight: expanded ? 210 : 0),
+      child: Material(
+        color: AppColors.primary,
+        borderRadius: BorderRadius.circular(8),
+        elevation: 4,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: _isSyncing
+              ? null
+              : () => _runDriveSync(promptIfNecessary: true),
+          child: Padding(
+            padding: EdgeInsets.all(expanded ? 32 : 22),
+            child: Stack(
+              children: [
+                Positioned(
+                  right: -8,
+                  bottom: -14,
+                  child: Icon(
+                    Icons.cloud_done_outlined,
+                    size: 100,
+                    color: AppColors.onPrimary.withValues(alpha: 0.11),
+                  ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Sync Status',
+                      style: TextStyle(
+                        color: AppColors.onPrimary,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        if (_isSyncing)
+                          const SizedBox(
+                            width: 12,
+                            height: 12,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.onPrimary,
+                            ),
+                          )
+                        else
+                          Container(
+                            width: 9,
+                            height: 9,
+                            decoration: BoxDecoration(
+                              color: statusColor,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            label,
+                            style: const TextStyle(
+                              color: AppColors.onPrimary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      detail,
+                      style: TextStyle(
+                        color: AppColors.onPrimary.withValues(alpha: 0.88),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUserGuideCard({bool expanded = false}) {
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      margin: EdgeInsets.zero,
+      child: InkWell(
+        onTap: () => _selectPage(7),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              height: expanded ? 240 : 150,
+              child: _buildUserGuideBanner(expanded: expanded),
+            ),
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                expanded ? 24 : 18,
+                expanded ? 22 : 16,
+                expanded ? 24 : 18,
+                expanded ? 24 : 18,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'ProtocolFlow User Guide',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Explore protocols, lab tools, data management, and sync workflows.',
+                    style: TextStyle(color: AppColors.textSecondary),
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: () => _selectPage(7),
+                    iconAlignment: IconAlignment.end,
+                    icon: const Icon(Icons.arrow_forward, size: 18),
+                    label: const Text('Read Guide'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUserGuideBanner({required bool expanded}) {
+    return ColoredBox(
+      key: const Key('user-guide-banner'),
+      color: AppColors.primary,
+      child: Stack(
+        children: [
+          Positioned(
+            right: expanded ? 24 : 10,
+            bottom: expanded ? -28 : -20,
+            child: Icon(
+              Icons.menu_book_outlined,
+              size: expanded ? 190 : 125,
+              color: AppColors.onPrimary.withValues(alpha: 0.1),
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.all(expanded ? 32 : 22),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: expanded ? 64 : 52,
+                  height: expanded ? 64 : 52,
+                  decoration: BoxDecoration(
+                    color: AppColors.onPrimary.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: AppColors.onPrimary.withValues(alpha: 0.24),
+                    ),
+                  ),
+                  child: Icon(
+                    Icons.menu_book_outlined,
+                    color: AppColors.onPrimary,
+                    size: expanded ? 34 : 28,
+                  ),
+                ),
+                SizedBox(height: expanded ? 20 : 14),
+                const Text(
+                  'USER GUIDE',
+                  style: TextStyle(
+                    color: AppColors.onPrimary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _relativeTime(DateTime dateTime) {
+    final difference = DateTime.now().difference(dateTime);
+    if (difference.inMinutes < 1) return 'just now';
+    if (difference.inMinutes < 60) {
+      return '${difference.inMinutes} ${difference.inMinutes == 1 ? 'minute' : 'minutes'} ago';
+    }
+    if (difference.inHours < 24) {
+      return '${difference.inHours} ${difference.inHours == 1 ? 'hour' : 'hours'} ago';
+    }
+    return '${difference.inDays} ${difference.inDays == 1 ? 'day' : 'days'} ago';
   }
 
   Widget _buildSettingsWorkspace() {
@@ -1312,6 +1723,31 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _buildHomeSectionFrame({
+    required Key key,
+    required String title,
+    required Widget child,
+    required bool expanded,
+    Widget trailing = const SizedBox.shrink(),
+  }) {
+    return Container(
+      key: key,
+      padding: EdgeInsets.all(expanded ? 20 : 14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildSectionHeader(title, trailing: trailing),
+          const SizedBox(height: 8),
+          child,
+        ],
+      ),
+    );
+  }
+
   int get _runningProtocolCount {
     final activeId = activeProtocol?.protocol.id;
     final inactiveRunning = runningProtocols.where(
@@ -1500,87 +1936,54 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Widget _buildRunningProtocolCard() {
-    final protocol = activeProtocol!.protocol;
-    final currentIdx = activeProtocol!.currentStepIndex;
+  Project? _projectFor(String? projectId) {
+    if (projectId == null || projectId.isEmpty) return null;
+    for (final project in _projects) {
+      if (project.id == projectId) return project;
+    }
+    return null;
+  }
+
+  Widget _buildHomeRunningProtocolCard(
+    ActiveProtocol state, {
+    required bool isActive,
+  }) {
+    final protocol = state.protocol;
+    final steps = protocol.sortedSteps;
+    final currentIdx = state.currentStepIndex;
     String status = 'Preparing';
-    if (currentIdx >= 0 && currentIdx < protocol.steps.length) {
-      final step = protocol.steps[currentIdx];
+    if (currentIdx >= 0 && currentIdx < steps.length) {
+      final step = steps[currentIdx];
       status = 'Step ${currentIdx + 1}: ${step.title}';
       if (step.phaseName != null && step.phaseName!.isNotEmpty) {
         status = '${step.phaseName} - $status';
       }
     }
+    final completedCount = state.completedStepIds.length;
+    final totalSteps = steps.length;
+    final progress = totalSteps == 0 ? 0.0 : completedCount / totalSteps;
 
-    return Card(
-      color: AppColors.primaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(
-                    protocol.title,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+    return RunningProtocolSummaryCard(
+      state: state,
+      detail: status,
+      progressValue: '${(progress * 100).toInt()}% complete',
+      project: _projectFor(protocol.projectId),
+      keyPrefix: 'home-running',
+      margin: EdgeInsets.zero,
+      compact: true,
+      compactActionLabel: isActive ? 'Resume' : null,
+      onCompactAction: isActive ? _resumeProtocol : null,
+      onTap: isActive
+          ? _resumeProtocol
+          : () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => ProtocolDetailScreen(
+                  protocol: protocol,
+                  activeState: state,
                 ),
-                Text(
-                  _formatDuration(_elapsedTime),
-                  style: TextStyle(
-                    color: AppColors.info,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(status, style: TextStyle(color: AppColors.info)),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _resumeProtocol,
-                child: const Text('Resume Protocol'),
               ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInProgressItem(ActiveProtocol p) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        dense: true,
-        leading: Icon(Icons.history, color: AppColors.info),
-        title: Text(
-          p.protocol.title,
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-        ),
-        subtitle: Text(
-          '${p.completedStepIds.length}/${p.protocol.steps.length} steps completed',
-          style: const TextStyle(fontSize: 12),
-        ),
-        trailing: const Icon(Icons.chevron_right, size: 20),
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) =>
-                ProtocolDetailScreen(protocol: p.protocol, activeState: p),
-          ),
-        ).then((_) => setState(() {})),
-      ),
+            ).then((_) => setState(() {})),
     );
   }
 }
