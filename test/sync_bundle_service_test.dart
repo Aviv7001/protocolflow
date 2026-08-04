@@ -1,12 +1,79 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocolflow/features/measuring_tools/services/measuring_tool_service.dart';
 import 'package:protocolflow/features/today_tasks/services/task_service.dart';
+import 'package:protocolflow/models/active_protocol.dart';
 import 'package:protocolflow/models/project.dart';
+import 'package:protocolflow/models/protocol.dart';
 import 'package:protocolflow/models/task.dart';
+import 'package:protocolflow/services/drive_sync_service.dart';
 import 'package:protocolflow/services/storage_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  test('damaged local bundle data stops sync validation', () async {
+    SharedPreferences.setMockInitialValues({
+      'projects_json': '{not-json',
+      'today_tasks_json': '{}',
+      'measuring_tools_json': 'null',
+    });
+
+    expect(StorageService().validateLocalSyncData(), throwsFormatException);
+    expect(TaskService().validateLocalSyncData(), throwsFormatException);
+    expect(
+      MeasuringToolService.instance.validateLocalSyncData(),
+      throwsFormatException,
+    );
+  });
+
+  test('damaged running protocol data stops sync validation', () async {
+    SharedPreferences.setMockInitialValues({'running_protocols_json': '{}'});
+
+    expect(StorageService().validateLocalSyncData(), throwsFormatException);
+  });
+
+  test('damaged active protocol data stops sync validation', () async {
+    SharedPreferences.setMockInitialValues({'active_protocol_json': '[]'});
+
+    expect(StorageService().validateLocalSyncData(), throwsFormatException);
+  });
+
+  test('active run progress is included in the local sync journal', () async {
+    SharedPreferences.setMockInitialValues({});
+    final storage = StorageService();
+    final protocol = Protocol(
+      id: 'running-protocol',
+      title: 'Running protocol',
+      objective: '',
+      description: '',
+      syncStatus: ProtocolSyncStatus.modified,
+      steps: const [],
+    );
+    await storage.saveRunningProtocols([
+      ActiveProtocol(
+        protocol: protocol,
+        currentStepIndex: 0,
+        notes: const [],
+        startedAt: DateTime(2026, 8, 4, 9),
+      ),
+    ]);
+    await storage.saveActiveProtocol(
+      ActiveProtocol(
+        protocol: protocol,
+        currentStepIndex: 2,
+        notes: const [],
+        startedAt: DateTime(2026, 8, 4, 9),
+      ),
+    );
+
+    final records = await DriveSyncService.instance
+        .buildLocalSyncRecordsForTesting();
+    final run = records['runningProtocol::running-protocol'];
+
+    expect(run, isNotNull);
+    expect(run!.data!['currentStepIndex'], 2);
+    expect((run.data!['protocol'] as Map).containsKey('syncStatus'), isFalse);
+  });
+
   test('task sync payload replaces both task collections', () async {
     SharedPreferences.setMockInitialValues({});
     final service = TaskService();

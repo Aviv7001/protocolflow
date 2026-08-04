@@ -14,7 +14,9 @@ import '../services/import_service.dart';
 import '../services/storage_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/google_sign_in_button.dart';
+import '../widgets/responsive_layout.dart';
 import '../widgets/running_protocol_summary_card.dart';
+import '../widgets/sync_preview_dialog.dart';
 import '../features/measuring_tools/screens/measuring_tools_manager_screen.dart';
 import 'lab_tools_screen.dart';
 import 'library_screen.dart';
@@ -86,7 +88,6 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!mounted) return;
     setState(() => _signedInUser = _authService.currentUser);
     if (_signedInUser != null && _authService.hasAuthenticatedAccount) {
-      _runDriveSync(promptIfNecessary: false, showSnackBar: false);
       _hasAttemptedStartupSync = true;
     }
     _userSubscription = _authService.userChanges.listen((user) {
@@ -96,7 +97,6 @@ class _HomeScreenState extends State<HomeScreen> {
             _authService.hasAuthenticatedAccount &&
             !_hasAttemptedStartupSync) {
           _hasAttemptedStartupSync = true;
-          _runDriveSync(promptIfNecessary: false, showSnackBar: false);
         }
       }
     });
@@ -184,6 +184,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _loadSyncHealth() async {
     final protocols = await _storageService.loadProtocols();
+    final active = await _storageService.loadActiveProtocol();
+    final running = await _storageService.loadRunningProtocols();
     final bundleStates = await Future.wait([
       _storageService.loadSyncBundleState(SyncBundleType.projects),
       _storageService.loadSyncBundleState(SyncBundleType.completedProtocols),
@@ -194,10 +196,14 @@ class _HomeScreenState extends State<HomeScreen> {
     final statuses = [
       ...protocols.map((protocol) => protocol.syncStatus),
       ...completedProtocols.map((protocol) => protocol.syncStatus),
+      if (active != null) active.protocol.syncStatus,
+      ...running.map((session) => session.protocol.syncStatus),
     ];
     final syncTimes = [
       ...protocols.map((protocol) => protocol.lastSyncedAt),
       ...completedProtocols.map((protocol) => protocol.lastSyncedAt),
+      if (active != null) active.protocol.lastSyncedAt,
+      ...running.map((session) => session.protocol.lastSyncedAt),
     ].whereType<DateTime>().toList();
     syncTimes.sort();
 
@@ -322,9 +328,19 @@ class _HomeScreenState extends State<HomeScreen> {
   }) async {
     if (_isSyncing) return;
     if (mounted) setState(() => _isSyncing = true);
-    final summary = await DriveSyncService.instance.syncNow(
-      promptIfNecessary: promptIfNecessary,
+    final summary = await showDialog<DriveSyncSummary>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => SyncPreviewDialog(
+        syncService: DriveSyncService.instance,
+        promptIfNecessary: promptIfNecessary,
+      ),
     );
+    if (!mounted) return;
+    if (summary == null) {
+      setState(() => _isSyncing = false);
+      return;
+    }
     await _loadTasks();
     await _loadProjects();
     await loadPersistentProtocols();
@@ -458,9 +474,7 @@ class _HomeScreenState extends State<HomeScreen> {
       },
       child: Scaffold(
         backgroundColor: AppColors.scaffoldBackground,
-        bottomNavigationBar: MediaQuery.sizeOf(context).width < 760
-            ? _buildPrimaryNavigation()
-            : null,
+        bottomNavigationBar: _buildResponsivePrimaryNavigation(),
         body: SafeArea(
           child: Stack(
             children: [
@@ -771,6 +785,36 @@ class _HomeScreenState extends State<HomeScreen> {
           label: 'Active',
         ),
       ],
+    );
+  }
+
+  Widget _buildResponsivePrimaryNavigation() {
+    final navigation = _buildPrimaryNavigation();
+    if (MediaQuery.sizeOf(context).width < ProtocolFlowBreakpoints.desktop) {
+      return navigation;
+    }
+
+    return SafeArea(
+      top: false,
+      minimum: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        heightFactor: 1,
+        child: SizedBox(
+          key: const Key('floating-primary-navigation'),
+          width: 560,
+          child: Material(
+            elevation: 8,
+            shadowColor: Colors.black.withValues(alpha: 0.18),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+              side: const BorderSide(color: AppColors.outlineVariant),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: navigation,
+          ),
+        ),
+      ),
     );
   }
 

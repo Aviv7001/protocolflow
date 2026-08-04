@@ -189,10 +189,23 @@ void main() {
       tester.getSize(find.byKey(const Key('user-guide-banner'))).height,
       240,
     );
-    expect(find.byType(NavigationBar), findsNothing);
+    expect(find.byType(NavigationBar), findsOneWidget);
+    final floatingNavigation = find.byKey(
+      const Key('floating-primary-navigation'),
+    );
+    expect(floatingNavigation, findsOneWidget);
+    expect(tester.getSize(floatingNavigation).width, 560);
+    expect(
+      tester.getBottomLeft(floatingNavigation).dy,
+      lessThan(tester.view.physicalSize.height),
+    );
   });
 
   testWidgets('sidebar opens the user guide', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(const ProtocolFlowApp());
     await tester.pump();
 

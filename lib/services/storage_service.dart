@@ -31,6 +31,41 @@ class StorageService {
   static const String _measuringToolsSyncStateKey =
       'measuring_tools_sync_state';
 
+  Future<void> validateLocalSyncData() async {
+    final prefs = await SharedPreferences.getInstance();
+    for (final entry in <String, String>{
+      _libraryKey: 'protocol library',
+      _projectsKey: 'projects',
+      _storageKey: 'completed protocols',
+      _savedTablesKey: 'saved tables',
+      _deletedProtocolsKey: 'protocol deletions',
+      _deletedSavedTablesKey: 'saved-table deletions',
+      _runningKey: 'running protocols',
+    }.entries) {
+      final encoded = prefs.getString(entry.key);
+      if (encoded == null) continue;
+      try {
+        final decoded = jsonDecode(encoded);
+        if (decoded is! List) throw const FormatException();
+      } catch (_) {
+        throw FormatException(
+          'Local ${entry.value} data is damaged. Sync was stopped to protect Drive data.',
+        );
+      }
+    }
+
+    final encodedActive = prefs.getString(_activeKey);
+    if (encodedActive != null) {
+      try {
+        if (jsonDecode(encodedActive) is! Map) throw const FormatException();
+      } catch (_) {
+        throw const FormatException(
+          'Local active protocol data is damaged. Sync was stopped to protect Drive data.',
+        );
+      }
+    }
+  }
+
   Future<void> saveProtocols(List<Protocol> protocols) async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String jsonString = jsonEncode(

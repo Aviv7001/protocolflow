@@ -11,6 +11,26 @@ class MeasuringToolService {
   static final MeasuringToolService instance = MeasuringToolService._();
   static const String _storageKey = 'measuring_tools_json';
   static const String _syncUpdatedAtKey = 'measuring_tools_sync_updated_at';
+
+  Future<void> validateLocalSyncData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final encoded = prefs.getString(_storageKey);
+    if (encoded == null) return;
+    try {
+      final decoded = jsonDecode(encoded);
+      if (decoded is! List) throw const FormatException();
+    } catch (_) {
+      throw const FormatException(
+        'Local measuring-tools data is damaged. Sync was stopped to protect Drive data.',
+      );
+    }
+  }
+
+  Future<bool> hasStoredToolsForSync() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.containsKey(_storageKey);
+  }
+
   static const String _massToolDefaultsMigratedKey =
       'measuring_tools_mass_defaults_migrated';
 
@@ -338,7 +358,7 @@ class MeasuringToolService {
         .whereType<Map>()
         .map((item) => MeasuringTool.fromJson(Map<String, dynamic>.from(item)))
         .toList();
-    if (tools.isEmpty) return;
+    if (tools.isEmpty && payload['allowEmpty'] != true) return;
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(

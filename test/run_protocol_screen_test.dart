@@ -355,6 +355,7 @@ void main() {
     await tester.pump();
 
     expect(activeProtocol!.protocol.id, 'b');
+    expect(activeProtocol!.protocol.syncStatus, ProtocolSyncStatus.modified);
     expect(activeProtocol!.currentStepIndex, -1);
     expect(activeProtocol!.notes, isEmpty);
     expect(activeProtocol!.completedStepIds, isEmpty);
@@ -459,6 +460,10 @@ void main() {
     expect(activeProtocol, isNull);
     expect(runningProtocols, hasLength(1));
     expect(runningProtocols.single.protocol.id, protocol.id);
+    expect(
+      runningProtocols.single.protocol.syncStatus,
+      ProtocolSyncStatus.modified,
+    );
     expect(runningProtocols.single.currentStepIndex, 0);
     expect(tester.takeException(), isNull);
   });

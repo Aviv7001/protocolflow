@@ -92,6 +92,7 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
   }
 
   void _updateActiveProtocol() {
+    protocol = protocol.copyWith(syncStatus: ProtocolSyncStatus.modified);
     final currentSession = activeProtocol?.protocol.id == protocol.id
         ? activeProtocol
         : null;

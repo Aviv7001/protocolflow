@@ -8,6 +8,25 @@ class TaskService {
   static const String _historyTasksKey = 'history_tasks_json';
   static const String _syncUpdatedAtKey = 'tasks_sync_updated_at';
 
+  Future<void> validateLocalSyncData() async {
+    final prefs = await SharedPreferences.getInstance();
+    for (final entry in <String, String>{
+      _todayTasksKey: "today's tasks",
+      _historyTasksKey: 'task history',
+    }.entries) {
+      final encoded = prefs.getString(entry.key);
+      if (encoded == null) continue;
+      try {
+        final decoded = jsonDecode(encoded);
+        if (decoded is! List) throw const FormatException();
+      } catch (_) {
+        throw FormatException(
+          'Local ${entry.value} data is damaged. Sync was stopped to protect Drive data.',
+        );
+      }
+    }
+  }
+
   Future<List<Task>> loadTodayTasks() async {
     final prefs = await SharedPreferences.getInstance();
     final jsonString = prefs.getString(_todayTasksKey);

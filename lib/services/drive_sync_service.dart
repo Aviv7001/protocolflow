@@ -4,14 +4,20 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/completed_protocol.dart';
+import '../models/active_protocol.dart';
 import '../models/deleted_protocol_record.dart';
+import '../models/project.dart';
 import '../models/protocol.dart';
 import '../models/protocol_table.dart';
+import '../models/task.dart';
+import '../features/measuring_tools/models/measuring_tool.dart';
 import '../features/today_tasks/services/task_service.dart';
 import '../features/measuring_tools/services/measuring_tool_service.dart';
 import '../utils/protocol_id.dart';
 import 'auth_service.dart';
 import 'storage_service.dart';
+import 'sync_journal.dart';
+import 'sync_journal_store.dart';
 
 class DriveSyncSummary {
   final int downloaded;
@@ -19,6 +25,7 @@ class DriveSyncSummary {
   final int conflicts;
   final int errors;
   final String? details;
+  final bool previewExpired;
 
   const DriveSyncSummary({
     this.downloaded = 0,
@@ -26,6 +33,7 @@ class DriveSyncSummary {
     this.conflicts = 0,
     this.errors = 0,
     this.details,
+    this.previewExpired = false,
   });
 
   String get message {
@@ -39,14 +47,75 @@ class DriveSyncSummary {
   }
 }
 
+enum DriveSyncActionType { upload, download, delete, conflict }
+
+enum DriveDeletionDecision { deleteEverywhere, keepEverywhere }
+
+class DriveSyncPreviewItem {
+  final String key;
+  final String category;
+  final String title;
+  final DriveSyncActionType action;
+  final String? deviceId;
+  final bool canKeep;
+
+  const DriveSyncPreviewItem({
+    required this.key,
+    required this.category,
+    required this.title,
+    required this.action,
+    this.deviceId,
+    this.canKeep = false,
+  });
+}
+
+class DriveSyncPreview {
+  final List<DriveSyncPreviewItem> items;
+  final String? error;
+  final _PreparedSyncPlan? _plan;
+  final bool _allowApplyWithoutPlan;
+
+  const DriveSyncPreview._({
+    this.items = const [],
+    this.error,
+    _PreparedSyncPlan? plan,
+    bool allowApplyWithoutPlan = false,
+  }) : _plan = plan,
+       _allowApplyWithoutPlan = allowApplyWithoutPlan;
+
+  @visibleForTesting
+  const DriveSyncPreview.test({this.items = const [], this.error})
+    : _plan = null,
+      _allowApplyWithoutPlan = true;
+
+  bool get canApply =>
+      error == null && (_plan != null || _allowApplyWithoutPlan);
+  bool get hasChanges => items.isNotEmpty;
+
+  int count(DriveSyncActionType action) =>
+      items.where((item) => item.action == action).length;
+}
+
 class DriveFileRecord {
   final String id;
   final String name;
+  final DateTime? modifiedTime;
+  final String? md5Checksum;
 
-  const DriveFileRecord({required this.id, required this.name});
+  const DriveFileRecord({
+    required this.id,
+    required this.name,
+    this.modifiedTime,
+    this.md5Checksum,
+  });
 
   factory DriveFileRecord.fromJson(Map<String, dynamic> json) {
-    return DriveFileRecord(id: json['id'] ?? '', name: json['name'] ?? '');
+    return DriveFileRecord(
+      id: json['id'] ?? '',
+      name: json['name'] ?? '',
+      modifiedTime: DateTime.tryParse(json['modifiedTime']?.toString() ?? ''),
+      md5Checksum: json['md5Checksum']?.toString(),
+    );
   }
 }
 
@@ -69,18 +138,62 @@ class DriveSyncService {
   static const String _tasksFileName = 'today_tasks.json';
   static const String _measuringToolsFileName = 'measuring_tools.json';
   static const String _projectsFileName = 'projects.json';
+  static const String _journalPrefix = 'sync_journal_';
+  static const String _journalSuffix = '.json';
 
   final AuthService _authService = AuthService.instance;
   final StorageService _storageService = StorageService();
   final TaskService _taskService = TaskService();
   final MeasuringToolService _measuringToolService =
       MeasuringToolService.instance;
+  final SyncJournalStore _journalStore = SyncJournalStore();
+
+  Future<DriveSyncSummary>? _activeSync;
 
   String _completedFileName(String completedId) {
     return 'completed_protocol_$completedId.json';
   }
 
-  Future<DriveSyncSummary> syncNow({bool promptIfNecessary = false}) async {
+  Future<DriveSyncPreview> prepareSyncPreview({
+    bool promptIfNecessary = false,
+  }) async {
+    try {
+      final plan = await _prepareSyncPlan(promptIfNecessary: promptIfNecessary);
+      return DriveSyncPreview._(items: _buildPreviewItems(plan), plan: plan);
+    } catch (error) {
+      _logDriveError('prepare preview', error);
+      return DriveSyncPreview._(error: _friendlyError(error));
+    }
+  }
+
+  Future<DriveSyncSummary> applySyncPreview(
+    DriveSyncPreview preview, {
+    Map<String, DriveDeletionDecision> deletionDecisions = const {},
+  }) async {
+    final plan = preview._plan;
+    if (plan == null) {
+      return DriveSyncSummary(
+        errors: 1,
+        details: preview.error ?? 'The sync preview is not available.',
+      );
+    }
+    final active = _activeSync;
+    if (active != null) return active;
+    final operation = _applyPreviewWithRevalidation(plan, deletionDecisions);
+    _activeSync = operation;
+    try {
+      return await operation;
+    } finally {
+      if (identical(_activeSync, operation)) _activeSync = null;
+    }
+  }
+
+  // Kept temporarily as a readable migration reference while v2 imports the
+  // files produced by older app versions.
+  // ignore: unused_element
+  Future<DriveSyncSummary> _syncLegacyNow({
+    bool promptIfNecessary = false,
+  }) async {
     var downloaded = 0;
     var uploaded = 0;
     var conflicts = 0;
@@ -235,26 +348,910 @@ class DriveSyncService {
     }
   }
 
-  Future<Protocol> syncProtocolAfterLocalSave(Protocol protocol) async {
-    final headers = await _authHeaders(promptIfNecessary: false);
+  Future<_PreparedSyncPlan> _prepareSyncPlan({
+    required bool promptIfNecessary,
+  }) async {
+    final headers = await _authHeaders(promptIfNecessary: promptIfNecessary);
     if (headers == null) {
-      final unsynced = _withSyncState(protocol, ProtocolSyncStatus.modified);
-      await _storageService.upsertProtocol(unsynced);
-      return unsynced;
+      throw StateError(
+        'Drive authorization was not granted. Sign out/in and approve Drive access.',
+      );
     }
 
-    final summary = await syncNow(promptIfNecessary: false);
-    final protocols = await _storageService.loadProtocols();
-    for (final item in protocols) {
-      if (item.id == protocol.id) return item;
+    await _storageService.validateLocalSyncData();
+    await _taskService.validateLocalSyncData();
+    await _measuringToolService.validateLocalSyncData();
+
+    final deviceId = await _journalStore.loadOrCreateDeviceId();
+    final localAtStart = await _buildLocalSyncRecords();
+    final baseline = await _journalStore.loadBaseline();
+    final localJournal = await _journalStore.loadLocalJournal(deviceId);
+    final files = await _listAppDataFiles(headers);
+    final downloadedJournals = await _downloadSyncJournals(files, headers);
+    final legacyJournal = await _buildLegacyJournal(files, headers);
+    final remoteJournals = <SyncJournal>[...downloadedJournals, legacyJournal];
+    final remoteMerge = mergeSyncJournals(remoteJournals);
+    final maxRemoteClock = remoteJournals.fold<int>(
+      0,
+      (maximum, journal) =>
+          journal.maxClock > maximum ? journal.maxClock : maximum,
+    );
+    final recoveredOwnJournal = SyncJournal(
+      deviceId: deviceId,
+      entries: mergeSyncJournals([
+        ...downloadedJournals.where((journal) => journal.deviceId == deviceId),
+        localJournal,
+      ]).winners,
+    );
+    var nextClock = recoveredOwnJournal.maxClock > maxRemoteClock
+        ? recoveredOwnJournal.maxClock
+        : maxRemoteClock;
+    final ownEntries = Map<String, SyncEntityRecord>.from(
+      recoveredOwnJournal.entries,
+    );
+    var localChanges = 0;
+    var conflicts = remoteMerge.conflicts.length;
+    final changedKeys = <String>{};
+
+    final keys = <String>{...localAtStart.keys, ...baseline.keys};
+    for (final key in keys) {
+      final local = localAtStart[key];
+      final previous = baseline[key];
+      final remote = remoteMerge.winners[key];
+      if (previous == null) {
+        if (local == null) continue;
+        if (remote?.deleted ?? false) continue;
+        if (remote == null || !local.hasSameValue(remote)) {
+          ownEntries[key] = _recordForLocalValue(local, deviceId, ++nextClock);
+          changedKeys.add(key);
+          localChanges++;
+          if (remote != null && !remote.deleted) {
+            final conflict = _createConflictRecord(
+              source: remote,
+              deviceId: deviceId,
+              clock: ++nextClock,
+              existingKeys: ownEntries.keys,
+            );
+            if (conflict != null) {
+              ownEntries[conflict.key] = conflict;
+              changedKeys.add(conflict.key);
+              conflicts++;
+            }
+          }
+        }
+        continue;
+      }
+
+      if (local == null) {
+        if (!previous.deleted) {
+          ownEntries[key] = SyncEntityRecord(
+            entityType: previous.entityType,
+            entityId: previous.entityId,
+            clock: ++nextClock,
+            deviceId: deviceId,
+            deleted: true,
+          );
+          changedKeys.add(key);
+          localChanges++;
+        }
+        continue;
+      }
+
+      if (previous.deleted || !local.hasSameValue(previous)) {
+        ownEntries[key] = _recordForLocalValue(local, deviceId, ++nextClock);
+        changedKeys.add(key);
+        localChanges++;
+      }
     }
 
-    final fallbackStatus = summary.errors > 0
-        ? ProtocolSyncStatus.error
-        : ProtocolSyncStatus.modified;
-    final fallback = _withSyncState(protocol, fallbackStatus);
-    await _storageService.upsertProtocol(fallback);
-    return fallback;
+    final deletedProtocols = await _storageService.loadDeletedProtocolRecords();
+    for (final deletion in deletedProtocols) {
+      final record = SyncEntityRecord(
+        entityType: _protocolType,
+        entityId: deletion.protocolId,
+        clock: ++nextClock,
+        deviceId: deviceId,
+        deleted: true,
+      );
+      ownEntries[record.key] = record;
+      changedKeys.add(record.key);
+      localChanges++;
+    }
+    final deletedTableIds = await _storageService.loadDeletedSavedTableIds();
+    for (final tableId in deletedTableIds) {
+      final record = SyncEntityRecord(
+        entityType: _savedTableType,
+        entityId: tableId,
+        clock: ++nextClock,
+        deviceId: deviceId,
+        deleted: true,
+      );
+      ownEntries[record.key] = record;
+      changedKeys.add(record.key);
+      localChanges++;
+    }
+
+    var updatedLocalJournal = SyncJournal(
+      deviceId: deviceId,
+      entries: ownEntries,
+    );
+    var combined = mergeSyncJournals([...remoteJournals, updatedLocalJournal]);
+    for (final conflict in combined.conflicts) {
+      if (conflict.loser.deleted) continue;
+      final preserved = _createConflictRecord(
+        source: conflict.loser,
+        deviceId: deviceId,
+        clock: ++nextClock,
+        existingKeys: ownEntries.keys,
+      );
+      if (preserved != null) {
+        ownEntries[preserved.key] = preserved;
+        changedKeys.add(preserved.key);
+        conflicts++;
+      }
+    }
+    updatedLocalJournal = SyncJournal(deviceId: deviceId, entries: ownEntries);
+    combined = mergeSyncJournals([...remoteJournals, updatedLocalJournal]);
+
+    final ownRemoteFiles =
+        files.where((file) => file.name == _journalFileName(deviceId)).toList()
+          ..sort(_newestFileFirst);
+    final storedFileId = await _journalStore.loadDriveFileId();
+    final existingFileId = files.any((file) => file.id == storedFileId)
+        ? storedFileId
+        : ownRemoteFiles.firstOrNull?.id;
+    final journalChanged = localChanges > 0 || ownRemoteFiles.isEmpty;
+    final deletionSources = <String, SyncEntityRecord>{};
+    for (final entry in combined.winners.entries) {
+      if (!entry.value.deleted) continue;
+      final source =
+          localAtStart[entry.key] ??
+          baseline[entry.key] ??
+          remoteMerge.winners[entry.key];
+      if (source != null && !source.deleted && source.data != null) {
+        deletionSources[entry.key] = source;
+      }
+    }
+    for (final deletion in deletedProtocols) {
+      final key = '$_protocolType::${deletion.protocolId}';
+      deletionSources.putIfAbsent(
+        key,
+        () => SyncEntityRecord(
+          entityType: _protocolType,
+          entityId: deletion.protocolId,
+          clock: 0,
+          deviceId: 'local-deletion',
+          data: _normalizeEntityData(_protocolType, deletion.protocol.toJson()),
+        ),
+      );
+    }
+    final fingerprint = _syncPlanFingerprint(
+      localAtStart,
+      remoteJournals,
+      baseline,
+    );
+    return _PreparedSyncPlan(
+      headers: headers,
+      deviceId: deviceId,
+      localAtStart: localAtStart,
+      remoteJournals: remoteJournals,
+      ownEntries: ownEntries,
+      combined: combined,
+      changedKeys: changedKeys,
+      deletionSources: deletionSources,
+      nextClock: nextClock,
+      conflicts: conflicts,
+      journalChanged: journalChanged,
+      existingFileId: existingFileId,
+      fingerprint: fingerprint,
+    );
+  }
+
+  Future<DriveSyncSummary> _applyPreviewWithRevalidation(
+    _PreparedSyncPlan original,
+    Map<String, DriveDeletionDecision> deletionDecisions,
+  ) async {
+    try {
+      final refreshed = await _prepareSyncPlan(promptIfNecessary: false);
+      if (refreshed.fingerprint != original.fingerprint) {
+        return const DriveSyncSummary(
+          errors: 1,
+          previewExpired: true,
+          details:
+              'Sync data changed while the preview was open. Review the refreshed preview.',
+        );
+      }
+      return await _applyPreparedPlan(refreshed, deletionDecisions);
+    } catch (error) {
+      _logDriveError('apply preview', error);
+      return DriveSyncSummary(errors: 1, details: _friendlyError(error));
+    }
+  }
+
+  Future<DriveSyncSummary> _applyPreparedPlan(
+    _PreparedSyncPlan plan,
+    Map<String, DriveDeletionDecision> deletionDecisions,
+  ) async {
+    final ownEntries = Map<String, SyncEntityRecord>.from(plan.ownEntries);
+    var nextClock = plan.nextClock;
+    final restoredKeys = <String>{};
+    for (final entry in deletionDecisions.entries) {
+      if (entry.value != DriveDeletionDecision.keepEverywhere) continue;
+      final source = plan.deletionSources[entry.key];
+      if (source == null || source.data == null) continue;
+      final restoredRecord = SyncEntityRecord(
+        entityType: source.entityType,
+        entityId: source.entityId,
+        clock: ++nextClock,
+        deviceId: plan.deviceId,
+        data: source.data,
+      );
+      ownEntries[restoredRecord.key] = restoredRecord;
+      restoredKeys.add(restoredRecord.key);
+    }
+    final localJournal = SyncJournal(
+      deviceId: plan.deviceId,
+      entries: ownEntries,
+    );
+    final combined = mergeSyncJournals([...plan.remoteJournals, localJournal]);
+    final shouldUpload = plan.journalChanged || restoredKeys.isNotEmpty;
+    var uploaded = 0;
+    if (shouldUpload) {
+      final fileId = await _uploadJsonFile(
+        fileName: _journalFileName(plan.deviceId),
+        content: const JsonEncoder.withIndent(
+          '  ',
+        ).convert(localJournal.toJson()),
+        headers: plan.headers,
+        existingFileId: plan.existingFileId,
+      );
+      await _journalStore.saveDriveFileId(fileId);
+      await _journalStore.saveLocalJournal(localJournal);
+      uploaded = {...plan.changedKeys, ...restoredKeys}.length;
+    }
+
+    final localBeforeApply = await _buildLocalSyncRecords();
+    if (!_sameLocalSnapshot(plan.localAtStart, localBeforeApply)) {
+      return DriveSyncSummary(
+        uploaded: uploaded,
+        conflicts: plan.conflicts,
+        errors: 1,
+        previewExpired: true,
+        details:
+            'Local data changed while sync was running. Review the refreshed preview.',
+      );
+    }
+
+    final downloaded = _countAppliedRemoteChanges(
+      plan.localAtStart,
+      combined.winners,
+    );
+    await _applySyncRecords(combined.winners);
+    await _journalStore.saveBaseline(combined.winners);
+    await _storageService.saveDeletedProtocolRecords([]);
+    await _storageService.saveDeletedSavedTableIds([]);
+    return DriveSyncSummary(
+      downloaded: downloaded,
+      uploaded: uploaded,
+      conflicts: plan.conflicts,
+    );
+  }
+
+  List<DriveSyncPreviewItem> _buildPreviewItems(_PreparedSyncPlan plan) {
+    final items = <String, DriveSyncPreviewItem>{};
+    for (final entry in plan.combined.winners.entries) {
+      final key = entry.key;
+      final after = entry.value;
+      final before = plan.localAtStart[key];
+      if (after.deleted) {
+        if (before == null && !plan.changedKeys.contains(key)) continue;
+        final source = plan.deletionSources[key];
+        items[key] = DriveSyncPreviewItem(
+          key: key,
+          category: _categoryLabel(after.entityType),
+          title: _entityTitle(source ?? after),
+          action: DriveSyncActionType.delete,
+          deviceId: after.deviceId,
+          canKeep: source?.data != null,
+        );
+        continue;
+      }
+      if (key.contains('-conflict-') || key.contains('-legacy-conflict-')) {
+        items[key] = DriveSyncPreviewItem(
+          key: key,
+          category: _categoryLabel(after.entityType),
+          title: _entityTitle(after),
+          action: DriveSyncActionType.conflict,
+          deviceId: after.deviceId,
+        );
+        continue;
+      }
+      if (plan.changedKeys.contains(key)) {
+        items[key] = DriveSyncPreviewItem(
+          key: key,
+          category: _categoryLabel(after.entityType),
+          title: _entityTitle(after),
+          action: DriveSyncActionType.upload,
+          deviceId: plan.deviceId,
+        );
+        continue;
+      }
+      if (before == null || !before.hasSameValue(after)) {
+        items[key] = DriveSyncPreviewItem(
+          key: key,
+          category: _categoryLabel(after.entityType),
+          title: _entityTitle(after),
+          action: DriveSyncActionType.download,
+          deviceId: after.deviceId,
+        );
+      }
+    }
+    final result = items.values.toList()
+      ..sort((left, right) {
+        final byCategory = left.category.compareTo(right.category);
+        if (byCategory != 0) return byCategory;
+        final byAction = left.action.index.compareTo(right.action.index);
+        if (byAction != 0) return byAction;
+        return left.title.toLowerCase().compareTo(right.title.toLowerCase());
+      });
+    return result;
+  }
+
+  String _categoryLabel(String entityType) {
+    return switch (entityType) {
+      _protocolType => 'Protocols',
+      _projectType => 'Projects',
+      _completedProtocolType => 'Completed protocols',
+      _runningProtocolType => 'Running protocols',
+      _savedTableType => 'Saved tables',
+      _todayTaskType => "Today's tasks",
+      _historyTaskType => 'Task history',
+      _measuringToolType => 'Measuring tools',
+      _ => 'Other',
+    };
+  }
+
+  String _entityTitle(SyncEntityRecord record) {
+    final data = record.data;
+    if (data == null) return record.entityId;
+    final direct = data['title'] ?? data['name'] ?? data['toolName'];
+    if (direct?.toString().trim().isNotEmpty ?? false) {
+      return direct.toString();
+    }
+    final protocol = data['protocol'];
+    if (protocol is Map) {
+      final title = protocol['title']?.toString().trim();
+      if (title != null && title.isNotEmpty) return title;
+    }
+    return record.entityId;
+  }
+
+  String _syncPlanFingerprint(
+    Map<String, SyncEntityRecord> local,
+    List<SyncJournal> remoteJournals,
+    Map<String, SyncEntityRecord> baseline,
+  ) {
+    Map<String, dynamic> recordMap(Map<String, SyncEntityRecord> records) => {
+      for (final entry in records.entries) entry.key: entry.value.toJson(),
+    };
+    final journals =
+        remoteJournals
+            .map((journal) => syncDataHash(recordMap(journal.entries)))
+            .toList()
+          ..sort();
+    return syncDataHash({
+      'local': recordMap(local),
+      'remote': journals,
+      'baseline': recordMap(baseline),
+    });
+  }
+
+  static const String _protocolType = 'protocol';
+  static const String _projectType = 'project';
+  static const String _completedProtocolType = 'completedProtocol';
+  static const String _runningProtocolType = 'runningProtocol';
+  static const String _savedTableType = 'savedTable';
+  static const String _todayTaskType = 'todayTask';
+  static const String _historyTaskType = 'historyTask';
+  static const String _measuringToolType = 'measuringTool';
+
+  SyncEntityRecord _recordForLocalValue(
+    SyncEntityRecord local,
+    String deviceId,
+    int clock,
+  ) {
+    return SyncEntityRecord(
+      entityType: local.entityType,
+      entityId: local.entityId,
+      clock: clock,
+      deviceId: deviceId,
+      data: local.data,
+    );
+  }
+
+  String _journalFileName(String deviceId) =>
+      '$_journalPrefix$deviceId$_journalSuffix';
+
+  Future<Map<String, SyncEntityRecord>> _buildLocalSyncRecords() async {
+    final records = <String, SyncEntityRecord>{};
+    void add(String type, String id, Map<String, dynamic> data) {
+      final normalizedId = id.trim();
+      if (normalizedId.isEmpty) return;
+      final record = SyncEntityRecord(
+        entityType: type,
+        entityId: normalizedId,
+        clock: 0,
+        deviceId: 'local',
+        data: _normalizeEntityData(type, data),
+      );
+      records[record.key] = record;
+    }
+
+    for (final protocol in await _storageService.loadProtocols()) {
+      if (_isValidProtocol(protocol)) {
+        add(_protocolType, protocol.id, protocol.toJson());
+      }
+    }
+    for (final project in await _storageService.loadProjects()) {
+      if (project.name.trim().isNotEmpty) {
+        add(_projectType, project.id, project.toJson());
+      }
+    }
+    for (final completed in await _storageService.loadCompletedProtocols()) {
+      if (completed.id.trim().isNotEmpty &&
+          _isValidProtocol(completed.protocol)) {
+        add(_completedProtocolType, completed.id, completed.toJson());
+      }
+    }
+    final sessions = <String, ActiveProtocol>{};
+    for (final session in await _storageService.loadRunningProtocols()) {
+      sessions[session.protocol.id] = session;
+    }
+    final activeSession = await _storageService.loadActiveProtocol();
+    if (activeSession != null) {
+      sessions[activeSession.protocol.id] = activeSession;
+    }
+    for (final session in sessions.values) {
+      if (_isValidProtocol(session.protocol)) {
+        add(_runningProtocolType, session.protocol.id, session.toJson());
+      }
+    }
+    for (final table in await _storageService.loadSavedTables()) {
+      if (table.id.trim().isNotEmpty && table.title.trim().isNotEmpty) {
+        add(_savedTableType, table.id, table.toJson());
+      }
+    }
+    for (final task in await _taskService.loadTodayTasks()) {
+      add(_todayTaskType, task.id, task.toJson());
+    }
+    for (final task in await _taskService.loadHistoryTasks()) {
+      add(_historyTaskType, task.id, task.toJson());
+    }
+    if (await _measuringToolService.hasStoredToolsForSync()) {
+      for (final tool in await _measuringToolService.loadTools()) {
+        if (tool.id.trim().isNotEmpty) {
+          add(_measuringToolType, tool.id, tool.toJson());
+        }
+      }
+    }
+    return records;
+  }
+
+  @visibleForTesting
+  Future<Map<String, SyncEntityRecord>> buildLocalSyncRecordsForTesting() {
+    return _buildLocalSyncRecords();
+  }
+
+  Map<String, dynamic> _normalizeEntityData(
+    String entityType,
+    Map<String, dynamic> data,
+  ) {
+    final normalized = Map<String, dynamic>.from(data);
+    if (entityType == _protocolType) {
+      normalized.remove('driveFileId');
+      normalized.remove('lastSyncedAt');
+      normalized.remove('syncStatus');
+    } else if (entityType == _completedProtocolType ||
+        entityType == _runningProtocolType) {
+      normalized.remove('driveFileId');
+      normalized.remove('lastSyncedAt');
+      normalized.remove('syncStatus');
+      final protocol = normalized['protocol'];
+      if (protocol is Map) {
+        normalized['protocol'] = _normalizeEntityData(
+          _protocolType,
+          Map<String, dynamic>.from(protocol),
+        );
+      }
+    }
+    return normalized;
+  }
+
+  bool _isValidProtocol(Protocol protocol) {
+    return protocol.id.trim().isNotEmpty && protocol.title.trim().isNotEmpty;
+  }
+
+  bool _sameLocalSnapshot(
+    Map<String, SyncEntityRecord> left,
+    Map<String, SyncEntityRecord> right,
+  ) {
+    if (left.length != right.length) return false;
+    for (final entry in left.entries) {
+      final other = right[entry.key];
+      if (other == null || !entry.value.hasSameValue(other)) return false;
+    }
+    return true;
+  }
+
+  int _countAppliedRemoteChanges(
+    Map<String, SyncEntityRecord> local,
+    Map<String, SyncEntityRecord> merged,
+  ) {
+    var changes = 0;
+    final keys = <String>{...local.keys, ...merged.keys};
+    for (final key in keys) {
+      final before = local[key];
+      final after = merged[key];
+      if (after == null || after.deleted) {
+        if (before != null) changes++;
+      } else if (before == null || !before.hasSameValue(after)) {
+        changes++;
+      }
+    }
+    return changes;
+  }
+
+  Future<List<SyncJournal>> _downloadSyncJournals(
+    List<DriveFileRecord> files,
+    Map<String, String> headers,
+  ) async {
+    final journals = <SyncJournal>[];
+    for (final file in files) {
+      if (!file.name.startsWith(_journalPrefix) ||
+          !file.name.endsWith(_journalSuffix)) {
+        continue;
+      }
+      final decoded = await _downloadJson(file.id, headers);
+      if (decoded is! Map) {
+        throw FormatException('Remote sync journal ${file.name} is invalid.');
+      }
+      journals.add(SyncJournal.fromJson(Map<String, dynamic>.from(decoded)));
+    }
+    journals.sort((left, right) {
+      final byDevice = left.deviceId.compareTo(right.deviceId);
+      if (byDevice != 0) return byDevice;
+      Map<String, dynamic> values(SyncJournal journal) => {
+        for (final entry in journal.entries.entries)
+          entry.key: entry.value.toJson(),
+      };
+      return syncDataHash(values(left)).compareTo(syncDataHash(values(right)));
+    });
+    return journals;
+  }
+
+  int _newestFileFirst(DriveFileRecord left, DriveFileRecord right) {
+    final epoch = DateTime.fromMillisecondsSinceEpoch(0);
+    return (right.modifiedTime ?? epoch).compareTo(left.modifiedTime ?? epoch);
+  }
+
+  Future<SyncJournal> _buildLegacyJournal(
+    List<DriveFileRecord> files,
+    Map<String, String> headers,
+  ) async {
+    final entries = <String, SyncEntityRecord>{};
+    void add(
+      String type,
+      String id,
+      Map<String, dynamic> data,
+      String sourceId,
+    ) {
+      final normalizedId = id.trim();
+      if (normalizedId.isEmpty) return;
+      final record = SyncEntityRecord(
+        entityType: type,
+        entityId: normalizedId,
+        clock: 0,
+        deviceId: 'legacy_$sourceId',
+        data: _normalizeEntityData(type, data),
+      );
+      final existing = entries[record.key];
+      if (existing == null) {
+        entries[record.key] = record;
+      } else if (!record.hasSameValue(existing)) {
+        final winner = compareSyncVersions(record, existing) > 0
+            ? record
+            : existing;
+        final loser = identical(winner, record) ? existing : record;
+        entries[record.key] = winner;
+        final conflict = _createLegacyConflictRecord(loser, entries.keys);
+        if (conflict != null) entries[conflict.key] = conflict;
+      }
+    }
+
+    for (final file in files) {
+      if (file.name.startsWith(_journalPrefix)) continue;
+      dynamic decoded;
+      try {
+        decoded = await _downloadJson(file.id, headers);
+      } catch (_) {
+        continue;
+      }
+      if (file.name == _projectsFileName && decoded is Map) {
+        for (final raw in decoded['projects'] as List? ?? const []) {
+          if (raw is Map) {
+            final data = Map<String, dynamic>.from(raw);
+            add(_projectType, data['id']?.toString() ?? '', data, file.id);
+          }
+        }
+        continue;
+      }
+      if (file.name == _tasksFileName && decoded is Map) {
+        for (final raw in decoded['today'] as List? ?? const []) {
+          if (raw is Map) {
+            final data = Map<String, dynamic>.from(raw);
+            add(_todayTaskType, data['id']?.toString() ?? '', data, file.id);
+          }
+        }
+        for (final raw in decoded['history'] as List? ?? const []) {
+          if (raw is Map) {
+            final data = Map<String, dynamic>.from(raw);
+            add(_historyTaskType, data['id']?.toString() ?? '', data, file.id);
+          }
+        }
+        continue;
+      }
+      if (file.name == _measuringToolsFileName && decoded is Map) {
+        for (final raw in decoded['tools'] as List? ?? const []) {
+          if (raw is Map) {
+            final data = Map<String, dynamic>.from(raw);
+            add(
+              _measuringToolType,
+              data['id']?.toString() ?? '',
+              data,
+              file.id,
+            );
+          }
+        }
+        continue;
+      }
+      if (file.name == _savedTablesFileName && decoded is List) {
+        for (final raw in decoded) {
+          if (raw is Map) {
+            final data = Map<String, dynamic>.from(raw);
+            add(_savedTableType, data['id']?.toString() ?? '', data, file.id);
+          }
+        }
+        continue;
+      }
+      if (file.name.startsWith('completed_protocol_') && decoded is Map) {
+        final data = Map<String, dynamic>.from(decoded);
+        final id = data['id']?.toString() ?? '';
+        if (id.isNotEmpty) {
+          try {
+            final completed = CompletedProtocol.fromJson(data);
+            if (_isValidProtocol(completed.protocol)) {
+              add(_completedProtocolType, id, data, file.id);
+            }
+          } catch (_) {
+            // A damaged legacy file is ignored, never converted to empty data.
+          }
+        }
+        continue;
+      }
+      if (_isLegacyProtocolFile(file.name, decoded)) {
+        final data = Map<String, dynamic>.from(decoded as Map);
+        add(_protocolType, data['id'].toString(), data, file.id);
+      }
+    }
+    return SyncJournal(deviceId: 'legacy', entries: entries);
+  }
+
+  SyncEntityRecord? _createLegacyConflictRecord(
+    SyncEntityRecord source,
+    Iterable<String> existingKeys,
+  ) {
+    if (source.data == null) return null;
+    final token = _stableToken('${source.key}:${source.deviceId}');
+    final conflictId = '${source.entityId}-legacy-conflict-$token';
+    final key = '${source.entityType}::$conflictId';
+    if (existingKeys.contains(key)) return null;
+    final data = Map<String, dynamic>.from(source.data!);
+    data['id'] = conflictId;
+    if (data.containsKey('protocolId')) data['protocolId'] = conflictId;
+    if (source.entityType == _runningProtocolType && data['protocol'] is Map) {
+      final protocol = Map<String, dynamic>.from(data['protocol'] as Map);
+      protocol['id'] = conflictId;
+      final title = protocol['title'] ?? protocol['name'];
+      if (title is String) {
+        protocol['title'] = '$title (conflict copy)';
+        protocol['name'] = '$title (conflict copy)';
+      }
+      data['protocol'] = protocol;
+    }
+    if (data['title'] is String) {
+      data['title'] = '${data['title']} (legacy conflict copy)';
+    } else if (data['name'] is String) {
+      data['name'] = '${data['name']} (legacy conflict copy)';
+    }
+    return SyncEntityRecord(
+      entityType: source.entityType,
+      entityId: conflictId,
+      clock: 0,
+      deviceId: source.deviceId,
+      data: data,
+    );
+  }
+
+  bool _isLegacyProtocolFile(String fileName, dynamic decoded) {
+    if (!fileName.endsWith('.json') || decoded is! Map) return false;
+    if (fileName == _projectsFileName ||
+        fileName == _tasksFileName ||
+        fileName == _measuringToolsFileName ||
+        fileName == _savedTablesFileName ||
+        fileName.startsWith('completed_protocol_') ||
+        fileName.startsWith(_journalPrefix)) {
+      return false;
+    }
+    final data = Map<String, dynamic>.from(decoded);
+    final id = data['id']?.toString().trim() ?? '';
+    final title = data['title']?.toString().trim() ?? '';
+    return id.isNotEmpty && title.isNotEmpty && fileName == '$id.json';
+  }
+
+  SyncEntityRecord? _createConflictRecord({
+    required SyncEntityRecord source,
+    required String deviceId,
+    required int clock,
+    required Iterable<String> existingKeys,
+  }) {
+    if (source.deleted || source.data == null) return null;
+    final token = _stableToken(
+      '${source.key}:${source.clock}:${source.deviceId}',
+    );
+    final conflictId = '${source.entityId}-conflict-$token';
+    final key = '${source.entityType}::$conflictId';
+    if (existingKeys.contains(key)) return null;
+    final data = Map<String, dynamic>.from(source.data!);
+    data['id'] = conflictId;
+    if (data.containsKey('protocolId')) data['protocolId'] = conflictId;
+    if (source.entityType == _runningProtocolType && data['protocol'] is Map) {
+      final protocol = Map<String, dynamic>.from(data['protocol'] as Map);
+      protocol['id'] = conflictId;
+      final title = protocol['title'] ?? protocol['name'];
+      if (title is String) {
+        protocol['title'] = '$title (conflict copy)';
+        protocol['name'] = '$title (conflict copy)';
+      }
+      data['protocol'] = protocol;
+    }
+    if (data['title'] is String) {
+      data['title'] = '${data['title']} (conflict copy)';
+    } else if (data['name'] is String) {
+      data['name'] = '${data['name']} (conflict copy)';
+    }
+    return SyncEntityRecord(
+      entityType: source.entityType,
+      entityId: conflictId,
+      clock: clock,
+      deviceId: deviceId,
+      data: data,
+    );
+  }
+
+  String _stableToken(String value) {
+    var hash = 0x811c9dc5;
+    for (final unit in value.codeUnits) {
+      hash ^= unit;
+      hash = (hash * 0x01000193) & 0x7fffffff;
+    }
+    return hash.toRadixString(36);
+  }
+
+  Future<void> _applySyncRecords(Map<String, SyncEntityRecord> records) async {
+    final activeBeforeSync = await _storageService.loadActiveProtocol();
+    final live = records.values.where((record) => !record.deleted).toList();
+    final now = DateTime.now();
+    final protocols = <Protocol>[];
+    final projects = <Project>[];
+    final completed = <CompletedProtocol>[];
+    final running = <ActiveProtocol>[];
+    final tables = <ProtocolTable>[];
+    final todayTasks = <Task>[];
+    final historyTasks = <Task>[];
+    final measuringTools = <MeasuringTool>[];
+
+    for (final record in live) {
+      final data = record.data!;
+      switch (record.entityType) {
+        case _protocolType:
+          final protocol = Protocol.fromJson(data);
+          if (_isValidProtocol(protocol)) {
+            protocols.add(
+              protocol.copyWith(
+                lastSyncedAt: now,
+                syncStatus: ProtocolSyncStatus.synced,
+              ),
+            );
+          }
+        case _projectType:
+          final project = Project.fromJson(data);
+          if (project.name.trim().isNotEmpty) projects.add(project);
+        case _completedProtocolType:
+          final item = CompletedProtocol.fromJson(
+            data,
+          ).copyWith(lastSyncedAt: now, syncStatus: ProtocolSyncStatus.synced);
+          if (_isValidProtocol(item.protocol)) completed.add(item);
+        case _runningProtocolType:
+          final session = ActiveProtocol.fromJson(data);
+          if (_isValidProtocol(session.protocol)) {
+            running.add(
+              session.copyWith(
+                protocol: session.protocol.copyWith(
+                  lastSyncedAt: now,
+                  syncStatus: ProtocolSyncStatus.synced,
+                ),
+              ),
+            );
+          }
+        case _savedTableType:
+          final table = ProtocolTable.fromJson(data);
+          if (table.id.isNotEmpty && table.title.trim().isNotEmpty) {
+            tables.add(table);
+          }
+        case _todayTaskType:
+          todayTasks.add(Task.fromJson(data));
+        case _historyTaskType:
+          historyTasks.add(Task.fromJson(data));
+        case _measuringToolType:
+          final tool = MeasuringTool.fromJson(data);
+          if (tool.id.isNotEmpty) measuringTools.add(tool);
+      }
+    }
+
+    await _storageService.saveProtocols(protocols);
+    await _storageService.saveProjects(
+      projects,
+      markUpdated: false,
+      markPending: false,
+    );
+    await _storageService.saveCompletedProtocols(completed, markPending: false);
+    ActiveProtocol? activeAfterSync;
+    if (activeBeforeSync != null) {
+      final activeIndex = running.indexWhere(
+        (session) => session.protocol.id == activeBeforeSync.protocol.id,
+      );
+      if (activeIndex >= 0) {
+        activeAfterSync = running.removeAt(activeIndex);
+      }
+    }
+    await _storageService.saveActiveProtocol(activeAfterSync);
+    await _storageService.saveRunningProtocols(running);
+    await _storageService.saveSavedTables(tables, markPending: false);
+    await _taskService.replaceFromSyncPayload({
+      'updatedAt': now.toUtc().toIso8601String(),
+      'today': todayTasks.map((task) => task.toJson()).toList(),
+      'history': historyTasks.map((task) => task.toJson()).toList(),
+    });
+    final hasMeasuringToolHistory = records.values.any(
+      (record) => record.entityType == _measuringToolType,
+    );
+    if (hasMeasuringToolHistory) {
+      await _measuringToolService.replaceFromSyncPayload({
+        'updatedAt': now.toUtc().toIso8601String(),
+        'tools': measuringTools.map((tool) => tool.toJson()).toList(),
+        'allowEmpty': true,
+      });
+    }
+    await _storageService.markSavedTablesSynced();
+    for (final type in SyncBundleType.values) {
+      await _storageService.saveSyncBundleState(type, SyncBundleState.synced);
+    }
+  }
+
+  Future<Protocol> syncProtocolAfterLocalSave(Protocol protocol) async {
+    final pending = _withSyncState(protocol, ProtocolSyncStatus.modified);
+    await _storageService.upsertProtocol(pending);
+    return pending;
   }
 
   Future<Protocol> uploadProtocol(
@@ -793,21 +1790,38 @@ class DriveSyncService {
     Map<String, String> headers,
   ) async {
     final query = Uri.encodeQueryComponent("trashed = false");
-    final uri = Uri.parse(
-      '$_baseUrl/files?spaces=appDataFolder&q=$query'
-      '&fields=files(id,name)&pageSize=1000',
-    );
-    final response = await http.get(uri, headers: headers);
-    _throwIfFailed(response);
+    final records = <DriveFileRecord>[];
+    String? pageToken;
+    do {
+      final tokenQuery = pageToken == null
+          ? ''
+          : '&pageToken=${Uri.encodeQueryComponent(pageToken)}';
+      final uri = Uri.parse(
+        '$_baseUrl/files?spaces=appDataFolder&q=$query'
+        '&fields=nextPageToken,files(id,name,modifiedTime,md5Checksum)'
+        '&pageSize=1000$tokenQuery',
+      );
+      final response = await http.get(uri, headers: headers);
+      _throwIfFailed(response);
 
-    final decoded = jsonDecode(response.body);
-    final files = decoded is Map<String, dynamic> ? decoded['files'] : null;
-    if (files is! List) return [];
-    return files
-        .whereType<Map<String, dynamic>>()
-        .map(DriveFileRecord.fromJson)
-        .where((file) => file.id.isNotEmpty && file.name.isNotEmpty)
-        .toList();
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map<String, dynamic>) {
+        throw const FormatException('Drive returned an invalid file list.');
+      }
+      final files = decoded['files'];
+      if (files is! List) {
+        throw const FormatException('Drive file list is missing files.');
+      }
+      records.addAll(
+        files
+            .whereType<Map<String, dynamic>>()
+            .map(DriveFileRecord.fromJson)
+            .where((file) => file.id.isNotEmpty && file.name.isNotEmpty),
+      );
+      pageToken = decoded['nextPageToken']?.toString();
+      if (pageToken?.isEmpty ?? false) pageToken = null;
+    } while (pageToken != null);
+    return records;
   }
 
   Future<DriveFileRecord?> _findDriveFile(
@@ -820,7 +1834,7 @@ class DriveSyncService {
     );
     final uri = Uri.parse(
       '$_baseUrl/files?spaces=appDataFolder&q=$query'
-      '&fields=files(id,name)&pageSize=10',
+      '&fields=files(id,name,modifiedTime,md5Checksum)&pageSize=100',
     );
     final response = await http.get(uri, headers: headers);
     _throwIfFailed(response);
@@ -828,7 +1842,13 @@ class DriveSyncService {
     final decoded = jsonDecode(response.body);
     final files = decoded is Map<String, dynamic> ? decoded['files'] : null;
     if (files is! List || files.isEmpty) return null;
-    return DriveFileRecord.fromJson(Map<String, dynamic>.from(files.first));
+    final matches =
+        files
+            .whereType<Map<String, dynamic>>()
+            .map(DriveFileRecord.fromJson)
+            .toList()
+          ..sort(_newestFileFirst);
+    return matches.firstOrNull;
   }
 
   Future<String> _uploadJsonFile({
@@ -1045,5 +2065,37 @@ class _ConflictResolution {
     this.downloaded = 0,
     this.uploaded = 0,
     this.conflicts = 0,
+  });
+}
+
+class _PreparedSyncPlan {
+  final Map<String, String> headers;
+  final String deviceId;
+  final Map<String, SyncEntityRecord> localAtStart;
+  final List<SyncJournal> remoteJournals;
+  final Map<String, SyncEntityRecord> ownEntries;
+  final SyncMergeResult combined;
+  final Set<String> changedKeys;
+  final Map<String, SyncEntityRecord> deletionSources;
+  final int nextClock;
+  final int conflicts;
+  final bool journalChanged;
+  final String? existingFileId;
+  final String fingerprint;
+
+  const _PreparedSyncPlan({
+    required this.headers,
+    required this.deviceId,
+    required this.localAtStart,
+    required this.remoteJournals,
+    required this.ownEntries,
+    required this.combined,
+    required this.changedKeys,
+    required this.deletionSources,
+    required this.nextClock,
+    required this.conflicts,
+    required this.journalChanged,
+    required this.existingFileId,
+    required this.fingerprint,
   });
 }

@@ -20,6 +20,9 @@ ActiveProtocol activateProtocolSession(
   Protocol protocol, {
   int? initialStepIndex,
 }) {
+  final pendingProtocol = protocol.copyWith(
+    syncStatus: ProtocolSyncStatus.modified,
+  );
   final protocolId = protocol.id;
   ActiveProtocol? session;
 
@@ -41,13 +44,13 @@ ActiveProtocol activateProtocolSession(
   runningProtocols.removeWhere((entry) => entry.protocol.id == protocolId);
   session = session == null
       ? ActiveProtocol(
-          protocol: protocol,
+          protocol: pendingProtocol,
           currentStepIndex: initialStepIndex ?? -1,
           notes: const [],
           startedAt: DateTime.now(),
         )
       : session.copyWith(
-          protocol: protocol,
+          protocol: pendingProtocol,
           currentStepIndex: initialStepIndex ?? session.currentStepIndex,
         );
   activeProtocol = session;
