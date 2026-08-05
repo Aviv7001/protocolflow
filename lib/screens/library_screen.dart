@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/protocol.dart';
 import '../models/project.dart';
 import '../models/active_protocol.dart';
+import '../models/protocol_publication.dart';
 import '../data/completed_protocols_data.dart';
 import '../services/storage_service.dart';
 import '../services/export_service.dart';
@@ -9,12 +10,15 @@ import '../services/import_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/sync_status_chip.dart';
 import '../widgets/running_protocol_summary_card.dart';
+import '../widgets/publication_status_chip.dart';
 import '../utils/date_time_format.dart';
 import 'protocol_detail_screen.dart';
 import 'projects_screen.dart';
 import 'completed_protocol_detail_screen.dart';
 import 'run_protocol_screen.dart';
 import 'create_protocol_screen.dart';
+import 'shared_protocol_import_screen.dart';
+import 'shared_protocol_scanner_screen.dart';
 
 class LibraryScreen extends StatefulWidget {
   final int initialTabIndex;
@@ -71,6 +75,23 @@ class _LibraryScreenState extends State<LibraryScreen>
   Future<void> _refreshData() async {
     await loadPersistentProtocols();
     await _loadData();
+  }
+
+  Future<void> _scanSharedProtocol() async {
+    final link = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const SharedProtocolScannerScreen(),
+      ),
+    );
+    if (!mounted || link == null || link.isEmpty) return;
+    final imported = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SharedProtocolImportScreen(shareUri: link),
+      ),
+    );
+    if (imported == true) await _loadData();
   }
 
   Widget _refreshableEmpty(String message) {
@@ -141,6 +162,11 @@ class _LibraryScreenState extends State<LibraryScreen>
           : AppBar(
               title: const Text('Library'),
               actions: [
+                IconButton(
+                  tooltip: 'Scan shared protocol',
+                  icon: const Icon(Icons.qr_code_scanner),
+                  onPressed: _scanSharedProtocol,
+                ),
                 IconButton(
                   tooltip: 'Projects',
                   icon: const Icon(Icons.folder_copy_outlined),
@@ -267,6 +293,7 @@ class _LibraryScreenState extends State<LibraryScreen>
             secondValue: formatDate(protocol.createdAt),
             projectChip: _buildProjectChip(protocol.projectId),
             syncStatus: protocol.syncStatus,
+            publicationStatus: protocol.publication?.status,
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
@@ -628,6 +655,7 @@ class _LibraryEntryCard extends StatelessWidget {
     required this.projectChip,
     required this.onTap,
     this.syncStatus,
+    this.publicationStatus,
   });
 
   final String entryId;
@@ -639,6 +667,7 @@ class _LibraryEntryCard extends StatelessWidget {
   final String secondValue;
   final Widget projectChip;
   final ProtocolSyncStatus? syncStatus;
+  final ProtocolPublicationStatus? publicationStatus;
   final VoidCallback onTap;
 
   @override
@@ -729,6 +758,12 @@ class _LibraryEntryCard extends StatelessWidget {
           SyncStatusChip(
             key: Key('library-sync-badge-$entryId'),
             status: syncStatus!,
+            compact: true,
+          ),
+        if (publicationStatus != null)
+          PublicationStatusChip(
+            key: Key('library-publication-badge-$entryId'),
+            status: publicationStatus!,
             compact: true,
           ),
       ],

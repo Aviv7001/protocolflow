@@ -60,6 +60,8 @@ class AuthService {
   static final AuthService instance = AuthService._();
   static const String driveAppDataScope =
       'https://www.googleapis.com/auth/drive.appdata';
+  static const String driveFileScope =
+      'https://www.googleapis.com/auth/drive.file';
   static const String _userKey = 'signed_in_google_user_json';
   static const String _serverClientId = String.fromEnvironment(
     'GOOGLE_SERVER_CLIENT_ID',
@@ -153,12 +155,24 @@ class AuthService {
     }
 
     final account = await _googleSignIn.authenticate(
-      scopeHint: const [driveAppDataScope],
+      scopeHint: const [driveAppDataScope, driveFileScope],
     );
     _currentAccount = account;
     final user = AppUser.fromGoogleAccount(account);
     await _setCurrentUser(user, persist: true);
     return user;
+  }
+
+  Future<Map<String, String>?> authorizationHeadersForPublishing({
+    bool promptIfNecessary = false,
+  }) async {
+    await initialize();
+    final account = _currentAccount;
+    final authorizationClient =
+        account?.authorizationClient ?? _googleSignIn.authorizationClient;
+    return authorizationClient.authorizationHeaders(const [
+      driveFileScope,
+    ], promptIfNecessary: promptIfNecessary);
   }
 
   Future<Map<String, String>?> authorizationHeadersForDrive({

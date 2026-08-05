@@ -6,8 +6,12 @@ import '../models/project.dart';
 import '../models/protocol_additional_data.dart';
 import '../models/protocol_step.dart';
 import '../models/protocol_table.dart';
+import '../models/protocol_publication.dart';
 import '../data/completed_protocols_data.dart';
 import '../services/storage_service.dart';
+import '../services/auth_service.dart';
+import '../services/drive_sync_service.dart';
+import '../services/protocol_publication_service.dart';
 import '../widgets/local_image.dart';
 import '../widgets/sync_status_chip.dart';
 import '../services/docx_export_service.dart';
@@ -19,6 +23,8 @@ import '../widgets/protocol_step_notes_table.dart';
 import '../widgets/protocol_table_preview.dart';
 import '../widgets/phase_segmented_progress.dart';
 import '../widgets/protocolflow_app_bar.dart';
+import '../widgets/protocol_publication_widgets.dart';
+import '../widgets/publication_status_chip.dart';
 import '../widgets/responsive_layout.dart';
 import '../utils/date_time_format.dart';
 import 'run_protocol_screen.dart';
@@ -76,6 +82,7 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
   late Protocol protocol;
   ActiveProtocol? activeState;
   List<Project> _projects = [];
+  bool _publicationBusy = false;
 
   @override
   void initState() {
@@ -95,8 +102,10 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Delete Protocol?'),
-        content: const Text(
-          'Are you sure you want to delete this protocol from your library?',
+        content: Text(
+          protocol.publication?.isPublic == true
+              ? 'Delete this protocol from your library? Its published copy will remain available until you unpublish or delete it separately.'
+              : 'Are you sure you want to delete this protocol from your library?',
         ),
         actions: [
           TextButton(
@@ -123,6 +132,197 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _handlePublicationAction() async {
+    final publication = protocol.publication;
+    if (publication?.status == ProtocolPublicationStatus.published) {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Share published protocol'),
+          content: SingleChildScrollView(
+            child: PublishedProtocolQrCard(publication: publication!),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    await _publishProtocol();
+  }
+
+  Future<void> _publishProtocol() async {
+    final user = AuthService.instance.currentUser;
+    if (user == null) {
+      _showPublicationMessage(
+        'Sign in with Google before publishing a protocol.',
+      );
+      return;
+    }
+    final request = await showDialog<PublishProtocolRequest>(
+      context: context,
+      builder: (context) => PublishProtocolDialog(
+        protocol: protocol,
+        defaultAuthorName: user.displayName ?? user.email,
+      ),
+    );
+    if (request == null || !mounted) return;
+    setState(() => _publicationBusy = true);
+    try {
+      final publication = await ProtocolPublicationService.instance.publish(
+        protocol: protocol,
+        ownerGoogleUserId: user.googleUserId,
+        authorName: user.displayName ?? user.email,
+        anonymous: request.anonymous,
+      );
+      var updated = protocol.copyWith(
+        publication: publication,
+        syncStatus: ProtocolSyncStatus.modified,
+      );
+      updated = await DriveSyncService.instance.syncProtocolAfterLocalSave(
+        updated,
+      );
+      if (!mounted) return;
+      setState(() {
+        protocol = updated;
+        _publicationBusy = false;
+      });
+      _showPublicationMessage(
+        publication.version == 1
+            ? 'Protocol published. Its QR code is ready to share.'
+            : 'Published version ${publication.version}. The existing QR code still works.',
+      );
+    } on PublicationException catch (error) {
+      if (!mounted) return;
+      setState(() => _publicationBusy = false);
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(
+            error.sharingBlocked
+                ? 'Public sharing unavailable'
+                : 'Could not publish',
+          ),
+          content: Text(error.message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  Future<void> _unpublishProtocol() async {
+    final publication = protocol.publication;
+    if (publication == null) return;
+    final approved = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Unpublish protocol?'),
+        content: const Text(
+          'The QR code and sharing link will stop working. The Drive file will remain private so it can be published again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Unpublish'),
+          ),
+        ],
+      ),
+    );
+    if (approved != true || !mounted) return;
+    setState(() => _publicationBusy = true);
+    try {
+      final unpublished = await ProtocolPublicationService.instance.unpublish(
+        publication,
+      );
+      var updated = protocol.copyWith(
+        publication: unpublished,
+        syncStatus: ProtocolSyncStatus.modified,
+      );
+      updated = await DriveSyncService.instance.syncProtocolAfterLocalSave(
+        updated,
+      );
+      if (!mounted) return;
+      setState(() {
+        protocol = updated;
+        _publicationBusy = false;
+      });
+      _showPublicationMessage('Public access was removed.');
+    } on PublicationException catch (error) {
+      if (!mounted) return;
+      setState(() => _publicationBusy = false);
+      _showPublicationMessage(error.message);
+    }
+  }
+
+  Future<void> _deletePublishedCopy() async {
+    final publication = protocol.publication;
+    if (publication == null) return;
+    final approved = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete published copy?'),
+        content: const Text(
+          'This permanently deletes the shared Drive file. Its QR code cannot be restored.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete copy'),
+          ),
+        ],
+      ),
+    );
+    if (approved != true || !mounted) return;
+    setState(() => _publicationBusy = true);
+    try {
+      await ProtocolPublicationService.instance.deletePublishedCopy(
+        publication,
+      );
+      var updated = protocol.copyWith(
+        clearPublication: true,
+        syncStatus: ProtocolSyncStatus.modified,
+      );
+      updated = await DriveSyncService.instance.syncProtocolAfterLocalSave(
+        updated,
+      );
+      if (!mounted) return;
+      setState(() {
+        protocol = updated;
+        _publicationBusy = false;
+      });
+      _showPublicationMessage('Published Drive copy deleted.');
+    } on PublicationException catch (error) {
+      if (!mounted) return;
+      setState(() => _publicationBusy = false);
+      _showPublicationMessage(error.message);
+    }
+  }
+
+  void _showPublicationMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _editProtocol(
@@ -303,6 +503,26 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
               onPressed: () => _editProtocol(context),
               tooltip: 'Edit',
             ),
+          if (!protocol.isTemplate)
+            IconButton(
+              icon: _publicationBusy
+                  ? const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(
+                      protocol.publication?.status ==
+                              ProtocolPublicationStatus.published
+                          ? Icons.qr_code_2
+                          : Icons.public,
+                    ),
+              onPressed: _publicationBusy ? null : _handlePublicationAction,
+              tooltip:
+                  protocol.publication?.status ==
+                      ProtocolPublicationStatus.published
+                  ? 'Share published protocol'
+                  : 'Publish protocol',
+            ),
           IconButton(
             icon: const Icon(Icons.share),
             onPressed: () => _exportProtocol(context),
@@ -389,11 +609,15 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
     final phaseProgress = protocol.isTemplate
         ? null
         : _buildPhaseProgressSection();
+    final publication = protocol.publication == null
+        ? null
+        : _buildPublicationSection();
 
     if (!desktop) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (publication != null) ...[publication, const SizedBox(height: 24)],
           if (phaseProgress != null) ...[
             phaseProgress,
             const SizedBox(height: 24),
@@ -449,12 +673,94 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (publication != null) ...[publication, const SizedBox(height: 24)],
         if (phaseProgress != null) ...[
           phaseProgress,
           const SizedBox(height: 24),
         ],
         desktopColumns,
       ],
+    );
+  }
+
+  Widget _buildPublicationSection() {
+    final publication = protocol.publication!;
+    final user = AuthService.instance.currentUser;
+    final canManage = user?.googleUserId == publication.ownerGoogleUserId;
+    final details = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildSectionHeader('Publication'),
+        const SizedBox(height: 12),
+        PublicationSummary(publication: publication),
+        const SizedBox(height: 12),
+        Text(
+          publication.status == ProtocolPublicationStatus.changesUnpublished
+              ? 'The public QR still opens version ${publication.version}. Publish the update when the current edits are ready.'
+              : publication.status == ProtocolPublicationStatus.unpublished
+              ? 'Public access is disabled. The Drive copy is private.'
+              : 'Anyone with this link can preview and import a read-only snapshot.',
+          style: const TextStyle(color: AppColors.textSecondary),
+        ),
+        if (canManage) ...[
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (publication.status != ProtocolPublicationStatus.published)
+                FilledButton.icon(
+                  onPressed: _publicationBusy ? null : _publishProtocol,
+                  icon: const Icon(Icons.cloud_upload_outlined),
+                  label: Text(
+                    publication.status == ProtocolPublicationStatus.unpublished
+                        ? 'Publish again'
+                        : 'Publish update',
+                  ),
+                ),
+              if (publication.isPublic)
+                OutlinedButton.icon(
+                  onPressed: _publicationBusy ? null : _unpublishProtocol,
+                  icon: const Icon(Icons.public_off_outlined),
+                  label: const Text('Unpublish'),
+                ),
+              TextButton.icon(
+                style: TextButton.styleFrom(foregroundColor: AppColors.error),
+                onPressed: _publicationBusy ? null : _deletePublishedCopy,
+                icon: const Icon(Icons.delete_outline),
+                label: const Text('Delete published copy'),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+    return _buildSectionSurface(
+      key: const Key('detail-publication'),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (!publication.isPublic || constraints.maxWidth < 620) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                details,
+                if (publication.isPublic) ...[
+                  const SizedBox(height: 18),
+                  PublishedProtocolQrCard(publication: publication),
+                ],
+              ],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: details),
+              const SizedBox(width: 24),
+              PublishedProtocolQrCard(publication: publication, qrSize: 150),
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -506,6 +812,11 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
                 label: protocol.isTemplate ? 'TEMPLATE' : 'PROTOCOL',
               ),
               SyncStatusChip(status: protocol.syncStatus, compact: true),
+              if (protocol.publication != null)
+                PublicationStatusChip(
+                  status: protocol.publication!.status,
+                  compact: true,
+                ),
               _buildDetailBadge(
                 icon: Icons.folder_outlined,
                 label: 'Project: ${_projectNameFor(protocol.projectId)}',

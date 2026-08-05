@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/protocol.dart';
+import '../models/protocol_publication.dart';
 import '../models/project.dart';
 import '../models/material.dart';
 import '../models/protocol_additional_data.dart';
@@ -875,6 +876,12 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
         tables: _tables.map((table) => table.deepCopy()).toList(),
         additionalData: _additionalData.map((d) => d.deepCopy()).toList(),
         isTemplate: isTemplate,
+        publication: isUpdating && widget.initialProtocol!.publication != null
+            ? widget.initialProtocol!.publication!.copyWith(
+                status: ProtocolPublicationStatus.changesUnpublished,
+              )
+            : null,
+        importSource: isUpdating ? widget.initialProtocol!.importSource : null,
       );
 
       final existingProtocols = await _storageService.loadProtocols();

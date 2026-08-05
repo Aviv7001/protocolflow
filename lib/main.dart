@@ -11,6 +11,7 @@ import 'theme/app_theme.dart';
 import 'data/completed_protocols_data.dart';
 import 'features/measuring_tools/services/measuring_tool_service.dart';
 import 'features/today_tasks/screens/task_history_screen.dart';
+import 'screens/shared_protocol_import_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,11 +25,14 @@ class ProtocolFlowApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final initialShareUri = Uri.base.queryParameters.containsKey('import')
+        ? Uri.base.toString()
+        : null;
     return MaterialApp(
       title: 'ProtocolFlow',
       debugShowCheckedModeBanner: false,
       theme: ProtocolFlowTheme.lightTheme,
-      initialRoute: '/',
+      initialRoute: initialShareUri == null ? '/' : '/shared_protocol',
       routes: {
         '/': (context) => const HomeScreen(),
         '/create': (context) => const CreateProtocolScreen(),
@@ -38,6 +42,9 @@ class ProtocolFlowApp extends StatelessWidget {
         '/saved_tables': (context) => const SavedTablesScreen(),
         '/user_guide': (context) => const UserGuideScreen(),
         '/task_history': (context) => const TaskHistoryScreen(),
+        '/shared_protocol': (context) => SharedProtocolImportScreen(
+          shareUri: initialShareUri ?? Uri.base.toString(),
+        ),
       },
     );
   }

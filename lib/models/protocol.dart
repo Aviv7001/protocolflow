@@ -2,6 +2,7 @@ import 'material.dart';
 import 'protocol_additional_data.dart';
 import 'protocol_step.dart';
 import 'protocol_table.dart';
+import 'protocol_publication.dart';
 import '../utils/protocol_id.dart';
 
 enum ProtocolSyncStatus {
@@ -45,6 +46,8 @@ class Protocol {
   final List<ProtocolTable> tables;
   final List<ProtocolAdditionalData> additionalData;
   final bool isTemplate;
+  final ProtocolPublication? publication;
+  final ProtocolImportSource? importSource;
 
   Protocol({
     required this.id,
@@ -68,6 +71,8 @@ class Protocol {
     this.tables = const [],
     this.additionalData = const [],
     this.isTemplate = false,
+    this.publication,
+    this.importSource,
   }) : createdAt = createdAt ?? DateTime.now(),
        updatedAt = updatedAt ?? DateTime.now();
 
@@ -124,6 +129,10 @@ class Protocol {
     List<ProtocolTable>? tables,
     List<ProtocolAdditionalData>? additionalData,
     bool? isTemplate,
+    ProtocolPublication? publication,
+    ProtocolImportSource? importSource,
+    bool clearPublication = false,
+    bool clearImportSource = false,
   }) {
     return Protocol(
       id: id ?? this.id,
@@ -151,6 +160,10 @@ class Protocol {
           .map((d) => d.deepCopy())
           .toList(),
       isTemplate: isTemplate ?? this.isTemplate,
+      publication: clearPublication ? null : publication ?? this.publication,
+      importSource: clearImportSource
+          ? null
+          : importSource ?? this.importSource,
     );
   }
 
@@ -184,6 +197,8 @@ class Protocol {
       'tables': tables.map((t) => t.toJson()).toList(),
       'additionalData': additionalData.map((d) => d.toJson()).toList(),
       'isTemplate': isTemplate,
+      'publication': publication?.toJson(),
+      'importSource': importSource?.toJson(),
     };
   }
 
@@ -229,6 +244,16 @@ class Protocol {
           .map((d) => ProtocolAdditionalData.fromJson(d))
           .toList(),
       isTemplate: json['isTemplate'] ?? false,
+      publication: json['publication'] is Map
+          ? ProtocolPublication.fromJson(
+              Map<String, dynamic>.from(json['publication'] as Map),
+            )
+          : null,
+      importSource: json['importSource'] is Map
+          ? ProtocolImportSource.fromJson(
+              Map<String, dynamic>.from(json['importSource'] as Map),
+            )
+          : null,
     );
   }
 

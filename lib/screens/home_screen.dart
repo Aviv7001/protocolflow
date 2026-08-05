@@ -26,6 +26,8 @@ import 'protocol_detail_screen.dart';
 import 'saved_tables_screen.dart';
 import 'dashboard_screen.dart';
 import 'user_guide_screen.dart';
+import 'shared_protocol_import_screen.dart';
+import 'shared_protocol_scanner_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, this.initialLibraryTabIndex});
@@ -458,6 +460,23 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _scanSharedProtocol() async {
+    final link = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const SharedProtocolScannerScreen(),
+      ),
+    );
+    if (!mounted || link == null || link.isEmpty) return;
+    final imported = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SharedProtocolImportScreen(shareUri: link),
+      ),
+    );
+    if (imported == true) await _refreshHome();
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -738,6 +757,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 fontWeight: FontWeight.w700,
               ),
             ),
+          ),
+          IconButton(
+            tooltip: 'Scan shared protocol',
+            onPressed: _scanSharedProtocol,
+            constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+            padding: const EdgeInsets.all(8),
+            icon: const Icon(Icons.qr_code_scanner),
           ),
           IconButton(
             tooltip: 'Settings',

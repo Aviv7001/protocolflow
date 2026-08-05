@@ -8,6 +8,7 @@ import 'package:protocolflow/models/completed_protocol.dart';
 import 'package:protocolflow/models/active_protocol.dart';
 import 'package:protocolflow/models/protocol_additional_data.dart';
 import 'package:protocolflow/models/protocol_step.dart';
+import 'package:protocolflow/models/protocol_publication.dart';
 import 'package:protocolflow/models/protocol_table.dart';
 import 'package:protocolflow/models/step_note.dart';
 import 'package:protocolflow/data/completed_protocols_data.dart';
@@ -196,6 +197,47 @@ void main() {
     expect(find.text('Created by: Aviv Researcher'), findsOneWidget);
     expect(find.text('Project: BCA Study'), findsOneWidget);
     expect(find.byType(ProtocolFlowAppBar), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('published protocol shows badges and attached QR section', (
+    tester,
+  ) async {
+    final published = protocol.copyWith(
+      isTemplate: false,
+      publication: ProtocolPublication(
+        publicationId: 'publication-1',
+        driveFileId: 'drive-file-1',
+        permissionId: 'permission-1',
+        version: 2,
+        publishedAt: DateTime(2026, 8, 5),
+        shareUri:
+            'https://aviv7001.github.io/protocolflow/?import=drive-file-1',
+        contentHash: 'hash-1',
+        ownerGoogleUserId: 'owner-1',
+        authorName: 'Aviv Researcher',
+        anonymous: false,
+        status: ProtocolPublicationStatus.published,
+      ),
+    );
+    SharedPreferences.setMockInitialValues({
+      'protocols_library_json': jsonEncode([published.toJson()]),
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(home: LibraryScreen(initialTabIndex: 1)),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(
+      find.byKey(const Key('library-publication-badge-protocol-1')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('BCA assay'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('detail-publication')), findsOneWidget);
+    expect(find.text('PUBLISHED'), findsWidgets);
+    expect(find.byKey(const Key('published-protocol-qr')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
