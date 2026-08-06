@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/protocol.dart';
@@ -88,7 +89,10 @@ class ProtocolPublicationService {
   ProtocolPublicationService({
     http.Client? client,
     PublicationHeadersProvider? headersProvider,
+    String? publicApiKey,
   }) : _client = client ?? http.Client(),
+       _publicApiKey =
+           publicApiKey ?? const String.fromEnvironment('GOOGLE_DRIVE_API_KEY'),
        _headersProvider =
            headersProvider ??
            ((prompt) => AuthService.instance.authorizationHeadersForPublishing(
@@ -104,6 +108,7 @@ class ProtocolPublicationService {
   static const int _maxPackageBytes = 5 * 1024 * 1024;
 
   final http.Client _client;
+  final String _publicApiKey;
   final PublicationHeadersProvider _headersProvider;
 
   Future<ProtocolPublication> publish({
@@ -480,13 +485,26 @@ class ProtocolPublicationService {
     required String? resourceKey,
     required String unavailableMessage,
   }) async {
+    if (kIsWeb && _publicApiKey.trim().isEmpty) {
+      throw const PublicationException(
+        'Public protocol downloads are not configured for this web build.',
+      );
+    }
     final response = await _client.get(
-      Uri.https('drive.usercontent.google.com', '/download', {
-        'id': fileId,
-        'export': 'download',
-        'confirm': 't',
-        'resourcekey': ?resourceKey,
-      }),
+      _publicApiKey.trim().isNotEmpty
+          ? Uri.parse('$_baseUrl/files/$fileId').replace(
+              queryParameters: {'alt': 'media', 'key': _publicApiKey.trim()},
+            )
+          : Uri.https('drive.usercontent.google.com', '/download', {
+              'id': fileId,
+              'export': 'download',
+              'confirm': 't',
+              'resourcekey': ?resourceKey,
+            }),
+      headers: {
+        if (resourceKey != null && resourceKey.isNotEmpty)
+          'X-Goog-Drive-Resource-Keys': '$fileId/$resourceKey',
+      },
     );
     if (response.statusCode != 200) {
       throw PublicationException(

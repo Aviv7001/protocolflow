@@ -74,7 +74,9 @@ class _SharedProtocolImportScreenState
         _error = error.message;
         _loading = false;
       });
-    } catch (_) {
+    } catch (error, stackTrace) {
+      debugPrint('Shared protocol import failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
       if (!mounted) return;
       setState(() {
         _error = 'The shared protocol could not be opened.';

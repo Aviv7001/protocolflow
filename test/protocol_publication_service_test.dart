@@ -142,6 +142,40 @@ void main() {
     expect(download.package.protocol.title, 'Legacy protocol');
   });
 
+  test('public API key uses the browser-safe Drive media endpoint', () async {
+    final package = PublishedProtocolPackage.create(
+      source: Protocol(
+        id: 'private',
+        title: 'Public protocol',
+        objective: '',
+        description: '',
+        steps: const [],
+      ),
+      publicationId: 'publication-public',
+      version: 1,
+      publishedAt: DateTime.utc(2026, 8, 6),
+      authorName: null,
+    );
+    late Uri requestedUri;
+    final service = ProtocolPublicationService(
+      client: MockClient((request) async {
+        requestedUri = request.url;
+        return http.Response(jsonEncode(package.toJson()), 200);
+      }),
+      headersProvider: (_) async => null,
+      publicApiKey: 'restricted-browser-key',
+    );
+
+    await service.downloadSharedPublication(
+      'https://example.com/?import=public-file',
+    );
+
+    expect(requestedUri.host, 'www.googleapis.com');
+    expect(requestedUri.path, '/drive/v3/files/public-file');
+    expect(requestedUri.queryParameters['alt'], 'media');
+    expect(requestedUri.queryParameters['key'], 'restricted-browser-key');
+  });
+
   test(
     'publishing migrates a legacy snapshot without changing its link',
     () async {
