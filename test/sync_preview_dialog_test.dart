@@ -92,6 +92,48 @@ void main() {
     expect(cancel.onPressed, isNull);
   });
 
+  testWidgets('unreadable cloud item defaults to keeping it in cloud', (
+    tester,
+  ) async {
+    Map<String, DriveDeletionDecision>? appliedDecisions;
+    const preview = DriveSyncPreview.test(
+      items: [
+        DriveSyncPreviewItem(
+          key: 'protocol::damaged',
+          category: 'Protocols',
+          title: 'Damaged protocol',
+          action: DriveSyncActionType.invalid,
+          canKeep: true,
+          note: 'The cloud protocol is incomplete.',
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ProtocolFlowTheme.lightTheme,
+        home: SyncPreviewDialog(
+          syncService: DriveSyncService.instance,
+          promptIfNecessary: false,
+          preparePreview: (_) async => preview,
+          applyPreview: (_, decisions) async {
+            appliedDecisions = Map.of(decisions);
+            return const DriveSyncSummary();
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Keep in cloud'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('approve-sync-preview')));
+    await tester.pumpAndSettle();
+    expect(
+      appliedDecisions?['protocol::damaged'],
+      DriveDeletionDecision.keepEverywhere,
+    );
+  });
+
   testWidgets('sync preview fits a narrow mobile viewport', (tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(360, 740);

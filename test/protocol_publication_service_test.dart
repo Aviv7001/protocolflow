@@ -32,6 +32,7 @@ void main() {
   });
 
   test('shared manifest downloads the selected immutable version', () async {
+    var authorizationRequested = false;
     final source = Protocol(
       id: 'private',
       title: 'Versioned protocol',
@@ -90,7 +91,10 @@ void main() {
     });
     final service = ProtocolPublicationService(
       client: client,
-      headersProvider: (_) async => null,
+      headersProvider: (_) async {
+        authorizationRequested = true;
+        throw StateError('Public downloads must not request authorization.');
+      },
     );
 
     final latest = await service.downloadSharedPublication(
@@ -105,6 +109,7 @@ void main() {
     expect(latest.manifest.versions, hasLength(2));
     expect(historical.package.version, 1);
     expect(historical.package.protocol.title, 'Versioned protocol');
+    expect(authorizationRequested, isFalse);
   });
 
   test('legacy publication link remains downloadable', () async {

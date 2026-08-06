@@ -480,28 +480,14 @@ class ProtocolPublicationService {
     required String? resourceKey,
     required String unavailableMessage,
   }) async {
-    http.Response? response;
-    final authHeaders = await _headersProvider(false);
-    if (authHeaders != null) {
-      response = await _client.get(
-        Uri.parse('$_baseUrl/files/$fileId?alt=media'),
-        headers: {
-          ...authHeaders,
-          if (resourceKey != null)
-            'X-Goog-Drive-Resource-Keys': '$fileId/$resourceKey',
-        },
-      );
-    }
-    if (response == null || response.statusCode != 200) {
-      response = await _client.get(
-        Uri.https('drive.usercontent.google.com', '/download', {
-          'id': fileId,
-          'export': 'download',
-          'confirm': 't',
-          'resourcekey': ?resourceKey,
-        }),
-      );
-    }
+    final response = await _client.get(
+      Uri.https('drive.usercontent.google.com', '/download', {
+        'id': fileId,
+        'export': 'download',
+        'confirm': 't',
+        'resourcekey': ?resourceKey,
+      }),
+    );
     if (response.statusCode != 200) {
       throw PublicationException(
         response.statusCode == 403 || response.statusCode == 404

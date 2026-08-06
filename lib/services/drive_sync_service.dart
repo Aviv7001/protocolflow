@@ -47,7 +47,7 @@ class DriveSyncSummary {
   }
 }
 
-enum DriveSyncActionType { upload, download, delete, conflict }
+enum DriveSyncActionType { upload, download, delete, conflict, invalid }
 
 enum DriveDeletionDecision { deleteEverywhere, keepEverywhere }
 
@@ -58,6 +58,7 @@ class DriveSyncPreviewItem {
   final DriveSyncActionType action;
   final String? deviceId;
   final bool canKeep;
+  final String? note;
 
   const DriveSyncPreviewItem({
     required this.key,
@@ -66,6 +67,7 @@ class DriveSyncPreviewItem {
     required this.action,
     this.deviceId,
     this.canKeep = false,
+    this.note,
   });
 }
 
@@ -392,9 +394,31 @@ class DriveSyncService {
     var localChanges = 0;
     var conflicts = remoteMerge.conflicts.length;
     final changedKeys = <String>{};
+    final invalidRemoteKeys = <String>{};
+    final invalidRemoteReasons = <String, String>{};
+
+    for (final entry in remoteMerge.winners.entries) {
+      final remote = entry.value;
+      final validationError = _recordValidationError(remote);
+      if (validationError == null) continue;
+      invalidRemoteKeys.add(entry.key);
+      final local = localAtStart[entry.key];
+      if (local == null) {
+        invalidRemoteReasons[entry.key] = validationError;
+        continue;
+      }
+      ownEntries[entry.key] = _recordForLocalValue(
+        local,
+        deviceId,
+        ++nextClock,
+      );
+      changedKeys.add(entry.key);
+      localChanges++;
+    }
 
     final keys = <String>{...localAtStart.keys, ...baseline.keys};
     for (final key in keys) {
+      if (invalidRemoteKeys.contains(key)) continue;
       final local = localAtStart[key];
       final previous = baseline[key];
       final remote = remoteMerge.winners[key];
@@ -477,7 +501,10 @@ class DriveSyncService {
     );
     var combined = mergeSyncJournals([...remoteJournals, updatedLocalJournal]);
     for (final conflict in combined.conflicts) {
-      if (conflict.loser.deleted) continue;
+      if (conflict.loser.deleted ||
+          _recordValidationError(conflict.loser) != null) {
+        continue;
+      }
       final preserved = _createConflictRecord(
         source: conflict.loser,
         deviceId: deviceId,
@@ -539,6 +566,7 @@ class DriveSyncService {
       combined: combined,
       changedKeys: changedKeys,
       deletionSources: deletionSources,
+      invalidRemoteReasons: invalidRemoteReasons,
       nextClock: nextClock,
       conflicts: conflicts,
       journalChanged: journalChanged,
@@ -589,12 +617,32 @@ class DriveSyncService {
       ownEntries[restoredRecord.key] = restoredRecord;
       restoredKeys.add(restoredRecord.key);
     }
+    final removedInvalidKeys = <String>{};
+    for (final entry in plan.invalidRemoteReasons.entries) {
+      if (deletionDecisions[entry.key] !=
+          DriveDeletionDecision.deleteEverywhere) {
+        continue;
+      }
+      final source = plan.combined.winners[entry.key];
+      if (source == null) continue;
+      ownEntries[entry.key] = SyncEntityRecord(
+        entityType: source.entityType,
+        entityId: source.entityId,
+        clock: ++nextClock,
+        deviceId: plan.deviceId,
+        deleted: true,
+      );
+      removedInvalidKeys.add(entry.key);
+    }
     final localJournal = SyncJournal(
       deviceId: plan.deviceId,
       entries: ownEntries,
     );
     final combined = mergeSyncJournals([...plan.remoteJournals, localJournal]);
-    final shouldUpload = plan.journalChanged || restoredKeys.isNotEmpty;
+    final shouldUpload =
+        plan.journalChanged ||
+        restoredKeys.isNotEmpty ||
+        removedInvalidKeys.isNotEmpty;
     var uploaded = 0;
     if (shouldUpload) {
       final fileId = await _uploadJsonFile(
@@ -607,7 +655,11 @@ class DriveSyncService {
       );
       await _journalStore.saveDriveFileId(fileId);
       await _journalStore.saveLocalJournal(localJournal);
-      uploaded = {...plan.changedKeys, ...restoredKeys}.length;
+      uploaded = {
+        ...plan.changedKeys,
+        ...restoredKeys,
+        ...removedInvalidKeys,
+      }.length;
     }
 
     final localBeforeApply = await _buildLocalSyncRecords();
@@ -622,12 +674,17 @@ class DriveSyncService {
       );
     }
 
+    final applicableRecords = Map<String, SyncEntityRecord>.fromEntries(
+      combined.winners.entries.where(
+        (entry) => _recordValidationError(entry.value) == null,
+      ),
+    );
     final downloaded = _countAppliedRemoteChanges(
       plan.localAtStart,
-      combined.winners,
+      applicableRecords,
     );
-    await _applySyncRecords(combined.winners);
-    await _journalStore.saveBaseline(combined.winners);
+    await _applySyncRecords(applicableRecords);
+    await _journalStore.saveBaseline(applicableRecords);
     await _storageService.saveDeletedProtocolRecords([]);
     await _storageService.saveDeletedSavedTableIds([]);
     return DriveSyncSummary(
@@ -643,6 +700,21 @@ class DriveSyncService {
       final key = entry.key;
       final after = entry.value;
       final before = plan.localAtStart[key];
+      final invalidReason = plan.invalidRemoteReasons[key];
+      if (invalidReason != null) {
+        items[key] = DriveSyncPreviewItem(
+          key: key,
+          category: _categoryLabel(after.entityType),
+          title: _entityTitle(after),
+          action: DriveSyncActionType.invalid,
+          deviceId: after.deviceId,
+          canKeep: true,
+          note:
+              '$invalidReason Keep it in cloud, or explicitly delete it from '
+              'all devices.',
+        );
+        continue;
+      }
       if (after.deleted) {
         if (before == null && !plan.changedKeys.contains(key)) continue;
         final source = plan.deletionSources[key];
@@ -869,6 +941,64 @@ class DriveSyncService {
 
   bool _isValidProtocol(Protocol protocol) {
     return protocol.id.trim().isNotEmpty && protocol.title.trim().isNotEmpty;
+  }
+
+  String? _recordValidationError(SyncEntityRecord? record) {
+    if (record == null || record.deleted) return null;
+    final data = record.data;
+    if (data == null) return 'The cloud record has no saved data.';
+    try {
+      switch (record.entityType) {
+        case _protocolType:
+          final protocol = Protocol.fromJson(data);
+          if (!_isValidProtocol(protocol) || protocol.id != record.entityId) {
+            return 'The cloud protocol is incomplete or has a mismatched ID.';
+          }
+        case _projectType:
+          final project = Project.fromJson(data);
+          if (project.id != record.entityId || project.name.trim().isEmpty) {
+            return 'The cloud project is incomplete or has a mismatched ID.';
+          }
+        case _completedProtocolType:
+          final completed = CompletedProtocol.fromJson(data);
+          if (completed.id != record.entityId ||
+              !_isValidProtocol(completed.protocol)) {
+            return 'The completed protocol is incomplete or has a mismatched ID.';
+          }
+        case _runningProtocolType:
+          final running = ActiveProtocol.fromJson(data);
+          if (running.protocol.id != record.entityId ||
+              !_isValidProtocol(running.protocol)) {
+            return 'The running protocol is incomplete or has a mismatched ID.';
+          }
+        case _savedTableType:
+          final table = ProtocolTable.fromJson(data);
+          if (table.id != record.entityId || table.title.trim().isEmpty) {
+            return 'The saved table is incomplete or has a mismatched ID.';
+          }
+        case _todayTaskType:
+        case _historyTaskType:
+          final task = Task.fromJson(data);
+          if (task.id != record.entityId) {
+            return 'The task has a mismatched ID.';
+          }
+        case _measuringToolType:
+          final tool = MeasuringTool.fromJson(data);
+          if (tool.id != record.entityId || tool.id.trim().isEmpty) {
+            return 'The measuring tool has a mismatched ID.';
+          }
+        default:
+          return 'This cloud record type is not supported.';
+      }
+    } catch (_) {
+      return 'The cloud record is damaged or uses invalid data.';
+    }
+    return null;
+  }
+
+  @visibleForTesting
+  String? recordValidationErrorForTesting(SyncEntityRecord record) {
+    return _recordValidationError(record);
   }
 
   bool _sameLocalSnapshot(
@@ -2077,6 +2207,7 @@ class _PreparedSyncPlan {
   final SyncMergeResult combined;
   final Set<String> changedKeys;
   final Map<String, SyncEntityRecord> deletionSources;
+  final Map<String, String> invalidRemoteReasons;
   final int nextClock;
   final int conflicts;
   final bool journalChanged;
@@ -2092,6 +2223,7 @@ class _PreparedSyncPlan {
     required this.combined,
     required this.changedKeys,
     required this.deletionSources,
+    required this.invalidRemoteReasons,
     required this.nextClock,
     required this.conflicts,
     required this.journalChanged,

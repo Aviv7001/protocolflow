@@ -59,10 +59,18 @@ class _SyncPreviewDialogState extends State<SyncPreviewDialog> {
         ..clear()
         ..addEntries(
           preview.items
-              .where((item) => item.action == DriveSyncActionType.delete)
-              .map(
+              .where(
                 (item) =>
-                    MapEntry(item.key, DriveDeletionDecision.deleteEverywhere),
+                    item.action == DriveSyncActionType.delete ||
+                    item.action == DriveSyncActionType.invalid,
+              )
+              .map(
+                (item) => MapEntry(
+                  item.key,
+                  item.action == DriveSyncActionType.invalid
+                      ? DriveDeletionDecision.keepEverywhere
+                      : DriveDeletionDecision.deleteEverywhere,
+                ),
               ),
         );
     });
@@ -273,6 +281,7 @@ class _SyncPreviewDialogState extends State<SyncPreviewDialog> {
         initiallyExpanded: entry.value.any(
           (item) =>
               item.action == DriveSyncActionType.delete ||
+              item.action == DriveSyncActionType.invalid ||
               item.action == DriveSyncActionType.conflict,
         ),
         shape: const Border(),
@@ -297,7 +306,9 @@ class _SyncPreviewDialogState extends State<SyncPreviewDialog> {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final hasDecision =
-              item.action == DriveSyncActionType.delete && item.canKeep;
+              (item.action == DriveSyncActionType.delete ||
+                  item.action == DriveSyncActionType.invalid) &&
+              item.canKeep;
           final description = Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -314,7 +325,7 @@ class _SyncPreviewDialogState extends State<SyncPreviewDialog> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      details.label,
+                      item.note ?? details.label,
                       style: TextStyle(color: details.color, fontSize: 12),
                     ),
                   ],
@@ -355,16 +366,27 @@ class _SyncPreviewDialogState extends State<SyncPreviewDialog> {
         value: _deletionDecisions[item.key],
         isExpanded: expanded,
         borderRadius: BorderRadius.circular(6),
-        items: const [
-          DropdownMenuItem(
-            value: DriveDeletionDecision.deleteEverywhere,
-            child: Text('Delete everywhere'),
-          ),
-          DropdownMenuItem(
-            value: DriveDeletionDecision.keepEverywhere,
-            child: Text('Keep everywhere'),
-          ),
-        ],
+        items: item.action == DriveSyncActionType.invalid
+            ? const [
+                DropdownMenuItem(
+                  value: DriveDeletionDecision.keepEverywhere,
+                  child: Text('Keep in cloud'),
+                ),
+                DropdownMenuItem(
+                  value: DriveDeletionDecision.deleteEverywhere,
+                  child: Text('Delete everywhere'),
+                ),
+              ]
+            : const [
+                DropdownMenuItem(
+                  value: DriveDeletionDecision.deleteEverywhere,
+                  child: Text('Delete everywhere'),
+                ),
+                DropdownMenuItem(
+                  value: DriveDeletionDecision.keepEverywhere,
+                  child: Text('Keep everywhere'),
+                ),
+              ],
         onChanged: (value) {
           if (value == null) return;
           setState(() => _deletionDecisions[item.key] = value);
@@ -461,6 +483,12 @@ class _SummaryChip extends StatelessWidget {
       color: AppColors.warning,
       label: 'Preserve a conflict copy',
       shortLabel: 'Conflict',
+    ),
+    DriveSyncActionType.invalid => (
+      icon: Icons.cloud_off_outlined,
+      color: AppColors.error,
+      label: 'Unreadable cloud item',
+      shortLabel: 'Unreadable',
     ),
   };
 }
