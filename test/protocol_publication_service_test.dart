@@ -302,6 +302,257 @@ void main() {
     },
   );
 
+  test('stale second device reuses the protocol publication root', () async {
+    final existingPackage = PublishedProtocolPackage.create(
+      source: Protocol(
+        id: 'protocol-1',
+        title: 'Shared protocol',
+        objective: '',
+        description: '',
+        steps: const [],
+      ),
+      publicationId: 'publication-1',
+      version: 1,
+      publishedAt: DateTime.utc(2026, 8, 8),
+      authorName: 'Owner',
+    );
+    final manifest = PublishedProtocolManifest(
+      publicationId: 'publication-1',
+      title: 'Shared protocol',
+      latestVersion: 1,
+      updatedAt: existingPackage.publishedAt,
+      versions: [
+        PublishedProtocolVersion(
+          version: 1,
+          publishedAt: existingPackage.publishedAt,
+          authorName: 'Owner',
+          fileId: 'version-1',
+          contentHash: existingPackage.contentHash,
+        ),
+      ],
+    );
+    var createdRoot = false;
+    final client = MockClient((request) async {
+      if (request.method == 'GET' && request.url.path == '/drive/v3/files') {
+        final query = request.url.queryParameters['q'] ?? '';
+        if (query.contains('protocolflowFolder')) {
+          return http.Response(
+            jsonEncode({
+              'files': [
+                {'id': 'folder'},
+              ],
+            }),
+            200,
+          );
+        }
+        if (query.contains('protocolflowSourceProtocolId')) {
+          return http.Response(
+            jsonEncode({
+              'files': [
+                {
+                  'id': 'root-file',
+                  'appProperties': {
+                    'protocolflowSourceProtocolId': 'protocol-1',
+                  },
+                },
+              ],
+            }),
+            200,
+          );
+        }
+      }
+      if (request.method == 'GET' &&
+          request.url.path == '/drive/v3/files/root-file' &&
+          request.url.queryParameters['alt'] == 'media') {
+        return http.Response(jsonEncode(manifest.toJson()), 200);
+      }
+      if (request.method == 'GET' &&
+          request.url.path.endsWith('/permissions')) {
+        return http.Response(
+          jsonEncode({
+            'permissions': [
+              {'id': 'reader', 'type': 'anyone', 'role': 'reader'},
+            ],
+          }),
+          200,
+        );
+      }
+      if (request.method == 'POST' &&
+          request.url.path == '/upload/drive/v3/files') {
+        if (request.body.contains('protocolflowPublishedManifest')) {
+          createdRoot = true;
+        }
+        return http.Response(jsonEncode({'id': 'version-2'}), 200);
+      }
+      if (request.method == 'GET' &&
+          request.url.path == '/drive/v3/files/version-2') {
+        return http.Response(jsonEncode({}), 200);
+      }
+      if (request.method == 'PATCH' &&
+          request.url.path.endsWith('/root-file')) {
+        return http.Response('', 200);
+      }
+      if (request.method == 'GET' &&
+          request.url.path == '/drive/v3/files/root-file') {
+        return http.Response(jsonEncode({}), 200);
+      }
+      return http.Response(
+        'Unexpected request: ${request.method} ${request.url}',
+        500,
+      );
+    });
+    final service = ProtocolPublicationService(
+      client: client,
+      headersProvider: (_) async => {'Authorization': 'Bearer test'},
+    );
+
+    final publication = await service.publish(
+      protocol: Protocol(
+        id: 'protocol-1',
+        title: 'Shared protocol',
+        objective: '',
+        description: '',
+        steps: const [],
+      ),
+      ownerGoogleUserId: 'owner-1',
+      authorName: 'Owner',
+      anonymous: false,
+    );
+
+    expect(publication.driveFileId, 'root-file');
+    expect(publication.publicationId, 'publication-1');
+    expect(publication.version, 2);
+    expect(createdRoot, isFalse);
+  });
+
+  test('missing root during update does not rotate the sharing link', () async {
+    final package = PublishedProtocolPackage.create(
+      source: Protocol(
+        id: 'protocol-1',
+        title: 'Shared protocol',
+        objective: '',
+        description: '',
+        steps: const [],
+      ),
+      publicationId: 'publication-1',
+      version: 1,
+      publishedAt: DateTime.utc(2026, 8, 8),
+      authorName: 'Owner',
+    );
+    final manifest = PublishedProtocolManifest(
+      publicationId: 'publication-1',
+      title: 'Shared protocol',
+      latestVersion: 1,
+      updatedAt: package.publishedAt,
+      versions: [
+        PublishedProtocolVersion(
+          version: 1,
+          publishedAt: package.publishedAt,
+          fileId: 'version-1',
+          contentHash: package.contentHash,
+        ),
+      ],
+    );
+    var createdRoot = false;
+    final client = MockClient((request) async {
+      if (request.method == 'GET' && request.url.path == '/drive/v3/files') {
+        final query = request.url.queryParameters['q'] ?? '';
+        return http.Response(
+          jsonEncode({
+            'files': query.contains('protocolflowFolder')
+                ? [
+                    {'id': 'folder'},
+                  ]
+                : [],
+          }),
+          200,
+        );
+      }
+      if (request.method == 'GET' &&
+          request.url.path == '/drive/v3/files/root-file' &&
+          request.url.queryParameters['alt'] == 'media') {
+        return http.Response(jsonEncode(manifest.toJson()), 200);
+      }
+      if (request.method == 'GET' &&
+          request.url.path.endsWith('/permissions')) {
+        return http.Response(
+          jsonEncode({
+            'permissions': [
+              {'id': 'reader', 'type': 'anyone', 'role': 'reader'},
+            ],
+          }),
+          200,
+        );
+      }
+      if (request.method == 'POST' &&
+          request.url.path == '/upload/drive/v3/files') {
+        if (request.body.contains('protocolflowPublishedManifest')) {
+          createdRoot = true;
+        }
+        return http.Response(jsonEncode({'id': 'version-2'}), 200);
+      }
+      if (request.method == 'GET' &&
+          request.url.path == '/drive/v3/files/version-2') {
+        return http.Response(jsonEncode({}), 200);
+      }
+      if (request.method == 'PATCH' &&
+          request.url.path == '/upload/drive/v3/files/root-file') {
+        return http.Response('', 404);
+      }
+      if (request.method == 'PATCH' &&
+          request.url.path == '/drive/v3/files/root-file') {
+        return http.Response('', 200);
+      }
+      if (request.method == 'DELETE' &&
+          request.url.path == '/drive/v3/files/version-2') {
+        return http.Response('', 204);
+      }
+      return http.Response(
+        'Unexpected request: ${request.method} ${request.url}',
+        500,
+      );
+    });
+    final service = ProtocolPublicationService(
+      client: client,
+      headersProvider: (_) async => {'Authorization': 'Bearer test'},
+    );
+    final protocol = Protocol(
+      id: 'protocol-1',
+      title: 'Shared protocol',
+      objective: '',
+      description: '',
+      steps: const [],
+      publication: ProtocolPublication(
+        publicationId: 'publication-1',
+        driveFileId: 'root-file',
+        version: 1,
+        publishedAt: package.publishedAt,
+        shareUri: 'https://example.com/?import=root-file',
+        contentHash: package.contentHash,
+        ownerGoogleUserId: 'owner-1',
+        anonymous: false,
+        status: ProtocolPublicationStatus.published,
+      ),
+    );
+
+    await expectLater(
+      service.publish(
+        protocol: protocol,
+        ownerGoogleUserId: 'owner-1',
+        authorName: 'Owner',
+        anonymous: false,
+      ),
+      throwsA(
+        isA<PublicationException>().having(
+          (error) => error.message,
+          'message',
+          contains('sharing link was kept unchanged'),
+        ),
+      ),
+    );
+    expect(createdRoot, isFalse);
+  });
+
   test('corporate public-sharing restriction is reported clearly', () async {
     var folderNumber = 0;
     var rolledBack = false;

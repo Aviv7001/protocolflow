@@ -298,19 +298,36 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
       await ProtocolPublicationService.instance.deletePublishedCopy(
         publication,
       );
-      var updated = protocol.copyWith(
+      await StorageService().clearPublicationReferences(
+        publication.publicationId,
+      );
+      await loadPersistentProtocols();
+      final updated = protocol.copyWith(
         clearPublication: true,
         syncStatus: ProtocolSyncStatus.modified,
-      );
-      updated = await DriveSyncService.instance.syncProtocolAfterLocalSave(
-        updated,
       );
       if (!mounted) return;
       setState(() {
         protocol = updated;
+        if (activeState != null) {
+          ActiveProtocol? refreshed;
+          if (activeProtocol?.protocol.id == protocol.id) {
+            refreshed = activeProtocol;
+          } else {
+            for (final running in runningProtocols) {
+              if (running.protocol.id == protocol.id) {
+                refreshed = running;
+                break;
+              }
+            }
+          }
+          activeState = refreshed ?? activeState!.copyWith(protocol: updated);
+        }
         _publicationBusy = false;
       });
-      _showPublicationMessage('Published Drive copy deleted.');
+      _showPublicationMessage(
+        'Published Drive copy and attached QR links deleted.',
+      );
     } on PublicationException catch (error) {
       if (!mounted) return;
       setState(() => _publicationBusy = false);

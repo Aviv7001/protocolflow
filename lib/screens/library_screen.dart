@@ -627,6 +627,7 @@ class _LibraryScreenState extends State<LibraryScreen>
             secondValue: dateStr,
             projectChip: _buildProjectChip(completed.protocol.projectId),
             syncStatus: completed.syncStatus,
+            publicationStatus: completed.protocol.publication?.status,
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(

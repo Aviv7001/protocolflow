@@ -435,6 +435,45 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('completed detail keeps the published parent QR', (tester) async {
+    final published = protocol.copyWith(
+      isTemplate: false,
+      publication: ProtocolPublication(
+        publicationId: 'publication-1',
+        driveFileId: 'manifest-file',
+        version: 2,
+        publishedAt: DateTime.utc(2026, 8, 9),
+        shareUri:
+            'https://aviv7001.github.io/protocolflow/?import=manifest-file',
+        contentHash: 'hash-2',
+        ownerGoogleUserId: 'owner-1',
+        anonymous: false,
+        status: ProtocolPublicationStatus.published,
+      ),
+    );
+    final completed = CompletedProtocol(
+      id: 'completed-published',
+      protocol: published,
+      notes: const [],
+      completedAt: DateTime(2026, 8, 9),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CompletedProtocolDetailScreen(completedProtocol: completed),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('completed-detail-publication')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('published-protocol-qr')), findsOneWidget);
+    expect(find.text('Version 2'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('completed detail mirrors builder layout and timeline', (
     tester,
   ) async {

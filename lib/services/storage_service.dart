@@ -374,6 +374,69 @@ class StorageService {
     }
   }
 
+  Future<void> clearPublicationReferences(String publicationId) async {
+    if (publicationId.trim().isEmpty) return;
+
+    Protocol clearFromProtocol(Protocol protocol) {
+      if (protocol.publication?.publicationId != publicationId) {
+        return protocol;
+      }
+      return protocol.copyWith(
+        clearPublication: true,
+        syncStatus: ProtocolSyncStatus.modified,
+      );
+    }
+
+    final protocols = await loadProtocols();
+    if (protocols.any(
+      (protocol) => protocol.publication?.publicationId == publicationId,
+    )) {
+      await saveProtocols(protocols.map(clearFromProtocol).toList());
+    }
+
+    final completed = await loadCompletedProtocols();
+    if (completed.any(
+      (item) => item.protocol.publication?.publicationId == publicationId,
+    )) {
+      await saveCompletedProtocols(
+        completed
+            .map(
+              (item) =>
+                  item.protocol.publication?.publicationId == publicationId
+                  ? item.copyWith(
+                      protocol: clearFromProtocol(item.protocol),
+                      syncStatus: ProtocolSyncStatus.modified,
+                    )
+                  : item,
+            )
+            .toList(),
+      );
+    }
+
+    final active = await loadActiveProtocol();
+    if (active?.protocol.publication?.publicationId == publicationId) {
+      await saveActiveProtocol(
+        active!.copyWith(protocol: clearFromProtocol(active.protocol)),
+      );
+    }
+
+    final running = await loadRunningProtocols();
+    if (running.any(
+      (item) => item.protocol.publication?.publicationId == publicationId,
+    )) {
+      await saveRunningProtocols(
+        running
+            .map(
+              (item) =>
+                  item.protocol.publication?.publicationId == publicationId
+                  ? item.copyWith(protocol: clearFromProtocol(item.protocol))
+                  : item,
+            )
+            .toList(),
+      );
+    }
+  }
+
   Future<void> saveSavedTables(
     List<ProtocolTable> tables, {
     bool markPending = true,

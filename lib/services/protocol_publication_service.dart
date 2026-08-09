@@ -78,6 +78,13 @@ class _OwnerPublicationRoot {
   int get latestVersion => manifest?.latestVersion ?? legacyPackage!.version;
 }
 
+class _PublicationRootFile {
+  const _PublicationRootFile({required this.id, this.resourceKey});
+
+  final String id;
+  final String? resourceKey;
+}
+
 class _GrantedPermission {
   const _GrantedPermission({required this.fileId, required this.permissionId});
 
@@ -134,20 +141,55 @@ class ProtocolPublicationService {
       );
     }
     final headers = await _requireHeaders(promptIfNecessary: true);
-    final publicationId = current?.publicationId ?? _newPublicationId();
     final folderId = await _sharedProtocolsFolder(headers);
-    final existingRoot = current != null && current.driveFileId.isNotEmpty
+    final discoveredRootFile = await _findPublicationRoot(
+      folderId: folderId,
+      sourceProtocolId: protocol.id,
+      headers: headers,
+    );
+    final localRoot =
+        discoveredRootFile == null &&
+            current != null &&
+            current.driveFileId.isNotEmpty
         ? await _loadOwnerPublicationRoot(
             fileId: current.driveFileId,
             resourceKey: current.resourceKey,
             headers: headers,
           )
         : null;
-    if (existingRoot != null && existingRoot.publicationId != publicationId) {
-      throw const PublicationException(
-        'The published protocol identity does not match this local protocol.',
+    var rootFile = discoveredRootFile;
+    var existingRoot = rootFile == null
+        ? localRoot
+        : await _loadOwnerPublicationRoot(
+            fileId: rootFile.id,
+            resourceKey: rootFile.resourceKey,
+            headers: headers,
+          );
+    if (rootFile == null && localRoot != null) {
+      rootFile = _PublicationRootFile(
+        id: current!.driveFileId,
+        resourceKey: current.resourceKey,
       );
     }
+    if (existingRoot == null && current != null) {
+      final recoveredRoot = await _findPublicationRoot(
+        folderId: folderId,
+        publicationId: current.publicationId,
+        headers: headers,
+      );
+      if (recoveredRoot != null) {
+        rootFile = recoveredRoot;
+        existingRoot = await _loadOwnerPublicationRoot(
+          fileId: recoveredRoot.id,
+          resourceKey: recoveredRoot.resourceKey,
+          headers: headers,
+        );
+      }
+    }
+    final publicationId =
+        existingRoot?.publicationId ??
+        current?.publicationId ??
+        _newPublicationId();
     final previousVersion =
         existingRoot?.latestVersion ?? current?.version ?? 0;
     final version = previousVersion + 1;
@@ -162,8 +204,10 @@ class ProtocolPublicationService {
     );
     final createdFileIds = <String>[];
     final restoredPublicPermissions = <_GrantedPermission>[];
-    String? rootFileId = existingRoot == null ? null : current?.driveFileId;
-    String? permissionId = current?.permissionId;
+    String? rootFileId = existingRoot == null ? null : rootFile?.id;
+    String? permissionId = rootFileId == current?.driveFileId
+        ? current?.permissionId
+        : null;
     try {
       if (rootFileId != null) {
         permissionId = await _ensureAnyoneReader(
@@ -225,8 +269,17 @@ class ProtocolPublicationService {
           fileName: _publishedFileName(protocol.title),
           content: manifestContent,
           headers: headers,
+          appProperties: {
+            'protocolflowPublishedManifest': 'true',
+            'protocolflowPublicationId': publicationId,
+            'protocolflowSourceProtocolId': protocol.id,
+          },
         );
-        if (!updated) rootFileId = null;
+        if (!updated) {
+          throw const PublicationException(
+            'The existing published protocol could not be updated. Its sharing link was kept unchanged; sync and try again.',
+          );
+        }
       }
       if (rootFileId == null) {
         rootFileId = await _createPublishedFile(
@@ -237,6 +290,7 @@ class ProtocolPublicationService {
           appProperties: {
             'protocolflowPublishedManifest': 'true',
             'protocolflowPublicationId': publicationId,
+            'protocolflowSourceProtocolId': protocol.id,
           },
         );
         createdFileIds.add(rootFileId);
@@ -572,6 +626,46 @@ class ProtocolPublicationService {
     );
   }
 
+  Future<_PublicationRootFile?> _findPublicationRoot({
+    required String folderId,
+    required Map<String, String> headers,
+    String? sourceProtocolId,
+    String? publicationId,
+  }) async {
+    final propertyKey = sourceProtocolId != null
+        ? 'protocolflowSourceProtocolId'
+        : 'protocolflowPublicationId';
+    final propertyValue = sourceProtocolId ?? publicationId;
+    if (propertyValue == null || propertyValue.isEmpty) return null;
+    final escapedValue = propertyValue.replaceAll("'", "\\'");
+    final query = Uri.encodeQueryComponent(
+      "'$folderId' in parents and trashed = false "
+      "and appProperties has { key='$propertyKey' and value='$escapedValue' }",
+    );
+    final response = await _client.get(
+      Uri.parse(
+        '$_baseUrl/files?spaces=drive&q=$query&fields=files(id,resourceKey,createdTime,appProperties)&orderBy=createdTime&pageSize=10',
+      ),
+      headers: headers,
+    );
+    _throwDriveError(response, operation: 'find the published protocol');
+    final decoded = jsonDecode(response.body);
+    final files = decoded is Map ? decoded['files'] : null;
+    if (files is! List || files.isEmpty || files.first is! Map) return null;
+    final matchingFiles = files.whereType<Map>().where((file) {
+      final properties = file['appProperties'];
+      return properties is Map && properties[propertyKey] == propertyValue;
+    });
+    if (matchingFiles.isEmpty) return null;
+    final first = matchingFiles.first;
+    final id = first['id']?.toString() ?? '';
+    if (id.isEmpty) return null;
+    return _PublicationRootFile(
+      id: id,
+      resourceKey: first['resourceKey']?.toString(),
+    );
+  }
+
   Future<String> _findOrCreateFolder({
     required String role,
     required String name,
@@ -651,7 +745,18 @@ class ProtocolPublicationService {
     required String fileName,
     required String content,
     required Map<String, String> headers,
+    required Map<String, String> appProperties,
   }) async {
+    final metadataResponse = await _client.patch(
+      Uri.parse('$_baseUrl/files/$fileId'),
+      headers: {...headers, 'Content-Type': 'application/json; charset=UTF-8'},
+      body: jsonEncode({'name': fileName, 'appProperties': appProperties}),
+    );
+    if (metadataResponse.statusCode == 404) return false;
+    _throwDriveError(
+      metadataResponse,
+      operation: 'identify the published protocol',
+    );
     final mediaResponse = await _client.patch(
       Uri.parse('$_uploadBaseUrl/files/$fileId?uploadType=media'),
       headers: {...headers, 'Content-Type': 'application/json; charset=UTF-8'},
@@ -659,14 +764,6 @@ class ProtocolPublicationService {
     );
     if (mediaResponse.statusCode == 404) return false;
     _throwDriveError(mediaResponse, operation: 'update the published protocol');
-    final metadataResponse = await _client.patch(
-      Uri.parse('$_baseUrl/files/$fileId'),
-      headers: {...headers, 'Content-Type': 'application/json; charset=UTF-8'},
-      body: jsonEncode({'name': fileName}),
-    );
-    // The manifest content is authoritative; a stale display name must not
-    // roll back a version that is already referenced by the public manifest.
-    if (metadataResponse.statusCode == 404) return true;
     return true;
   }
 

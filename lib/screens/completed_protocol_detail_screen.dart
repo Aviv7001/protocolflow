@@ -11,6 +11,7 @@ import 'package:protocolflow/widgets/protocol_step_actions_table.dart';
 import 'package:protocolflow/widgets/protocol_step_notes_table.dart';
 import 'package:protocolflow/widgets/protocol_table_preview.dart';
 import 'package:protocolflow/widgets/protocolflow_app_bar.dart';
+import 'package:protocolflow/widgets/protocol_publication_widgets.dart';
 import 'package:protocolflow/widgets/responsive_layout.dart';
 import 'package:protocolflow/widgets/sync_status_chip.dart';
 import 'package:protocolflow/data/completed_protocols_data.dart';
@@ -201,6 +202,9 @@ class _CompletedProtocolDetailScreenState
       context,
       completedDate,
     );
+    final publication = protocol.publication == null
+        ? null
+        : _buildPublicationSection(context);
     final samples = protocol.samples.isEmpty
         ? null
         : _buildSamplesSection(context);
@@ -220,6 +224,7 @@ class _CompletedProtocolDetailScreenState
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (publication != null) ...[publication, const SizedBox(height: 24)],
           information,
           if (samples != null) ...[const SizedBox(height: 24), samples],
           const SizedBox(height: 24),
@@ -239,7 +244,7 @@ class _CompletedProtocolDetailScreenState
       );
     }
 
-    return Row(
+    final desktopColumns = Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
@@ -274,6 +279,61 @@ class _CompletedProtocolDetailScreenState
           ),
         ),
       ],
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (publication != null) ...[publication, const SizedBox(height: 24)],
+        desktopColumns,
+      ],
+    );
+  }
+
+  Widget _buildPublicationSection(BuildContext context) {
+    final publication = completedProtocol.protocol.publication!;
+    final details = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildSectionHeader(context, 'Publication'),
+        const SizedBox(height: 12),
+        PublicationSummary(publication: publication),
+        const SizedBox(height: 12),
+        Text(
+          publication.isPublic
+              ? 'This completed run is linked to published protocol version ${publication.version}.'
+              : 'This completed run is linked to a publication whose public access is disabled.',
+          style: const TextStyle(color: AppColors.textSecondary),
+        ),
+      ],
+    );
+    return _buildSectionSurface(
+      context,
+      key: const Key('completed-detail-publication'),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (!publication.isPublic || constraints.maxWidth < 620) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                details,
+                if (publication.isPublic) ...[
+                  const SizedBox(height: 18),
+                  PublishedProtocolQrCard(publication: publication),
+                ],
+              ],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: details),
+              const SizedBox(width: 24),
+              PublishedProtocolQrCard(publication: publication, qrSize: 150),
+            ],
+          );
+        },
+      ),
     );
   }
 
