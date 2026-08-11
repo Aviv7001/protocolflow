@@ -7,6 +7,8 @@ import 'plate_wizard_samples_screen.dart';
 import '../widgets/protocolflow_app_bar.dart';
 import '../features/staining_table/models/staining_wizard.dart';
 import '../widgets/horizontal_table_scroll.dart';
+import '../theme/app_colors.dart';
+import '../widgets/table_workspace.dart';
 
 class TableDataEditorScreen extends StatefulWidget {
   final List<ProtocolTable> tables;
@@ -344,11 +346,13 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
       },
       child: Scaffold(
         appBar: ProtocolFlowAppBar(
-          title: _type == TableType.materialList
-              ? 'Material List Editor'
-              : _type == TableType.generic
-              ? 'Generic Table Editor'
-              : 'Edit Table',
+          title: _title.isEmpty
+              ? (_type == TableType.materialList
+                    ? 'Material List Editor'
+                    : _type == TableType.generic
+                    ? 'Generic Table Editor'
+                    : 'Edit Table')
+              : _title,
           actions: [
             IconButton(
               tooltip: 'Save table',
@@ -359,6 +363,31 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
         ),
         body: Column(
           children: [
+            Container(
+              width: double.infinity,
+              color: AppColors.surface,
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 11),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  TableMetadataBadge(
+                    label: _type == TableType.materialList
+                        ? 'Material list'
+                        : _type == TableType.generic
+                        ? 'Generic table'
+                        : _type == TableType.plateLayout
+                        ? 'Plate layout'
+                        : 'Table editor',
+                    icon: _type == TableType.materialList
+                        ? Icons.inventory_2_outlined
+                        : _type == TableType.plateLayout
+                        ? Icons.grid_on_outlined
+                        : Icons.table_chart_outlined,
+                  ),
+                ],
+              ),
+            ),
             if (_type == TableType.plateLayout) _buildPlateWizardHeader(),
             if (_allTables.length > 1) _buildTableNavigation(),
             const Divider(height: 1),
@@ -428,7 +457,7 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
   Widget _buildPlateWizardHeader() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      color: Colors.blue.shade50,
+      color: AppColors.surfaceContainer,
       child: const Text(
         'Plate Layout Preview (Zoomable)',
         style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
@@ -439,78 +468,84 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
   Widget _buildSpreadsheet() {
     return Padding(
       padding: const EdgeInsets.all(16),
-      child: HorizontalTableScroll(
-        minWidth: 640,
-        child: InteractiveViewer(
-          transformationController: _transformationController,
-          constrained: false,
-          boundaryMargin: const EdgeInsets.all(1000),
-          minScale: 0.1,
-          maxScale: 3,
-          child: DataTable(
-            columnSpacing: 12,
-            headingRowHeight: 50,
-            dataRowMinHeight: 60,
-            dataRowMaxHeight: 100,
-            columns: [
-              const DataColumn(
-                label: Text('#', style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
-              ..._colHeaders.map(
-                (h) => DataColumn(
+      child: TableWorkspaceSection(
+        padding: EdgeInsets.zero,
+        child: HorizontalTableScroll(
+          minWidth: 640,
+          child: InteractiveViewer(
+            transformationController: _transformationController,
+            constrained: false,
+            boundaryMargin: const EdgeInsets.all(1000),
+            minScale: 0.1,
+            maxScale: 3,
+            child: DataTable(
+              columnSpacing: 12,
+              headingRowHeight: 50,
+              dataRowMinHeight: 60,
+              dataRowMaxHeight: 100,
+              columns: [
+                const DataColumn(
                   label: Text(
-                    h,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.blue,
-                      fontSize: 12,
-                    ),
+                    '#',
+                    style: TextStyle(fontWeight: FontWeight.bold),
                   ),
                 ),
-              ),
-            ],
-            rows: List<DataRow>.generate(_data.length, (rIdx) {
-              return DataRow(
-                cells: [
-                  DataCell(
-                    Text(
-                      _rowHeaders[rIdx],
+                ..._colHeaders.map(
+                  (h) => DataColumn(
+                    label: Text(
+                      h,
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
-                        color: Colors.blue,
+                        color: AppColors.primary,
                         fontSize: 12,
                       ),
                     ),
                   ),
-                  ..._data[rIdx].asMap().entries.map((entry) {
-                    final cIdx = entry.key;
-                    final value = entry.value;
-                    final colorStr = _cellColors[rIdx][cIdx];
-
-                    return DataCell(
-                      Container(
-                        constraints: const BoxConstraints(minWidth: 60),
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        alignment: Alignment.centerLeft,
-                        decoration: BoxDecoration(
-                          color: _parseHexColor(colorStr),
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                        child: Text(
-                          value.toString().isEmpty ? '...' : value.toString(),
-                          style: const TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          maxLines: 4,
-                          overflow: TextOverflow.ellipsis,
+                ),
+              ],
+              rows: List<DataRow>.generate(_data.length, (rIdx) {
+                return DataRow(
+                  cells: [
+                    DataCell(
+                      Text(
+                        _rowHeaders[rIdx],
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.primary,
+                          fontSize: 12,
                         ),
                       ),
-                    );
-                  }),
-                ],
-              );
-            }),
+                    ),
+                    ..._data[rIdx].asMap().entries.map((entry) {
+                      final cIdx = entry.key;
+                      final value = entry.value;
+                      final colorStr = _cellColors[rIdx][cIdx];
+
+                      return DataCell(
+                        Container(
+                          constraints: const BoxConstraints(minWidth: 60),
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          alignment: Alignment.centerLeft,
+                          decoration: BoxDecoration(
+                            color: _parseHexColor(colorStr),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                          child: Text(
+                            value.toString().isEmpty ? '...' : value.toString(),
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            maxLines: 4,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      );
+                    }),
+                  ],
+                );
+              }),
+            ),
           ),
         ),
       ),
@@ -520,86 +555,89 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
   Widget _buildZoomableGrid() {
     return Padding(
       padding: const EdgeInsets.all(16),
-      child: HorizontalTableScroll(
-        minWidth: 640,
-        child: InteractiveViewer(
-          transformationController: _transformationController,
-          constrained: false,
-          boundaryMargin: const EdgeInsets.all(1000),
-          minScale: 0.1,
-          maxScale: 5.0,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const SizedBox(width: 40),
-                  ..._colHeaders.map(
-                    (h) => SizedBox(
-                      width: 69,
-                      child: Center(
+      child: TableWorkspaceSection(
+        padding: EdgeInsets.zero,
+        child: HorizontalTableScroll(
+          minWidth: 640,
+          child: InteractiveViewer(
+            transformationController: _transformationController,
+            constrained: false,
+            boundaryMargin: const EdgeInsets.all(1000),
+            minScale: 0.1,
+            maxScale: 5.0,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(width: 40),
+                    ..._colHeaders.map(
+                      (h) => SizedBox(
+                        width: 69,
+                        child: Center(
+                          child: Text(
+                            h,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                ...List<Widget>.generate(_data.length, (rIdx) {
+                  return Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 40,
                         child: Text(
-                          h,
+                          _rowHeaders[rIdx],
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 10,
                           ),
                         ),
                       ),
-                    ),
-                  ),
-                ],
-              ),
-              ...List<Widget>.generate(_data.length, (rIdx) {
-                return Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SizedBox(
-                      width: 40,
-                      child: Text(
-                        _rowHeaders[rIdx],
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 10,
-                        ),
-                      ),
-                    ),
-                    ...List<Widget>.generate(_data[rIdx].length, (cIdx) {
-                      final val = _data[rIdx][cIdx].toString();
-                      final colorStr = _cellColors[rIdx][cIdx];
-                      return Container(
-                        width: 65,
-                        height: 65,
-                        margin: const EdgeInsets.all(2),
-                        decoration: BoxDecoration(
-                          color: colorStr.isEmpty
-                              ? Colors.grey.shade200
-                              : _parseHexColor(colorStr),
-                          border: Border.all(color: Colors.blue.shade300),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(2.0),
-                            child: Text(
-                              val,
-                              style: const TextStyle(
-                                fontSize: 8,
-                                fontWeight: FontWeight.bold,
+                      ...List<Widget>.generate(_data[rIdx].length, (cIdx) {
+                        final val = _data[rIdx][cIdx].toString();
+                        final colorStr = _cellColors[rIdx][cIdx];
+                        return Container(
+                          width: 65,
+                          height: 65,
+                          margin: const EdgeInsets.all(2),
+                          decoration: BoxDecoration(
+                            color: colorStr.isEmpty
+                                ? Colors.grey.shade200
+                                : _parseHexColor(colorStr),
+                            border: Border.all(color: AppColors.outline),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(2.0),
+                              child: Text(
+                                val,
+                                style: const TextStyle(
+                                  fontSize: 8,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.center,
+                                maxLines: 4,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              textAlign: TextAlign.center,
-                              maxLines: 4,
-                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                        ),
-                      );
-                    }),
-                  ],
-                );
-              }),
-            ],
+                        );
+                      }),
+                    ],
+                  );
+                }),
+              ],
+            ),
           ),
         ),
       ),
@@ -700,44 +738,35 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
         padding: const EdgeInsets.all(20),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 520),
-          child: Card(
-            clipBehavior: Clip.antiAlias,
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Generic table size',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  _buildStepperRow(
-                    label: 'Rows',
-                    value: _genericTotalRows,
-                    min: 1,
-                    onChanged: (value) =>
-                        setState(() => _genericTotalRows = value),
-                  ),
-                  const SizedBox(height: 12),
-                  _buildStepperRow(
-                    label: 'Columns',
-                    value: _genericColumns,
-                    min: 1,
-                    onChanged: (value) =>
-                        setState(() => _genericColumns = value),
-                  ),
-                  const SizedBox(height: 20),
-                  FilledButton.icon(
-                    onPressed: _generateGenericGrid,
-                    icon: const Icon(Icons.table_chart),
-                    label: const Text('Generate table'),
-                  ),
-                ],
-              ),
+          child: TableWorkspaceSection(
+            title: 'Generic table size',
+            icon: Icons.tune,
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildStepperRow(
+                  label: 'Rows',
+                  value: _genericTotalRows,
+                  min: 1,
+                  onChanged: (value) =>
+                      setState(() => _genericTotalRows = value),
+                ),
+                const SizedBox(height: 12),
+                _buildStepperRow(
+                  label: 'Columns',
+                  value: _genericColumns,
+                  min: 1,
+                  onChanged: (value) => setState(() => _genericColumns = value),
+                ),
+                const SizedBox(height: 20),
+                FilledButton.icon(
+                  onPressed: _generateGenericGrid,
+                  icon: const Icon(Icons.table_chart),
+                  label: const Text('Generate table'),
+                ),
+              ],
             ),
           ),
         ),
@@ -800,62 +829,16 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
 
   Widget _buildGenericGrid() {
     return Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: SingleChildScrollView(
-        child: HorizontalTableScroll(
-          minWidth: 720,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 40,
-                    height: 56,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade200,
-                      border: Border.all(color: Colors.grey.shade400),
-                    ),
-                    child: const Center(
-                      child: Text(
-                        '1',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ),
-                  ...List.generate(
-                    _colHeaders.length,
-                    (index) => Container(
-                      width: 150,
-                      height: 56,
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade50,
-                        border: Border.all(color: Colors.grey.shade400),
-                      ),
-                      child: _ExcelCell(
-                        initialValue: _colHeaders[index],
-                        hintText: 'Header ${_columnName(index)}',
-                        onChanged: (value) => _colHeaders[index] = value,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(
-                      Icons.add_circle,
-                      color: Colors.green,
-                      size: 20,
-                    ),
-                    onPressed: _addColumn,
-                  ),
-                ],
-              ),
-              ...List.generate(
-                _data.length,
-                (rIdx) => Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+      padding: const EdgeInsets.all(16),
+      child: TableWorkspaceSection(
+        padding: EdgeInsets.zero,
+        child: SingleChildScrollView(
+          child: HorizontalTableScroll(
+            minWidth: 720,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   children: [
                     Container(
                       width: 40,
@@ -864,10 +847,10 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
                         color: Colors.grey.shade200,
                         border: Border.all(color: Colors.grey.shade400),
                       ),
-                      child: Center(
+                      child: const Center(
                         child: Text(
-                          _rowHeaders[rIdx],
-                          style: const TextStyle(
+                          '1',
+                          style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 12,
                           ),
@@ -876,42 +859,91 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
                     ),
                     ...List.generate(
                       _colHeaders.length,
-                      (cIdx) => Container(
+                      (index) => Container(
                         width: 150,
                         height: 56,
                         decoration: BoxDecoration(
-                          border: Border.all(color: Colors.grey.shade300),
-                          color: _parseHexColor(_cellColors[rIdx][cIdx]),
+                          color: Colors.grey.shade50,
+                          border: Border.all(color: Colors.grey.shade400),
                         ),
                         child: _ExcelCell(
-                          initialValue: _data[rIdx][cIdx].toString(),
-                          onChanged: (v) => _data[rIdx][cIdx] = v,
+                          initialValue: _colHeaders[index],
+                          hintText: 'Header ${_columnName(index)}',
+                          onChanged: (value) => _colHeaders[index] = value,
                         ),
                       ),
                     ),
                     IconButton(
                       icon: const Icon(
-                        Icons.remove_circle_outline,
-                        color: Colors.red,
+                        Icons.add_circle,
+                        color: Colors.green,
                         size: 20,
                       ),
-                      onPressed: () => _removeRow(rIdx),
+                      onPressed: _addColumn,
                     ),
                   ],
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.only(left: 40),
-                child: IconButton(
-                  icon: const Icon(
-                    Icons.add_circle,
-                    color: Colors.green,
-                    size: 20,
+                ...List.generate(
+                  _data.length,
+                  (rIdx) => Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade200,
+                          border: Border.all(color: Colors.grey.shade400),
+                        ),
+                        child: Center(
+                          child: Text(
+                            _rowHeaders[rIdx],
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ),
+                      ...List.generate(
+                        _colHeaders.length,
+                        (cIdx) => Container(
+                          width: 150,
+                          height: 56,
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey.shade300),
+                            color: _parseHexColor(_cellColors[rIdx][cIdx]),
+                          ),
+                          child: _ExcelCell(
+                            initialValue: _data[rIdx][cIdx].toString(),
+                            onChanged: (v) => _data[rIdx][cIdx] = v,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(
+                          Icons.remove_circle_outline,
+                          color: Colors.red,
+                          size: 20,
+                        ),
+                        onPressed: () => _removeRow(rIdx),
+                      ),
+                    ],
                   ),
-                  onPressed: _addRow,
                 ),
-              ),
-            ],
+                Padding(
+                  padding: const EdgeInsets.only(left: 40),
+                  child: IconButton(
+                    icon: const Icon(
+                      Icons.add_circle,
+                      color: Colors.green,
+                      size: 20,
+                    ),
+                    onPressed: _addRow,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

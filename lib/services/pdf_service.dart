@@ -1,18 +1,44 @@
 import 'dart:io' show File;
 import 'dart:convert';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:typed_data';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 import 'package:protocolflow/models/completed_protocol.dart';
+import 'package:protocolflow/models/protocol_additional_data.dart';
 import 'package:protocolflow/models/step_note.dart';
 import 'package:protocolflow/models/protocol_table.dart';
 import 'package:protocolflow/models/protocol_step.dart';
 import 'package:protocolflow/models/protocol.dart';
 import 'package:protocolflow/models/plate_wizard.dart';
 import 'package:protocolflow/services/protocol_export_filename.dart';
+import 'package:protocolflow/services/pdf_platform_stub.dart'
+    if (dart.library.ui) 'package:protocolflow/services/pdf_platform_flutter.dart'
+    as pdf_platform;
 
 class PdfService {
+  static const double _bodyFontSize = 10;
+  static const double _titleFontSize = 12;
+  static const double _reportTitleFontSize = 14;
+  static const double _captionFontSize = 10;
+  static const double _tableHeaderFontSize = 8;
+  static const double _tableBodyFontSize = 6;
+  static const double _pdfPageHeightPoints = 841.8898;
+  static const double _pdfVerticalMarginsPoints = 52;
+  static const double _pdfFooterReservePoints = 32;
+  static const double _pdfPhasePageBudget =
+      _pdfPageHeightPoints -
+      _pdfVerticalMarginsPoints -
+      _pdfFooterReservePoints;
+
+  static const PdfColor _primaryColor = PdfColor.fromInt(0xFF156F7A);
+  static const PdfColor _primaryContainerColor = PdfColor.fromInt(0xFFD7F0F3);
+  static const PdfColor _onPrimaryContainerColor = PdfColor.fromInt(0xFF0F4D54);
+  static const PdfColor _outlineColor = PdfColor.fromInt(0xFFAEBCC1);
+  static const PdfColor _outlineVariantColor = PdfColor.fromInt(0xFFD8E1E4);
+  static const PdfColor _surfaceContainerColor = PdfColor.fromInt(0xFFEEF4F5);
+  static const PdfColor _textPrimaryColor = PdfColor.fromInt(0xFF1F2933);
+  static const PdfColor _textSecondaryColor = PdfColor.fromInt(0xFF61717A);
+
   static Future<void> exportToPdf(CompletedProtocol completed) async {
     await exportProtocolToPdf(
       completed.protocol,
@@ -26,156 +52,203 @@ class PdfService {
     List<StepNote> notes = const [],
     DateTime? completedAt,
   }) async {
-    final pdf = pw.Document();
-
-    final font = await PdfGoogleFonts.arimoRegular();
-    final boldFont = await PdfGoogleFonts.arimoBold();
-    final italicFont = await PdfGoogleFonts.arimoItalic();
-
-    final theme = pw.ThemeData.withFont(
-      base: font,
-      bold: boldFont,
-      italic: italicFont,
+    final bytes = await buildProtocolPdf(
+      protocol,
+      notes: notes,
+      completedAt: completedAt,
     );
 
-    pdf.addPage(
-      pw.MultiPage(
-        theme: theme,
-        pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(32),
-        build: (context) {
-          return <pw.Widget>[
-            pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: <pw.Widget>[
-                pw.Header(
-                  level: 0,
-                  child: pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                    children: <pw.Widget>[
-                      pw.Text(
-                        completedAt != null
-                            ? 'Protocol Run Report'
-                            : 'Protocol Template',
-                        style: pw.TextStyle(
-                          fontSize: 18,
-                          color: PdfColors.grey700,
-                        ),
-                      ),
-                      if (completedAt != null)
-                        pw.Text(
-                          completedAt.toString().split('.')[0],
-                          style: const pw.TextStyle(fontSize: 12),
-                        ),
-                    ],
-                  ),
-                ),
-                pw.SizedBox(height: 10),
-                _rtlText(
-                  protocol.title,
-                  style: pw.TextStyle(
-                    fontSize: 24,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                  isFullWidth: true,
-                ),
-                pw.SizedBox(height: 20),
-
-                _pwSection('Objective', protocol.objective),
-                _pwSection('Description', protocol.description),
-
-                pw.Header(level: 1, text: 'Material List'),
-                if (protocol.materials.isEmpty)
-                  pw.Text('No materials listed.')
-                else
-                  pw.Table(
-                    border: pw.TableBorder.all(
-                      color: PdfColors.grey300,
-                      width: 0.5,
-                    ),
-                    children: <pw.TableRow>[
-                      pw.TableRow(
-                        decoration: const pw.BoxDecoration(
-                          color: PdfColors.grey100,
-                        ),
-                        children: <pw.Widget>[
-                          ...[
-                            'Name',
-                            'Quantity',
-                            'Catalog #',
-                            'Manufacturer',
-                            'Location',
-                            'Stock Conc.',
-                          ].map(
-                            (h) => pw.Padding(
-                              padding: const pw.EdgeInsets.all(4),
-                              child: pw.Text(
-                                h,
-                                style: pw.TextStyle(
-                                  fontWeight: pw.FontWeight.bold,
-                                  fontSize: 9,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      ...protocol.materials.map(
-                        (m) => pw.TableRow(
-                          children: <pw.Widget>[
-                            ...[
-                              m.name,
-                              m.quantity,
-                              m.catalogNumber,
-                              m.manufacturer,
-                              m.location,
-                              m.stockConcentration,
-                            ].map(
-                              (cell) => pw.Padding(
-                                padding: const pw.EdgeInsets.all(4),
-                                child: pw.Text(
-                                  cell,
-                                  style: const pw.TextStyle(fontSize: 8),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-
-                ..._pwNotesForStep(notes, 'materials'),
-
-                pw.SizedBox(height: 20),
-                pw.Header(level: 1, text: 'Steps'),
-                ..._buildPdfSteps(protocol, notes),
-
-                if (notes.any((n) => n.stepId == 'overview')) ...<pw.Widget>[
-                  pw.Header(level: 1, text: 'General Notes'),
-                  ..._pwNotesForStep(notes, 'overview'),
-                ],
-
-                ..._pwSupplementarySection(protocol),
-              ],
-            ),
-          ];
-        },
-      ),
-    );
-
-    await Printing.layoutPdf(
-      onLayout: (PdfPageFormat format) async => pdf.save(),
+    await pdf_platform.layoutPdf(
+      bytes,
       name: completedAt == null
           ? ProtocolExportFilename.protocol(protocol, 'pdf')
           : ProtocolExportFilename.completed(protocol, completedAt, 'pdf'),
-      format: PdfPageFormat.a4,
     );
+  }
+
+  static Future<Uint8List> buildProtocolPdf(
+    Protocol protocol, {
+    List<StepNote> notes = const [],
+    DateTime? completedAt,
+    pw.ThemeData? theme,
+  }) async {
+    final pdf = pw.Document();
+
+    final resolvedTheme = theme ?? await pdf_platform.loadPdfTheme();
+    final availableWidth = PdfPageFormat.a4.width - (26 * 2);
+    final tables = _orderedTables(protocol);
+
+    pdf.addPage(
+      pw.MultiPage(
+        theme: resolvedTheme,
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(26),
+        build: (context) {
+          return <pw.Widget>[
+            _buildReportHeader(protocol, completedAt),
+            pw.SizedBox(height: 12),
+            for (final item in _buildFlowItems(
+              protocol,
+              notes,
+              completedAt,
+              availableWidth,
+            )) ...[item, pw.SizedBox(height: 12)],
+          ];
+        },
+        footer: _buildPageFooter,
+      ),
+    );
+
+    if (tables.isNotEmpty) {
+      pdf.addPage(
+        pw.MultiPage(
+          theme: resolvedTheme,
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(26),
+          build: (context) => [
+            _buildTablesHeader(),
+            pw.SizedBox(height: 10),
+            ..._buildTableAppendix(tables, availableWidth),
+          ],
+          footer: _buildPageFooter,
+        ),
+      );
+    }
+
+    return pdf.save();
+  }
+
+  static pw.Widget _buildPageFooter(pw.Context context) {
+    return pw.Align(
+      alignment: pw.Alignment.centerRight,
+      child: pw.Text(
+        'Page ${context.pageNumber}',
+        style: const pw.TextStyle(
+          fontSize: _captionFontSize,
+          color: _textSecondaryColor,
+        ),
+      ),
+    );
+  }
+
+  static pw.Widget _buildReportHeader(
+    Protocol protocol,
+    DateTime? completedAt,
+  ) {
+    final publication = protocol.publication;
+    final shareUri = publication != null && publication.isPublic
+        ? publication.shareUri.trim()
+        : '';
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Row(
+          crossAxisAlignment: pw.CrossAxisAlignment.center,
+          children: [
+            pw.Expanded(
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  _rtlText(
+                    protocol.title,
+                    style: pw.TextStyle(
+                      fontSize: _reportTitleFontSize,
+                      fontWeight: pw.FontWeight.bold,
+                      color: _textPrimaryColor,
+                    ),
+                    isFullWidth: true,
+                  ),
+                ],
+              ),
+            ),
+            if (shareUri.isNotEmpty) ...[
+              pw.SizedBox(width: 14),
+              _buildPublishedQr(shareUri),
+            ],
+          ],
+        ),
+        pw.Divider(thickness: 0.5, color: _outlineVariantColor),
+      ],
+    );
+  }
+
+  static pw.Widget _buildPublishedQr(String shareUri) {
+    return pw.Column(
+      mainAxisSize: pw.MainAxisSize.min,
+      children: [
+        pw.BarcodeWidget(
+          barcode: pw.Barcode.qrCode(),
+          data: shareUri,
+          width: 54,
+          height: 54,
+          padding: const pw.EdgeInsets.all(3),
+          backgroundColor: PdfColors.white,
+          color: _primaryColor,
+          drawText: false,
+        ),
+        pw.SizedBox(height: 2),
+        pw.Text('Scan', style: const pw.TextStyle(fontSize: _bodyFontSize)),
+      ],
+    );
+  }
+
+  static List<pw.Widget> _buildFlowItems(
+    Protocol protocol,
+    List<StepNote> notes,
+    DateTime? completedAt,
+    double contentWidth,
+  ) {
+    final items = <pw.Widget>[
+      _pwSectionCard('Protocol Information', [
+        _pwMetaLine(completedAt == null ? 'Type: Template' : 'Type: Completed'),
+        _pwMetaLine(
+          'Created on: ${protocol.createdAt.toString().split(' ').first}',
+        ),
+        _pwMetaLine('Created by: ${protocol.createdByName ?? 'Unknown user'}'),
+        if (completedAt != null)
+          _pwMetaLine('Completed on: ${completedAt.toString().split('.')[0]}'),
+        pw.SizedBox(height: 8),
+        _pwField('Objective', protocol.objective),
+        pw.SizedBox(height: 8),
+        _pwField('Description', protocol.description),
+        if (protocol.samples.isNotEmpty) ...[
+          pw.SizedBox(height: 8),
+          pw.Text(
+            'Samples',
+            style: pw.TextStyle(
+              fontSize: _bodyFontSize,
+              fontWeight: pw.FontWeight.bold,
+            ),
+          ),
+          pw.SizedBox(height: 3),
+          ...protocol.samples.map((sample) => _rtlBullet(sample)),
+        ],
+        if (notes.any((note) => note.stepId == 'materials')) ...[
+          pw.SizedBox(height: 8),
+          pw.Text(
+            'Material Notes',
+            style: pw.TextStyle(
+              fontSize: _bodyFontSize,
+              fontWeight: pw.FontWeight.bold,
+            ),
+          ),
+        ],
+        ..._pwNotesForStep(notes, 'materials'),
+      ]),
+      ..._buildPdfSteps(protocol, notes, contentWidth),
+      if (notes.any((n) => n.stepId == 'overview'))
+        _pwSectionCard('General Notes', _pwNotesForStep(notes, 'overview')),
+      ..._pwSupplementarySections(protocol),
+    ];
+
+    return items
+        .map((item) => pw.SizedBox(width: contentWidth, child: item))
+        .toList();
   }
 
   static pw.Widget _rtlBullet(
     String text, {
-    double fontSize = 12,
+    double fontSize = _bodyFontSize,
     bool isFullWidth = true,
   }) {
     return pw.Row(
@@ -186,7 +259,7 @@ class PdfService {
           width: 3,
           height: 3,
           decoration: const pw.BoxDecoration(
-            color: PdfColors.black,
+            color: _textPrimaryColor,
             shape: pw.BoxShape.circle,
           ),
         ),
@@ -201,78 +274,315 @@ class PdfService {
     );
   }
 
+  static pw.Widget _pwNumberedAction(int number, String text) {
+    final isRtl = RegExp(r'[\u0590-\u08FF]').hasMatch(text);
+    return pw.Directionality(
+      textDirection: isRtl ? pw.TextDirection.rtl : pw.TextDirection.ltr,
+      child: pw.Padding(
+        padding: const pw.EdgeInsets.only(top: 2),
+        child: pw.Row(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Container(
+              width: 18,
+              alignment: pw.Alignment.center,
+              child: pw.Text(
+                '$number.',
+                style: pw.TextStyle(
+                  fontSize: _bodyFontSize,
+                  fontWeight: pw.FontWeight.bold,
+                  color: _primaryColor,
+                ),
+              ),
+            ),
+            pw.SizedBox(width: 4),
+            pw.Expanded(
+              child: _rtlText(
+                text,
+                style: const pw.TextStyle(fontSize: _bodyFontSize),
+                isFullWidth: true,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   static List<pw.Widget> _buildPdfSteps(
     Protocol protocol,
     List<StepNote> notes,
+    double contentWidth,
   ) {
+    if (protocol.steps.isEmpty) {
+      return [
+        _pwSectionCard('Steps', [_pwEmptyState('No steps added.')]),
+      ];
+    }
+
     final List<pw.Widget> widgets = <pw.Widget>[];
-    final List<ProtocolStep> sortedSteps = List<ProtocolStep>.from(
-      protocol.steps,
-    )..sort((a, b) => a.day.compareTo(b.day));
+    final sortedSteps = _sortedProtocolSteps(protocol);
 
     final bool hasPhases = sortedSteps.any(
       (s) => s.phaseName != null && s.phaseName!.isNotEmpty,
     );
+    final groups = <String, List<ProtocolStep>>{};
+    final groupOrder = <String>[];
 
     if (hasPhases) {
-      final Map<String, List<ProtocolStep>> phases = {};
-      final List<String> phaseOrder = [];
-      for (var step in sortedSteps) {
+      for (final step in sortedSteps) {
         final phase = step.phaseName ?? 'General';
-        if (!phases.containsKey(phase)) {
-          phaseOrder.add(phase);
-          phases[phase] = [];
+        if (!groups.containsKey(phase)) {
+          groupOrder.add(phase);
+          groups[phase] = [];
         }
-        phases[phase]!.add(step);
-      }
-
-      int globalIdx = 0;
-      for (var phase in phaseOrder) {
-        widgets.add(
-          pw.Padding(
-            padding: const pw.EdgeInsets.symmetric(vertical: 8),
-            child: pw.Text(
-              phase,
-              style: pw.TextStyle(
-                fontWeight: pw.FontWeight.bold,
-                fontSize: 16,
-                color: PdfColors.blue,
-              ),
-            ),
-          ),
-        );
-        for (var step in phases[phase]!) {
-          widgets.add(_buildStepWidget(step, globalIdx++, protocol, notes));
-        }
+        groups[phase]!.add(step);
       }
     } else {
-      final Map<int, List<ProtocolStep>> days = {};
-      for (var step in sortedSteps) {
-        days.putIfAbsent(step.day, () => <ProtocolStep>[]).add(step);
+      for (final step in sortedSteps) {
+        final day = 'Day ${step.day}';
+        if (!groups.containsKey(day)) {
+          groupOrder.add(day);
+          groups[day] = [];
+        }
+        groups[day]!.add(step);
       }
-      final sortedDays = days.keys.toList()..sort();
+    }
 
-      int globalIdx = 0;
-      for (var day in sortedDays) {
+    var globalIndex = 0;
+    for (final groupTitle in groupOrder) {
+      final groupSteps = groups[groupTitle]!;
+      final chunks = _splitPdfPhase(groupSteps, notes, contentWidth);
+      for (var chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+        final chunk = chunks[chunkIndex];
         widgets.add(
-          pw.Padding(
-            padding: const pw.EdgeInsets.symmetric(vertical: 8),
-            child: pw.Text(
-              'Day $day',
-              style: pw.TextStyle(
-                fontWeight: pw.FontWeight.bold,
-                fontSize: 16,
-                color: PdfColors.blue,
-              ),
-            ),
+          _buildStepGroupCard(
+            chunkIndex == 0 ? groupTitle : '$groupTitle (continued)',
+            chunk,
+            globalIndex,
+            protocol,
+            notes,
           ),
         );
-        for (var step in days[day]!) {
-          widgets.add(_buildStepWidget(step, globalIdx++, protocol, notes));
-        }
+        globalIndex += chunk.length;
       }
     }
     return widgets;
+  }
+
+  static List<List<ProtocolStep>> _splitPdfPhase(
+    List<ProtocolStep> steps,
+    List<StepNote> notes,
+    double contentWidth,
+  ) {
+    const cardAndHeadingHeight = 42.0;
+    const betweenStepsHeight = 12.0;
+    final chunks = <List<ProtocolStep>>[];
+    var current = <ProtocolStep>[];
+    var currentHeight = cardAndHeadingHeight;
+
+    for (final step in steps) {
+      final stepHeight = _estimatePdfStepHeight(step, notes, contentWidth);
+      final addedHeight =
+          stepHeight + (current.isEmpty ? 0 : betweenStepsHeight);
+      if (current.isNotEmpty &&
+          currentHeight + addedHeight > _pdfPhasePageBudget) {
+        chunks.add(current);
+        current = <ProtocolStep>[];
+        currentHeight = cardAndHeadingHeight;
+      }
+      current.add(step);
+      currentHeight +=
+          stepHeight + (current.length == 1 ? 0 : betweenStepsHeight);
+    }
+    if (current.isNotEmpty) chunks.add(current);
+    return chunks;
+  }
+
+  static double _estimatePdfStepHeight(
+    ProtocolStep step,
+    List<StepNote> notes,
+    double contentWidth,
+  ) {
+    final textWidth = (contentWidth - 76).clamp(180, contentWidth).toDouble();
+    var height = 14.0;
+    height += _estimatePdfTextHeight(
+      'Step: ${step.title}',
+      textWidth,
+      _titleFontSize,
+      14,
+    );
+    height += _estimatePdfTextHeight(
+      step.instructions,
+      textWidth,
+      _bodyFontSize,
+      12,
+    );
+    if (step.timerInSeconds != null) height += 14;
+    if (step.materials.isNotEmpty) {
+      height += _estimatePdfTextHeight(
+        step.materials
+            .map((material) => '${material.name} (${material.quantity})')
+            .join(', '),
+        textWidth,
+        _bodyFontSize,
+        12,
+      );
+    }
+    for (final action in step.actionItems) {
+      height +=
+          _estimatePdfTextHeight(action, textWidth - 22, _bodyFontSize, 12) + 2;
+    }
+    if (step.notes.isNotEmpty) {
+      height += 17;
+      for (final note in step.notes) {
+        height += _estimatePdfTextHeight(
+          note,
+          textWidth - 12,
+          _bodyFontSize,
+          12,
+        );
+      }
+    }
+    if (step.tableIds.isNotEmpty) height += 22;
+
+    final userNotes = notes.where((note) => note.stepId == step.id).toList();
+    if (userNotes.isNotEmpty) {
+      height += 17;
+      final photoCount = userNotes.fold<int>(
+        0,
+        (count, note) => count + note.photoPaths.length,
+      );
+      if (photoCount > 0) {
+        final photosPerRow = (textWidth / 130).floor().clamp(1, 4).toInt();
+        height += ((photoCount + photosPerRow - 1) ~/ photosPerRow) * 130;
+      }
+      for (final note in userNotes) {
+        height += _estimatePdfTextHeight(note.note, textWidth, 11, 13);
+      }
+    }
+    return height + 12;
+  }
+
+  static double _estimatePdfTextHeight(
+    String text,
+    double width,
+    double fontSize,
+    double lineHeight,
+  ) {
+    if (text.trim().isEmpty) return 0;
+    final averageCharacterWidth = fontSize * 0.52;
+    final charactersPerLine = (width / averageCharacterWidth).floor().clamp(
+      12,
+      180,
+    );
+    var lines = 0;
+    for (final rawLine in text.split('\n')) {
+      final length = rawLine.trim().length;
+      lines += length == 0 ? 1 : (length / charactersPerLine).ceil();
+    }
+    return lines * lineHeight;
+  }
+
+  static pw.Widget _buildStepGroupCard(
+    String title,
+    List<ProtocolStep> steps,
+    int startIndex,
+    Protocol protocol,
+    List<StepNote> notes,
+  ) {
+    return _pwFlowCard(
+      children: [
+        _pwGroupHeading(title),
+        for (var index = 0; index < steps.length; index++) ...[
+          _buildTimelineStepWidget(
+            steps[index],
+            startIndex + index,
+            protocol,
+            notes,
+            isFirst: index == 0,
+            isLast: index == steps.length - 1,
+          ),
+          if (index < steps.length - 1) pw.SizedBox(height: 12),
+        ],
+      ],
+    );
+  }
+
+  static pw.Widget _buildTimelineStepWidget(
+    ProtocolStep step,
+    int index,
+    Protocol protocol,
+    List<StepNote> notes, {
+    required bool isFirst,
+    required bool isLast,
+  }) {
+    return pw.Stack(
+      overflow: pw.Overflow.visible,
+      children: [
+        pw.Padding(
+          padding: const pw.EdgeInsets.only(left: 28),
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [_buildStepWidget(step, index, protocol, notes)],
+          ),
+        ),
+        pw.Positioned(
+          left: 8.5,
+          top: isFirst ? 9 : -12,
+          bottom: isLast ? null : -12,
+          child: pw.Container(
+            width: 1,
+            height: isLast ? (isFirst ? 1 : 21) : null,
+            decoration: const pw.BoxDecoration(
+              border: pw.Border(
+                left: pw.BorderSide(
+                  color: _outlineColor,
+                  width: 1,
+                  style: pw.BorderStyle.dashed,
+                ),
+              ),
+            ),
+          ),
+        ),
+        pw.Positioned(
+          left: 0,
+          top: 0,
+          child: pw.Container(
+            width: 18,
+            height: 18,
+            alignment: pw.Alignment.center,
+            decoration: pw.BoxDecoration(
+              color: _primaryContainerColor,
+              shape: pw.BoxShape.circle,
+              border: pw.Border.all(color: _primaryColor, width: 1),
+            ),
+            child: pw.Text(
+              '${index + 1}',
+              style: pw.TextStyle(
+                fontSize: _bodyFontSize,
+                fontWeight: pw.FontWeight.bold,
+                color: _onPrimaryContainerColor,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  static pw.Widget _pwGroupHeading(String title) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.only(bottom: 6),
+      child: pw.Text(
+        title,
+        style: pw.TextStyle(
+          fontWeight: pw.FontWeight.bold,
+          fontSize: _titleFontSize,
+          color: _primaryColor,
+        ),
+      ),
+    );
   }
 
   static pw.Widget _buildStepWidget(
@@ -290,13 +600,16 @@ class PdfService {
           padding: const pw.EdgeInsets.symmetric(vertical: 4),
           child: _rtlText(
             'Step ${index + 1}: ${step.title}',
-            style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+            style: pw.TextStyle(
+              fontSize: _titleFontSize,
+              fontWeight: pw.FontWeight.bold,
+            ),
             isFullWidth: true,
           ),
         ),
         _rtlText(
           step.instructions,
-          style: const pw.TextStyle(fontSize: 12),
+          style: const pw.TextStyle(fontSize: _bodyFontSize),
           isFullWidth: true,
         ),
         if (step.timerInSeconds != null)
@@ -304,7 +617,10 @@ class PdfService {
             padding: const pw.EdgeInsets.only(top: 2),
             child: pw.Text(
               'Timer: ${_formatSeconds(step.timerInSeconds!)}',
-              style: pw.TextStyle(fontSize: 11, fontStyle: pw.FontStyle.italic),
+              style: pw.TextStyle(
+                fontSize: _bodyFontSize,
+                fontStyle: pw.FontStyle.italic,
+              ),
             ),
           ),
         if (step.materials.isNotEmpty)
@@ -312,7 +628,7 @@ class PdfService {
             padding: const pw.EdgeInsets.only(top: 2),
             child: _rtlText(
               'Step Materials: ${step.materials.map((m) => "${m.name} (${m.quantity})").join(", ")}',
-              style: const pw.TextStyle(fontSize: 11),
+              style: const pw.TextStyle(fontSize: _bodyFontSize),
               isFullWidth: true,
             ),
           ),
@@ -328,11 +644,7 @@ class PdfService {
                 if (timer != null) {
                   timerStr = ' (${_formatSeconds(timer)})';
                 }
-                return _rtlBullet(
-                  '$item$timerStr',
-                  fontSize: 11,
-                  isFullWidth: false,
-                );
+                return _pwNumberedAction(aIdx + 1, '$item$timerStr');
               }),
             ],
           ),
@@ -341,44 +653,33 @@ class PdfService {
           pw.Text(
             'Protocol Step Notes:',
             style: pw.TextStyle(
-              fontSize: 11,
+              fontSize: _bodyFontSize,
               fontWeight: pw.FontWeight.bold,
-              color: PdfColors.blueGrey800,
+              color: _primaryColor,
             ),
           ),
           ...step.notes.map(
-            (note) => _rtlBullet(note, fontSize: 11, isFullWidth: false),
+            (note) =>
+                _rtlBullet(note, fontSize: _bodyFontSize, isFullWidth: false),
           ),
         ],
         if (step.tableIds.isNotEmpty) ...<pw.Widget>[
           pw.SizedBox(height: 8),
-          pw.Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: step.tableIds.map((id) {
-              final table = protocol.tables.firstWhere(
-                (t) => t.id == id,
-                orElse: () =>
-                    ProtocolTable(id: 'err', title: 'Table Not Found'),
-              );
-              if (table.id == 'err') return pw.SizedBox.shrink();
-              return _pwTable(table);
-            }).toList(),
-          ),
+          _pwTableMention(_tablesForIds(protocol, step.tableIds)),
         ],
         if (stepNotes.isNotEmpty) ...<pw.Widget>[
           pw.SizedBox(height: 5),
           pw.Text(
             'User Notes:',
             style: pw.TextStyle(
-              fontSize: 11,
+              fontSize: _bodyFontSize,
               fontWeight: pw.FontWeight.bold,
-              color: PdfColors.blueGrey800,
+              color: _primaryColor,
             ),
           ),
           ..._pwNotes(stepNotes),
         ],
-        pw.Divider(thickness: 0.5, color: PdfColors.grey300),
+        pw.Divider(thickness: 0.5, color: _outlineVariantColor),
       ],
     );
   }
@@ -398,32 +699,109 @@ class PdfService {
     pw.TextStyle? style,
     bool isFullWidth = true,
   }) {
+    final isRtl = RegExp(r'[\u0590-\u08FF]').hasMatch(text);
     return pw.Directionality(
-      textDirection: pw.TextDirection.rtl,
+      textDirection: isRtl ? pw.TextDirection.rtl : pw.TextDirection.ltr,
       child: pw.Container(
         width: isFullWidth ? double.infinity : null,
-        alignment: pw.Alignment.centerLeft,
-        child: pw.Text(text, style: style, textAlign: pw.TextAlign.left),
+        alignment: isRtl ? pw.Alignment.centerRight : pw.Alignment.centerLeft,
+        child: pw.Text(
+          text,
+          style: style,
+          textAlign: isRtl ? pw.TextAlign.right : pw.TextAlign.left,
+          softWrap: true,
+        ),
       ),
     );
   }
 
-  static pw.Widget _pwSection(String title, String content) {
+  static pw.Widget _pwSectionCard(String title, List<pw.Widget> children) {
+    return _pwFlowCard(title: title, children: children);
+  }
+
+  static pw.Widget _pwFlowCard({
+    String? title,
+    required List<pw.Widget> children,
+  }) {
+    return pw.Container(
+      width: double.infinity,
+      padding: const pw.EdgeInsets.all(10),
+      decoration: pw.BoxDecoration(
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
+        border: pw.Border.all(color: _outlineVariantColor, width: 0.5),
+      ),
+      child: pw.Column(
+        mainAxisSize: pw.MainAxisSize.min,
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          if (title != null) ...[
+            pw.Text(
+              title,
+              style: pw.TextStyle(
+                fontSize: _titleFontSize,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+            pw.SizedBox(height: 8),
+          ],
+          ...children,
+        ],
+      ),
+    );
+  }
+
+  static pw.Widget _pwMetaLine(String text) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.only(bottom: 3),
+      child: pw.Text(
+        text,
+        style: const pw.TextStyle(
+          fontSize: _bodyFontSize,
+          color: _textSecondaryColor,
+        ),
+        softWrap: true,
+      ),
+    );
+  }
+
+  static pw.Widget _pwField(String title, String content) {
+    final value = content.trim().isEmpty ? 'Not provided.' : content.trim();
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: <pw.Widget>[
+      children: [
         pw.Text(
           title,
-          style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+          style: pw.TextStyle(
+            fontSize: _bodyFontSize,
+            fontWeight: pw.FontWeight.bold,
+          ),
         ),
-        pw.SizedBox(height: 4),
+        pw.SizedBox(height: 3),
         _rtlText(
-          content,
-          style: const pw.TextStyle(fontSize: 12),
+          value,
+          style: const pw.TextStyle(fontSize: _bodyFontSize),
           isFullWidth: true,
         ),
-        pw.SizedBox(height: 16),
       ],
+    );
+  }
+
+  static pw.Widget _pwEmptyState(String message) {
+    return pw.Container(
+      width: double.infinity,
+      padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+      decoration: pw.BoxDecoration(
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
+        color: _surfaceContainerColor,
+        border: pw.Border.all(color: _outlineVariantColor, width: 0.5),
+      ),
+      child: pw.Text(
+        message,
+        style: const pw.TextStyle(
+          fontSize: _bodyFontSize,
+          color: _textSecondaryColor,
+        ),
+      ),
     );
   }
 
@@ -440,7 +818,7 @@ class PdfService {
     for (int i = 0; i < notes.length; i++) {
       final note = notes[i];
       for (int j = 0; j < note.photoPaths.length; j++) {
-        if (kIsWeb) continue;
+        if (pdf_platform.isWeb) continue;
         final path = note.photoPaths[j];
         final file = File(path);
         if (file.existsSync()) {
@@ -463,7 +841,7 @@ class PdfService {
                         vertical: 1,
                       ),
                       decoration: const pw.BoxDecoration(
-                        color: PdfColors.blue,
+                        color: _primaryColor,
                         borderRadius: pw.BorderRadius.all(
                           pw.Radius.circular(4),
                         ),
@@ -472,7 +850,7 @@ class PdfService {
                         '${i + 1}.${j + 1}',
                         style: const pw.TextStyle(
                           color: PdfColors.white,
-                          fontSize: 7,
+                          fontSize: _bodyFontSize,
                         ),
                       ),
                     ),
@@ -510,14 +888,14 @@ class PdfService {
                   height: 12,
                   alignment: pw.Alignment.center,
                   decoration: const pw.BoxDecoration(
-                    color: PdfColors.blue,
+                    color: _primaryColor,
                     shape: pw.BoxShape.circle,
                   ),
                   child: pw.Text(
                     '${i + 1}',
                     style: const pw.TextStyle(
                       color: PdfColors.white,
-                      fontSize: 7,
+                      fontSize: _bodyFontSize,
                     ),
                   ),
                 ),
@@ -543,129 +921,240 @@ class PdfService {
     return widgets;
   }
 
-  static pw.Widget _pwTable(ProtocolTable table) {
+  static pw.Widget _pwTableMention(List<ProtocolTable> tables) {
+    if (tables.isEmpty) {
+      return _pwEmptyState('Referenced table not found.');
+    }
+    return _rtlText(
+      'Tables: ${tables.map((table) => table.title).join(', ')}',
+      style: pw.TextStyle(
+        fontSize: _bodyFontSize,
+        fontWeight: pw.FontWeight.bold,
+        color: _primaryColor,
+      ),
+      isFullWidth: true,
+    );
+  }
+
+  static List<ProtocolTable> _tablesForIds(
+    Protocol protocol,
+    Iterable<String> tableIds,
+  ) {
+    final tablesById = {for (final table in protocol.tables) table.id: table};
+    return [
+      for (final id in tableIds)
+        if (tablesById[id] != null) tablesById[id]!,
+    ];
+  }
+
+  static List<ProtocolTable> _orderedTables(Protocol protocol) {
+    final ordered = <ProtocolTable>[];
+    final addedIds = <String>{};
+
+    void addTable(ProtocolTable? table) {
+      if (table != null && addedIds.add(table.id)) ordered.add(table);
+    }
+
+    addTable(protocol.materialListTable);
+    final sortedSteps = _sortedProtocolSteps(protocol);
+    for (final step in sortedSteps) {
+      for (final table in _tablesForIds(protocol, step.tableIds)) {
+        addTable(table);
+      }
+    }
+    for (final table in protocol.tables) {
+      addTable(table);
+    }
+    return ordered;
+  }
+
+  static List<ProtocolStep> _sortedProtocolSteps(Protocol protocol) {
+    final indexedSteps = protocol.steps.asMap().entries.toList()
+      ..sort((a, b) {
+        final dayComparison = a.value.day.compareTo(b.value.day);
+        return dayComparison != 0 ? dayComparison : a.key.compareTo(b.key);
+      });
+    return indexedSteps.map((entry) => entry.value).toList();
+  }
+
+  static pw.Widget _buildTablesHeader() {
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(
+          'Tables',
+          style: pw.TextStyle(
+            fontSize: _titleFontSize,
+            fontWeight: pw.FontWeight.bold,
+          ),
+        ),
+        pw.Divider(thickness: 0.5, color: _outlineVariantColor),
+      ],
+    );
+  }
+
+  static List<pw.Widget> _buildTableAppendix(
+    List<ProtocolTable> tables,
+    double availableWidth,
+  ) {
+    final widgets = <pw.Widget>[];
+    for (final table in tables) {
+      if (table.type == TableType.plateLayout || table.data.isEmpty) {
+        widgets.add(_pwTable(table, maxWidth: availableWidth));
+        widgets.add(pw.SizedBox(height: 14));
+        continue;
+      }
+
+      final columnCount = _tableColumnCount(table);
+      final rowsPerChunk = columnCount >= 8 ? 18 : (columnCount >= 5 ? 24 : 30);
+      for (
+        var startRow = 0;
+        startRow < table.data.length;
+        startRow += rowsPerChunk
+      ) {
+        final endRow = (startRow + rowsPerChunk).clamp(0, table.data.length);
+        widgets.add(
+          _pwTable(
+            table,
+            maxWidth: availableWidth,
+            startRow: startRow,
+            endRow: endRow,
+            titleOverride: startRow == 0 ? null : '${table.title} (continued)',
+          ),
+        );
+        widgets.add(pw.SizedBox(height: 14));
+      }
+    }
+    return widgets;
+  }
+
+  static pw.Widget _pwTable(
+    ProtocolTable table, {
+    double? maxWidth,
+    int startRow = 0,
+    int? endRow,
+    String? titleOverride,
+  }) {
     if (table.type == TableType.plateLayout) {
       return _pwPlateLayout(table);
     }
     final hasRowHeaders = table.rowHeaders.isNotEmpty;
     final columnCount = _tableColumnCount(table);
     final columnHeaders = _normalizedHeaders(table);
+    final columnWidths = _tableColumnWidths(table, hasRowHeaders);
+    final firstRow = startRow.clamp(0, table.data.length);
+    final lastRow = (endRow ?? table.data.length).clamp(
+      firstRow,
+      table.data.length,
+    );
 
-    return pw.Container(
-      width: 250, // Default width for standard tables
-      decoration: pw.BoxDecoration(
-        color: PdfColors.white,
-        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
-        border: pw.Border.all(color: PdfColors.grey300, width: 0.5),
-      ),
+    return pw.SizedBox(
+      width: maxWidth,
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
           pw.Container(
             width: double.infinity,
-            padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: const pw.BoxDecoration(
-              color: PdfColors.blue50,
-              borderRadius: pw.BorderRadius.only(
-                topLeft: pw.Radius.circular(8),
-                topRight: pw.Radius.circular(8),
-              ),
-            ),
+            padding: const pw.EdgeInsets.only(bottom: 4),
             child: pw.Text(
-              table.title,
+              titleOverride ?? table.title,
               style: pw.TextStyle(
                 fontWeight: pw.FontWeight.bold,
-                fontSize: 9,
-                color: PdfColors.blue900,
+                fontSize: _tableHeaderFontSize,
+                color: _primaryColor,
               ),
+              softWrap: true,
             ),
           ),
-          pw.Padding(
-            padding: const pw.EdgeInsets.all(4),
-            child: pw.Table(
-              border: pw.TableBorder.all(color: PdfColors.grey200, width: 0.5),
-              children: <pw.TableRow>[
-                pw.TableRow(
-                  decoration: const pw.BoxDecoration(color: PdfColors.grey50),
+          pw.Table(
+            border: pw.TableBorder.all(color: _outlineVariantColor, width: 0.5),
+            columnWidths: columnWidths,
+            children: <pw.TableRow>[
+              pw.TableRow(
+                children: <pw.Widget>[
+                  if (hasRowHeaders)
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.all(3),
+                      child: pw.Text(
+                        '',
+                        style: pw.TextStyle(
+                          fontWeight: pw.FontWeight.bold,
+                          fontSize: _tableHeaderFontSize,
+                        ),
+                      ),
+                    ),
+                  ...columnHeaders.map(
+                    (h) => pw.Padding(
+                      padding: const pw.EdgeInsets.all(3),
+                      child: pw.Text(
+                        h,
+                        style: pw.TextStyle(
+                          fontWeight: pw.FontWeight.bold,
+                          fontSize: _tableHeaderFontSize,
+                        ),
+                        softWrap: true,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              ...List<pw.TableRow>.generate(lastRow - firstRow, (rowOffset) {
+                final rowIndex = firstRow + rowOffset;
+                final rowColors = rowIndex < table.cellColors.length
+                    ? table.cellColors[rowIndex]
+                    : <String>[];
+                return pw.TableRow(
                   children: <pw.Widget>[
                     if (hasRowHeaders)
                       pw.Padding(
                         padding: const pw.EdgeInsets.all(3),
                         child: pw.Text(
-                          '',
+                          rowIndex < table.rowHeaders.length
+                              ? table.rowHeaders[rowIndex]
+                              : (rowIndex + 1).toString(),
                           style: pw.TextStyle(
                             fontWeight: pw.FontWeight.bold,
-                            fontSize: 8,
+                            fontSize: _tableBodyFontSize,
                           ),
+                          softWrap: true,
                         ),
                       ),
-                    ...columnHeaders.map(
-                      (h) => pw.Padding(
+                    ...List<pw.Widget>.generate(columnCount, (colIndex) {
+                      final row = table.data[rowIndex];
+                      final cell = colIndex < row.length ? row[colIndex] : '';
+                      final colorHex = colIndex < rowColors.length
+                          ? rowColors[colIndex]
+                          : '';
+                      PdfColor? bgColor;
+                      if (colorHex.isNotEmpty) {
+                        try {
+                          final hex = colorHex.replaceFirst('#', '');
+                          bgColor = PdfColor.fromInt(
+                            int.parse('FF$hex', radix: 16),
+                          );
+                        } catch (_) {}
+                      }
+
+                      String text = cell.toString();
+                      if (cell is bool) {
+                        text = cell ? '[X]' : '[ ]';
+                      }
+                      return pw.Container(
+                        color: bgColor,
                         padding: const pw.EdgeInsets.all(3),
                         child: pw.Text(
-                          h,
-                          style: pw.TextStyle(
-                            fontWeight: pw.FontWeight.bold,
-                            fontSize: 8,
+                          text,
+                          style: const pw.TextStyle(
+                            fontSize: _tableBodyFontSize,
                           ),
+                          softWrap: true,
                         ),
-                      ),
-                    ),
+                      );
+                    }),
                   ],
-                ),
-                ...List<pw.TableRow>.generate(table.data.length, (rowIndex) {
-                  final rowColors = rowIndex < table.cellColors.length
-                      ? table.cellColors[rowIndex]
-                      : <String>[];
-                  return pw.TableRow(
-                    children: <pw.Widget>[
-                      if (hasRowHeaders)
-                        pw.Padding(
-                          padding: const pw.EdgeInsets.all(3),
-                          child: pw.Text(
-                            rowIndex < table.rowHeaders.length
-                                ? table.rowHeaders[rowIndex]
-                                : (rowIndex + 1).toString(),
-                            style: pw.TextStyle(
-                              fontWeight: pw.FontWeight.bold,
-                              fontSize: 8,
-                            ),
-                          ),
-                        ),
-                      ...List<pw.Widget>.generate(columnCount, (colIndex) {
-                        final row = table.data[rowIndex];
-                        final cell = colIndex < row.length ? row[colIndex] : '';
-                        final colorHex = colIndex < rowColors.length
-                            ? rowColors[colIndex]
-                            : '';
-                        PdfColor? bgColor;
-                        if (colorHex.isNotEmpty) {
-                          try {
-                            final hex = colorHex.replaceFirst('#', '');
-                            bgColor = PdfColor.fromInt(
-                              int.parse('FF$hex', radix: 16),
-                            );
-                          } catch (_) {}
-                        }
-
-                        String text = cell.toString();
-                        if (cell is bool) {
-                          text = cell ? '[X]' : '[ ]';
-                        }
-                        return pw.Container(
-                          color: bgColor,
-                          padding: const pw.EdgeInsets.all(3),
-                          child: pw.Text(
-                            text,
-                            style: const pw.TextStyle(fontSize: 8),
-                          ),
-                        );
-                      }),
-                    ],
-                  );
-                }),
-              ],
-            ),
+                );
+              }),
+            ],
           ),
         ],
       ),
@@ -704,9 +1193,8 @@ class PdfService {
     return pw.Container(
       width: plateWidth,
       decoration: pw.BoxDecoration(
-        color: PdfColors.white,
         borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
-        border: pw.Border.all(color: PdfColors.grey300, width: 0.5),
+        border: pw.Border.all(color: _outlineVariantColor, width: 0.5),
       ),
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -714,19 +1202,12 @@ class PdfService {
           pw.Container(
             width: double.infinity,
             padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: const pw.BoxDecoration(
-              color: PdfColors.green50,
-              borderRadius: pw.BorderRadius.only(
-                topLeft: pw.Radius.circular(8),
-                topRight: pw.Radius.circular(8),
-              ),
-            ),
             child: pw.Text(
               table.title,
               style: pw.TextStyle(
                 fontWeight: pw.FontWeight.bold,
-                fontSize: 9,
-                color: PdfColors.green900,
+                fontSize: _tableHeaderFontSize,
+                color: _primaryColor,
               ),
             ),
           ),
@@ -746,8 +1227,8 @@ class PdfService {
                           child: pw.Text(
                             '${i + 1}',
                             style: const pw.TextStyle(
-                              fontSize: 7,
-                              color: PdfColors.grey600,
+                              fontSize: _tableBodyFontSize,
+                              color: _textSecondaryColor,
                             ),
                           ),
                         ),
@@ -764,15 +1245,15 @@ class PdfService {
                         child: pw.Text(
                           String.fromCharCode(65 + rIdx),
                           style: const pw.TextStyle(
-                            fontSize: 7,
-                            color: PdfColors.grey600,
+                            fontSize: _tableBodyFontSize,
+                            color: _textSecondaryColor,
                           ),
                         ),
                       ),
                       ...List.generate(cols, (cIdx) {
                         final content = _tableCell(table, rIdx, cIdx);
                         final colorHex = _tableColor(table, rIdx, cIdx);
-                        PdfColor bgColor = PdfColors.grey100;
+                        PdfColor bgColor = _surfaceContainerColor;
                         if (colorHex.isNotEmpty) {
                           try {
                             final hex = colorHex.replaceFirst('#', '');
@@ -795,7 +1276,7 @@ class PdfService {
                             color: bgColor,
                             shape: pw.BoxShape.circle,
                             border: pw.Border.all(
-                              color: PdfColors.grey300,
+                              color: _outlineVariantColor,
                               width: 0.5,
                             ),
                           ),
@@ -851,58 +1332,82 @@ class PdfService {
     );
   }
 
-  static List<pw.Widget> _pwSupplementarySection(Protocol protocol) {
-    final assignedTableIds = protocol.steps.expand((s) => s.tableIds).toSet();
-    final unassignedTables = protocol.tables
-        .where((t) => !assignedTableIds.contains(t.id))
-        .toList();
-
-    if (protocol.files.isEmpty && unassignedTables.isEmpty) {
+  static List<pw.Widget> _pwSupplementarySections(Protocol protocol) {
+    if (protocol.files.isEmpty && protocol.additionalData.isEmpty) {
       return <pw.Widget>[];
     }
 
     return <pw.Widget>[
-      pw.SizedBox(height: 20),
-      pw.Header(level: 1, text: 'Supplementary'),
-      if (protocol.files.isNotEmpty) ...<pw.Widget>[
-        pw.Padding(
-          padding: const pw.EdgeInsets.only(bottom: 4),
-          child: pw.Text(
-            'Attached Files:',
-            style: pw.TextStyle(
-              fontWeight: pw.FontWeight.bold,
-              fontSize: 12,
-              color: PdfColors.grey700,
+      if (protocol.files.isNotEmpty || protocol.additionalData.isNotEmpty)
+        _pwSectionCard('Additional Data', [
+          if (protocol.files.isNotEmpty) ...[
+            pw.Text(
+              'Attached Files',
+              style: pw.TextStyle(
+                fontSize: _bodyFontSize,
+                fontWeight: pw.FontWeight.bold,
+              ),
             ),
-          ),
-        ),
-        ...protocol.files.map(
-          (file) => pw.Padding(
-            padding: const pw.EdgeInsets.only(left: 8, bottom: 2),
-            child: pw.Text('- $file', style: const pw.TextStyle(fontSize: 11)),
-          ),
-        ),
-        pw.SizedBox(height: 12),
-      ],
-      if (unassignedTables.isNotEmpty) ...<pw.Widget>[
-        pw.Padding(
-          padding: const pw.EdgeInsets.only(bottom: 8),
-          child: pw.Text(
-            'Reference Tables:',
-            style: pw.TextStyle(
-              fontWeight: pw.FontWeight.bold,
-              fontSize: 12,
-              color: PdfColors.grey700,
+            pw.SizedBox(height: 4),
+            ...protocol.files.map(
+              (file) => pw.Padding(
+                padding: const pw.EdgeInsets.only(bottom: 3),
+                child: pw.Text(
+                  '- $file',
+                  style: const pw.TextStyle(fontSize: _bodyFontSize),
+                  softWrap: true,
+                ),
+              ),
             ),
-          ),
-        ),
-        pw.Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: unassignedTables.map((table) => _pwTable(table)).toList(),
-        ),
-      ],
+          ],
+          if (protocol.additionalData.isNotEmpty) ...[
+            if (protocol.files.isNotEmpty) pw.SizedBox(height: 8),
+            ...protocol.additionalData.map(_pwAdditionalData),
+          ],
+        ]),
     ];
+  }
+
+  static pw.Widget _pwAdditionalData(ProtocolAdditionalData data) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.only(bottom: 8),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(
+            data.title,
+            style: pw.TextStyle(
+              fontSize: _bodyFontSize,
+              fontWeight: pw.FontWeight.bold,
+            ),
+            softWrap: true,
+          ),
+          if (data.description.toString().trim().isNotEmpty)
+            _rtlText(
+              data.description,
+              style: const pw.TextStyle(fontSize: _bodyFontSize),
+              isFullWidth: true,
+            ),
+          if (data.link.toString().trim().isNotEmpty)
+            pw.Text(
+              data.link,
+              style: const pw.TextStyle(
+                fontSize: _bodyFontSize,
+                color: _primaryColor,
+              ),
+              softWrap: true,
+            ),
+          if (data.photoPaths.isNotEmpty)
+            pw.Text(
+              '${data.photoPaths.length} photo(s) attached',
+              style: const pw.TextStyle(
+                fontSize: _bodyFontSize,
+                color: _textSecondaryColor,
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   static int _tableColumnCount(ProtocolTable table) {
@@ -920,6 +1425,32 @@ class PdfService {
           ? table.columnHeaders[index]
           : _columnName(index),
     );
+  }
+
+  static Map<int, pw.TableColumnWidth> _tableColumnWidths(
+    ProtocolTable table,
+    bool hasRowHeaders,
+  ) {
+    final widths = <int, pw.TableColumnWidth>{};
+    var tableIndex = 0;
+    if (hasRowHeaders) {
+      widths[tableIndex++] = const pw.FlexColumnWidth(0.8);
+    }
+
+    final headers = _normalizedHeaders(table);
+    for (var columnIndex = 0; columnIndex < headers.length; columnIndex++) {
+      var longest = headers[columnIndex].length;
+      for (final row in table.data) {
+        if (columnIndex >= row.length) continue;
+        final text = row[columnIndex]?.toString() ?? '';
+        for (final line in text.split('\n')) {
+          if (line.length > longest) longest = line.length;
+        }
+      }
+      final weight = (longest / 12).clamp(0.9, 2.8).toDouble();
+      widths[tableIndex++] = pw.FlexColumnWidth(weight);
+    }
+    return widths;
   }
 
   static String _tableCell(ProtocolTable table, int row, int col) {

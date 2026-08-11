@@ -4,6 +4,7 @@ import '../../../models/plate_wizard.dart';
 import '../../../screens/plate_wizard_samples_screen.dart';
 import '../../../models/protocol_table.dart';
 import '../../../widgets/save_table_action.dart';
+import '../../../widgets/table_workspace.dart';
 
 class PlateViewerScreen extends StatefulWidget {
   final PlateLayoutWizard wizard;
@@ -58,25 +59,22 @@ class _PlateViewerScreenState extends State<PlateViewerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(_wizard.title.isEmpty ? 'Plate Layout' : _wizard.title),
-        actions: [
-          SaveTableAction(
-            table: _wizard.toProtocolTable().copyWith(id: widget.plateId),
+    return TableViewerScaffold(
+      title: _wizard.title.isEmpty ? 'Plate Layout' : _wizard.title,
+      typeLabel: 'Plate layout',
+      typeIcon: Icons.grid_on_outlined,
+      actions: [
+        SaveTableAction(
+          table: _wizard.toProtocolTable().copyWith(id: widget.plateId),
+        ),
+        if (!widget.isReadOnly)
+          IconButton(
+            icon: const Icon(Icons.edit),
+            onPressed: _editTable,
+            tooltip: 'Edit Table',
           ),
-          if (!widget.isReadOnly)
-            IconButton(
-              icon: const Icon(Icons.edit),
-              onPressed: _editTable,
-              tooltip: 'Edit Table',
-            ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: PlateResultPreview(wizard: _wizard),
-      ),
+      ],
+      table: PlateResultPreview(wizard: _wizard),
     );
   }
 }

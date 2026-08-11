@@ -10,6 +10,7 @@ import '../features/staining_table/screens/staining_table_manager_screen.dart';
 import '../services/storage_service.dart';
 import '../services/generic_table_import_service.dart';
 import '../widgets/protocolflow_app_bar.dart';
+import '../theme/app_colors.dart';
 import 'plate_wizard_samples_screen.dart';
 import 'saved_table_picker_screen.dart';
 import 'table_data_editor_screen.dart';
@@ -93,7 +94,7 @@ class TableSelectionScreen extends StatelessWidget {
     return Scaffold(
       appBar: embedded ? null : ProtocolFlowAppBar(title: title),
       body: Padding(
-        padding: const EdgeInsets.all(20.0),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -134,14 +135,14 @@ class TableSelectionScreen extends StatelessWidget {
     bool isAvailable = true,
   }) {
     return Card(
-      elevation: isAvailable ? 2 : 0,
+      elevation: 0,
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
         side: BorderSide(
           color: isAvailable
-              ? color.withValues(alpha: 0.2)
-              : Colors.grey.shade300,
+              ? color.withValues(alpha: 0.28)
+              : AppColors.outlineVariant,
           width: 1,
         ),
       ),

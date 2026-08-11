@@ -6,6 +6,7 @@ import '../services/serial_dilution_calculator_service.dart';
 import '../widgets/serial_dilution_result_table.dart';
 import 'serial_dilution_manager_screen.dart';
 import '../../../widgets/save_table_action.dart';
+import '../../../widgets/table_workspace.dart';
 
 class SerialDilutionViewerScreen extends StatefulWidget {
   final SerialDilutionInput input;
@@ -60,26 +61,23 @@ class _SerialDilutionViewerScreenState
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(_input.title.isEmpty ? 'Serial Dilution' : _input.title),
-        actions: [
-          SaveTableAction(table: _table),
-          if (!widget.isReadOnly)
-            IconButton(
-              icon: const Icon(Icons.edit),
-              onPressed: _editTable,
-              tooltip: 'Edit Table',
-            ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: SerialDilutionResultTable(
-          input: _input,
-          calculator: _calculator,
-          tableOverride: _table,
-        ),
+    return TableViewerScaffold(
+      title: _input.title.isEmpty ? 'Serial Dilution' : _input.title,
+      typeLabel: 'Serial dilution',
+      typeIcon: Icons.water_drop_outlined,
+      actions: [
+        SaveTableAction(table: _table),
+        if (!widget.isReadOnly)
+          IconButton(
+            icon: const Icon(Icons.edit),
+            onPressed: _editTable,
+            tooltip: 'Edit Table',
+          ),
+      ],
+      table: SerialDilutionResultTable(
+        input: _input,
+        calculator: _calculator,
+        tableOverride: _table,
       ),
     );
   }

@@ -5,6 +5,7 @@ import '../../../models/master_mix_wizard.dart';
 import 'master_mix_manager_screen.dart';
 import '../../../models/protocol_table.dart';
 import '../../../widgets/save_table_action.dart';
+import '../../../widgets/table_workspace.dart';
 
 class MasterMixViewerScreen extends StatefulWidget {
   final MasterMixWizard wizard;
@@ -63,26 +64,23 @@ class _MasterMixViewerScreenState extends State<MasterMixViewerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(_wizard.tableName),
-        actions: [
-          SaveTableAction(table: _table),
-          if (!widget.isReadOnly)
-            IconButton(
-              icon: const Icon(Icons.edit),
-              onPressed: _editTable,
-              tooltip: 'Edit Table',
-            ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: MasterMixResultTable(
-          wizard: _wizard,
-          calculator: _calculator,
-          tableOverride: _table,
-        ),
+    return TableViewerScaffold(
+      title: _wizard.tableName.isEmpty ? 'Master Mix' : _wizard.tableName,
+      typeLabel: 'Master mix',
+      typeIcon: Icons.biotech_outlined,
+      actions: [
+        SaveTableAction(table: _table),
+        if (!widget.isReadOnly)
+          IconButton(
+            icon: const Icon(Icons.edit),
+            onPressed: _editTable,
+            tooltip: 'Edit Table',
+          ),
+      ],
+      table: MasterMixResultTable(
+        wizard: _wizard,
+        calculator: _calculator,
+        tableOverride: _table,
       ),
     );
   }

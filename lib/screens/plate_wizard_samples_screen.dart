@@ -5,6 +5,8 @@ import '../features/plate_wizard/services/plate_long_format_service.dart';
 import '../features/plate_wizard/widgets/plate_result_preview.dart';
 import '../widgets/unsaved_changes_pop_scope.dart';
 import '../widgets/protocolflow_app_bar.dart';
+import '../widgets/table_workspace.dart';
+import '../theme/app_colors.dart';
 
 class PlateWizardSamplesScreen extends StatefulWidget {
   final PlateLayoutWizard wizard;
@@ -115,9 +117,10 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
             ),
           ],
         ),
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
+        body: ResponsiveTableManagerLayout(
+          controlsKey: const ValueKey('table-manager-controls'),
+          previewKey: const ValueKey('table-manager-preview'),
+          controls: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _buildPlateSettings(),
@@ -157,13 +160,11 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 24),
               _buildLayoutControls(),
-              const SizedBox(height: 16),
-              PlateResultPreview(wizard: _wizard),
-              const SizedBox(height: 80),
             ],
           ),
+          preview: PlateResultPreview(wizard: _wizard),
         ),
       ),
     );
@@ -259,12 +260,12 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
 
   Widget _buildLayoutControls() {
     return Card(
-      color: Colors.blue.shade50,
+      color: AppColors.surface,
       elevation: 0,
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.blue.shade100),
+        borderRadius: BorderRadius.circular(8),
+        side: const BorderSide(color: AppColors.outlineVariant),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -274,7 +275,7 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
             Text(
               'Layout Directions',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: Colors.blue.shade900,
+                color: AppColors.primary,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -360,9 +361,9 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
               onChanged(idx == 0 ? Direction.horizontal : Direction.vertical),
           constraints: const BoxConstraints(minHeight: 32, minWidth: 38),
           borderRadius: BorderRadius.circular(8),
-          selectedColor: Colors.white,
-          fillColor: Colors.blue.shade600,
-          color: Colors.blue.shade900,
+          selectedColor: AppColors.onPrimary,
+          fillColor: AppColors.primary,
+          color: AppColors.onPrimaryContainer,
           children: const [
             Icon(Icons.arrow_forward, size: 16),
             Icon(Icons.arrow_downward, size: 16),
@@ -513,7 +514,7 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.copy, color: Colors.blue),
+                  icon: const Icon(Icons.copy, color: AppColors.primary),
                   tooltip: 'Duplicate Item',
                   onPressed: () => _duplicateTestItem(index),
                 ),

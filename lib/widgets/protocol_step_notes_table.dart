@@ -7,6 +7,7 @@ class ProtocolStepNotesTable extends StatefulWidget {
   final bool isLocked;
   final void Function(int index, int direction)? onMove;
   final void Function(int index)? onDelete;
+  final void Function(int index, String note)? onEdit;
 
   const ProtocolStepNotesTable({
     super.key,
@@ -14,6 +15,7 @@ class ProtocolStepNotesTable extends StatefulWidget {
     this.isLocked = false,
     this.onMove,
     this.onDelete,
+    this.onEdit,
   });
 
   @override
@@ -24,7 +26,10 @@ class _ProtocolStepNotesTableState extends State<ProtocolStepNotesTable> {
   bool _isShrunk = false;
 
   bool get _canEdit =>
-      !widget.isLocked && (widget.onMove != null || widget.onDelete != null);
+      !widget.isLocked &&
+      (widget.onMove != null ||
+          widget.onDelete != null ||
+          widget.onEdit != null);
 
   @override
   Widget build(BuildContext context) {
@@ -62,6 +67,9 @@ class _ProtocolStepNotesTableState extends State<ProtocolStepNotesTable> {
                 children: [
                   ListTile(
                     contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                    onTap: !widget.isLocked && widget.onEdit != null
+                        ? () => widget.onEdit!(index, entry.value)
+                        : null,
                     leading: CircleAvatar(
                       radius: 14,
                       child: Text(

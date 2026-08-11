@@ -6,6 +6,8 @@ import '../services/staining_table_generator_service.dart';
 import '../widgets/staining_result_table.dart';
 import '../../../widgets/unsaved_changes_pop_scope.dart';
 import '../../../widgets/protocolflow_app_bar.dart';
+import '../../../widgets/table_workspace.dart';
+import '../../../theme/app_colors.dart';
 
 class StainingTableManagerScreen extends StatefulWidget {
   final StainingWizard wizard;
@@ -146,9 +148,10 @@ class _StainingTableManagerScreenState
             ),
           ],
         ),
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
+        body: ResponsiveTableManagerLayout(
+          controlsKey: const ValueKey('table-manager-controls'),
+          previewKey: const ValueKey('table-manager-preview'),
+          controls: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
@@ -194,18 +197,17 @@ class _StainingTableManagerScreenState
                   ),
                 ),
               ),
-              const SizedBox(height: 32),
-              if (result.rows.isNotEmpty) ...[
-                Text(
-                  'Generated Staining Table',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 16),
-                StainingResultTable(wizard: _wizard, generator: _generator),
-              ],
-              const SizedBox(height: 80),
             ],
           ),
+          preview: result.rows.isEmpty
+              ? const TableWorkspaceSection(
+                  title: 'Generated table',
+                  icon: Icons.table_chart_outlined,
+                  child: Text(
+                    'Add panel chains and samples to preview the table.',
+                  ),
+                )
+              : StainingResultTable(wizard: _wizard, generator: _generator),
         ),
       ),
     );
@@ -553,21 +555,21 @@ class _StainingTableManagerScreenState
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
-        side: BorderSide(color: Colors.indigo.withValues(alpha: 0.2)),
+        side: const BorderSide(color: AppColors.outlineVariant),
       ),
       child: Column(
         children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             decoration: BoxDecoration(
-              color: Colors.indigo.shade50,
+              color: AppColors.surfaceContainer,
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(8),
               ),
             ),
             child: Row(
               children: [
-                const Icon(Icons.science, size: 18, color: Colors.indigo),
+                const Icon(Icons.science, size: 18, color: AppColors.primary),
                 const SizedBox(width: 8),
                 Expanded(
                   child: TextField(
@@ -719,8 +721,8 @@ class _StainingTableManagerScreenState
                           sample.copyWith(selectedChainIds: newList),
                         );
                       },
-                      selectedColor: Colors.indigo.shade100,
-                      checkmarkColor: Colors.indigo,
+                      selectedColor: AppColors.primaryContainer,
+                      checkmarkColor: AppColors.primary,
                     );
                   }).toList(),
                 ),

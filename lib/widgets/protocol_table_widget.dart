@@ -33,14 +33,14 @@ class ProtocolTableWidget extends StatelessWidget {
         children: [
           InkWell(
             onTap: () => _openTableEditor(context),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(8),
 
             child: Container(
               width: 80,
               height: 80,
               decoration: BoxDecoration(
                 color: tableColor.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: tableColor.withValues(alpha: 0.35)),
               ),
               child: Icon(

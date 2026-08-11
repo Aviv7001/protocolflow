@@ -36,26 +36,26 @@ class _TableExportActionsState extends State<TableExportActions> {
           spacing: 8,
           runSpacing: 8,
           children: [
-            OutlinedButton.icon(
+            IconButton.outlined(
               onPressed: _copyTable,
-              icon: const Icon(Icons.content_copy, size: 18),
-              label: const Text('Copy table'),
+              icon: const Icon(Icons.content_copy, size: 20),
+              tooltip: 'Copy table',
             ),
-            OutlinedButton.icon(
+            IconButton.outlined(
               onPressed: _exportToExcel,
-              icon: const Icon(Icons.grid_on, size: 18),
-              label: const Text('Export Excel'),
+              icon: const Icon(Icons.grid_on, size: 20),
+              tooltip: 'Export Excel',
             ),
-            OutlinedButton.icon(
+            IconButton.outlined(
               onPressed: _isSavingImage ? null : _saveAsImage,
               icon: _isSavingImage
                   ? const SizedBox(
-                      width: 18,
-                      height: 18,
+                      width: 20,
+                      height: 20,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.image_outlined, size: 18),
-              label: const Text('Save image'),
+                  : const Icon(Icons.image_outlined, size: 20),
+              tooltip: 'Save image',
             ),
           ],
         ),

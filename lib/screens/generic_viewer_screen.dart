@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../widgets/generic_result_table.dart';
 import '../models/protocol_table.dart';
 import '../widgets/save_table_action.dart';
+import '../widgets/table_workspace.dart';
 import 'table_data_editor_screen.dart';
 
 class GenericViewerScreen extends StatefulWidget {
@@ -52,23 +53,23 @@ class _GenericViewerScreenState extends State<GenericViewerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(_table.title.isEmpty ? 'Table Viewer' : _table.title),
-        actions: [
-          SaveTableAction(table: _table),
-          if (!widget.isReadOnly)
-            IconButton(
-              icon: const Icon(Icons.edit),
-              onPressed: _editTable,
-              tooltip: 'Edit Table',
-            ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: GenericResultTable(table: _table),
-      ),
+    final isMaterialList = _table.type == TableType.materialList;
+    return TableViewerScaffold(
+      title: _table.title.isEmpty ? 'Table Viewer' : _table.title,
+      typeLabel: isMaterialList ? 'Material list' : 'Generic table',
+      typeIcon: isMaterialList
+          ? Icons.inventory_2_outlined
+          : Icons.table_chart_outlined,
+      actions: [
+        SaveTableAction(table: _table),
+        if (!widget.isReadOnly)
+          IconButton(
+            icon: const Icon(Icons.edit),
+            onPressed: _editTable,
+            tooltip: 'Edit Table',
+          ),
+      ],
+      table: GenericResultTable(table: _table),
     );
   }
 }

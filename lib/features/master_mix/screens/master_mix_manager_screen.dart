@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../../../models/master_mix_wizard.dart';
+import '../../../theme/app_colors.dart';
 import '../../../widgets/unsaved_changes_pop_scope.dart';
 import '../../../widgets/protocolflow_app_bar.dart';
+import '../../../widgets/table_workspace.dart';
 import '../../lab_math/lab_calculation.dart';
 import '../../lab_math/widgets/concentration_input_row.dart';
 import '../services/master_mix_calculator_service.dart';
@@ -179,18 +181,20 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
             ),
           ],
         ),
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
+        body: ResponsiveTableManagerLayout(
+          controlsKey: const ValueKey('table-manager-controls'),
+          previewKey: const ValueKey('table-manager-preview'),
+          controls: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _buildTableNameCard(),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
               ..._wizard.mixes.asMap().entries.map(
                 (entry) => _buildMixCard(entry.key, entry.value),
               ),
-              const SizedBox(height: 12),
-              Center(
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.center,
                 child: ElevatedButton.icon(
                   onPressed: _addMix,
                   icon: const Icon(Icons.add),
@@ -200,10 +204,11 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 32),
-              MasterMixResultTable(wizard: _wizard, calculator: _calculator),
-              const SizedBox(height: 40),
             ],
+          ),
+          preview: MasterMixResultTable(
+            wizard: _wizard,
+            calculator: _calculator,
           ),
         ),
       ),
@@ -212,6 +217,10 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
 
   Widget _buildTableNameCard() {
     return Card(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: const BorderSide(color: AppColors.outlineVariant),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: _DelayedTextField(
@@ -234,6 +243,10 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: const BorderSide(color: AppColors.outlineVariant),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -393,53 +406,54 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
     MasterMixItem mix,
     MasterMixResult result,
   ) {
-    return Card(
-      color: Colors.blue.shade50,
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                _resItem(
-                  'Solvent',
-                  result.formattedBaseSolventVolume,
-                  Colors.green,
-                ),
-                _resItemEditable(
-                  'V2 (Total Mix)',
-                  result.optimizedFinalVolumeUl,
-                  (val) {
-                    final roundedV2 =
-                        (val / _extraFactor(mix) * 1000).round() / 1000.0;
-                    _updateMix(
-                      mixIndex,
-                      mix.copyWith(
-                        finalVolume: roundedV2,
-                        finalVolumeUnit: VolumeUnit.uL,
-                      ),
-                    );
-                  },
-                  Colors.black,
-                ),
-              ],
-            ),
-            if (result.autoExtraVolumeReason != null) ...[
-              const SizedBox(height: 10),
-              Text(
-                result.autoExtraVolumeReason!,
-                style: TextStyle(
-                  fontSize: _uniformFontSize - 2,
-                  color: Colors.blue.shade900,
-                  fontWeight: FontWeight.w600,
-                ),
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.primaryContainer,
+        border: Border.all(color: AppColors.outlineVariant),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _resItem(
+                'Solvent',
+                result.formattedBaseSolventVolume,
+                Colors.green,
+              ),
+              _resItemEditable(
+                'V2 (Total Mix)',
+                result.optimizedFinalVolumeUl,
+                (val) {
+                  final roundedV2 =
+                      (val / _extraFactor(mix) * 1000).round() / 1000.0;
+                  _updateMix(
+                    mixIndex,
+                    mix.copyWith(
+                      finalVolume: roundedV2,
+                      finalVolumeUnit: VolumeUnit.uL,
+                    ),
+                  );
+                },
+                Colors.black,
               ),
             ],
+          ),
+          if (result.autoExtraVolumeReason != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              result.autoExtraVolumeReason!,
+              style: TextStyle(
+                fontSize: _uniformFontSize - 2,
+                color: AppColors.onPrimaryContainer,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -644,7 +658,7 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
                 ),
               );
             }
-          }, Colors.blue)
+          }, AppColors.primary)
         else
           _resItemEditable('V1 (from Stock)', rRes.reagentVolumeUl, (val) {
             final stockFamily = LabCalculation.familyOf(item.stockUnit);
@@ -673,7 +687,7 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
                 ),
               );
             }
-          }, Colors.blue),
+          }, AppColors.primary),
         _resItem('Stock C1', rRes.formattedStockConcentration, Colors.grey),
         _resItem('Final C2', rRes.formattedFinalConcentration, Colors.grey),
       ],

@@ -1652,6 +1652,8 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
       bool isLastInPhase =
           i == _steps.length - 1 || _steps[i + 1].phaseName != currentPhase;
       if (isLastInPhase) {
+        final targetPhaseName = currentPhase;
+        final targetInsertIndex = i + 1;
         final phaseSteps = _steps.where((s) => s.phaseName == currentPhase);
         final bool isPhaseLocked =
             phaseSteps.isNotEmpty &&
@@ -1664,8 +1666,10 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
             Padding(
               padding: const EdgeInsets.only(left: 16.0, bottom: 16.0),
               child: TextButton.icon(
-                onPressed: () =>
-                    _addNewStep(phaseName: currentPhase, insertIndex: i + 1),
+                onPressed: () => _addNewStep(
+                  phaseName: targetPhaseName,
+                  insertIndex: targetInsertIndex,
+                ),
                 icon: const Icon(Icons.add, size: 18),
                 label: const Text('Add Step to Phase'),
               ),
@@ -1999,6 +2003,8 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
               ProtocolStepActionsTable(
                 actions: step.actionItems,
                 isLocked: isLocked,
+                onEdit: (actionIndex, action) =>
+                    _editAction(index, actionIndex, action),
                 trailingBuilder: (context, actionIndex) {
                   final timer = step.actionTimers[actionIndex] ?? 0;
                   return Row(
@@ -2109,6 +2115,8 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
               ProtocolStepNotesTable(
                 notes: step.notes,
                 isLocked: isLocked,
+                onEdit: (noteIndex, note) =>
+                    _editProtocolStepNote(index, noteIndex, note),
                 onMove: (noteIndex, direction) =>
                     _moveProtocolStepNote(index, noteIndex, direction),
                 onDelete: (noteIndex) =>
@@ -2533,6 +2541,30 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
     });
   }
 
+  Future<void> _editAction(
+    int stepIndex,
+    int actionIndex,
+    String action,
+  ) async {
+    final updated = await _showListItemEditDialog(
+      title: 'Edit Action',
+      label: 'Action',
+      initialValue: action,
+    );
+    if (updated == null || !mounted) return;
+    if (stepIndex >= _steps.length ||
+        actionIndex >= _steps[stepIndex].actionItems.length) {
+      return;
+    }
+
+    setState(() {
+      final step = _steps[stepIndex];
+      final actions = List<String>.from(step.actionItems);
+      actions[actionIndex] = updated;
+      _steps[stepIndex] = step.copyWith(actionItems: actions);
+    });
+  }
+
   void _moveProtocolStepNote(int stepIndex, int noteIndex, int delta) {
     final newIndex = noteIndex + delta;
     final step = _steps[stepIndex];
@@ -2552,6 +2584,70 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
       final notes = List<String>.from(step.notes)..removeAt(noteIndex);
       _steps[stepIndex] = step.copyWith(notes: notes);
     });
+  }
+
+  Future<void> _editProtocolStepNote(
+    int stepIndex,
+    int noteIndex,
+    String note,
+  ) async {
+    final updated = await _showListItemEditDialog(
+      title: 'Edit Protocol Step Note',
+      label: 'Protocol step note',
+      initialValue: note,
+    );
+    if (updated == null || !mounted) return;
+    if (stepIndex >= _steps.length ||
+        noteIndex >= _steps[stepIndex].notes.length) {
+      return;
+    }
+
+    setState(() {
+      final step = _steps[stepIndex];
+      final notes = List<String>.from(step.notes);
+      notes[noteIndex] = updated;
+      _steps[stepIndex] = step.copyWith(notes: notes);
+    });
+  }
+
+  Future<String?> _showListItemEditDialog({
+    required String title,
+    required String label,
+    required String initialValue,
+  }) async {
+    final controller = TextEditingController(text: initialValue);
+    try {
+      final result = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(title),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            minLines: 1,
+            maxLines: null,
+            decoration: InputDecoration(labelText: label),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final value = controller.text.trim();
+                if (value.isEmpty) return;
+                Navigator.pop(dialogContext, value);
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      );
+      return result;
+    } finally {
+      controller.dispose();
+    }
   }
 
   Future<void> _showActionTimerDialog(

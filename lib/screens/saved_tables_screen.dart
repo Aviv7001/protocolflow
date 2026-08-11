@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import '../models/protocol_table.dart';
 import '../services/storage_service.dart';
 import '../widgets/protocol_table_widget.dart';
+import '../theme/app_colors.dart';
+import '../widgets/protocolflow_app_bar.dart';
+import '../widgets/table_workspace.dart';
 
 class SavedTablesScreen extends StatefulWidget {
   final bool embedded;
@@ -74,7 +77,7 @@ class _SavedTablesScreenState extends State<SavedTablesScreen> {
     return Scaffold(
       appBar: widget.embedded
           ? null
-          : AppBar(title: const Text('Saved Tables')),
+          : ProtocolFlowAppBar(title: 'Saved Tables'),
       body: SafeArea(
         top: !widget.embedded,
         child: _isLoading
@@ -95,36 +98,16 @@ class _SavedTablesScreenState extends State<SavedTablesScreen> {
   Widget _buildEmptyState() {
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(16),
       children: [
-        SizedBox(
-          height: 360,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.table_chart_outlined,
-                size: 56,
-                color: Colors.grey.shade500,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'No saved tables yet',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Use Lab Tools to generate a table and save it here.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey.shade600),
-              ),
-              const SizedBox(height: 20),
-              ElevatedButton.icon(
-                onPressed: _openLabTools,
-                icon: const Icon(Icons.science),
-                label: const Text('Open Lab Tools'),
-              ),
-            ],
+        TableWorkspaceEmptyState(
+          title: 'No saved tables yet',
+          message: 'Use Lab Tools to generate a table and save it here.',
+          icon: Icons.table_chart_outlined,
+          action: ElevatedButton.icon(
+            onPressed: _openLabTools,
+            icon: const Icon(Icons.science),
+            label: const Text('Open Lab Tools'),
           ),
         ),
       ],
@@ -146,6 +129,10 @@ class _SavedTablesScreenState extends State<SavedTablesScreen> {
         final table = _tables[index];
         return Card(
           clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+            side: const BorderSide(color: AppColors.outlineVariant),
+          ),
           child: Stack(
             children: [
               Center(

@@ -50,7 +50,7 @@ class ProtocolTablePreview extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(color: AppColors.outlineVariant),
       ),
       child: Column(
@@ -60,33 +60,53 @@ class ProtocolTablePreview extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
             child: Row(
               children: [
-                IconButton(
-                  tooltip: 'Open table',
-                  onPressed: () => _openTable(context),
-                  icon: Icon(
-                    _typeIcon(table.type),
-                    size: 18,
-                    color: AppColors.primary,
-                  ),
-                ),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      Text(
-                        _typeLabel(table.type),
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textSecondary,
+                  child: Tooltip(
+                    message: 'Open table',
+                    child: InkWell(
+                      key: ValueKey('open-table-${table.id}'),
+                      onTap: () => _openTable(context),
+                      borderRadius: BorderRadius.circular(6),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                              ),
+                              child: Icon(
+                                _typeIcon(table.type),
+                                size: 20,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  Text(
+                                    _typeLabel(table.type),
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ],
+                    ),
                   ),
                 ),
                 if (showOrderControls) ...[
@@ -315,55 +335,30 @@ class _CompactPlateTablePreviewState extends State<_CompactPlateTablePreview> {
         );
     if (rows <= 0 || cols <= 0) return _InlineTableData(table: table);
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final boardWidth = _boardWidth(cols + 1);
-        final boardHeight = _boardHeight(rows);
-        final availableWidth = constraints.hasBoundedWidth
-            ? constraints.maxWidth
-            : boardWidth;
-        final scale = availableWidth < boardWidth
-            ? (availableWidth / boardWidth).clamp(0.24, 1.0).toDouble()
-            : 1.0;
+    final boardWidth = _boardWidth(cols + 1);
+    final boardHeight = _boardHeight(rows);
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: SizedBox(
-                width: boardWidth * scale,
-                height: boardHeight * scale,
-                child: Transform.scale(
-                  scale: scale,
-                  alignment: Alignment.topLeft,
-                  child: OverflowBox(
-                    alignment: Alignment.topLeft,
-                    minWidth: boardWidth,
-                    maxWidth: boardWidth,
-                    minHeight: boardHeight,
-                    maxHeight: boardHeight,
-                    child: SizedBox(
-                      width: boardWidth,
-                      height: boardHeight,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppColors.outlineVariant),
-                        ),
-                        padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
-                        child: _buildBoard(table, rows, cols),
-                      ),
-                    ),
-                  ),
-                ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        HorizontalTableScroll(
+          minWidth: boardWidth,
+          child: SizedBox(
+            width: boardWidth,
+            height: boardHeight,
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.outlineVariant),
               ),
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
+              child: _buildBoard(table, rows, cols),
             ),
-            if (widget.tables.length > 1) _buildPlatePager(),
-          ],
-        );
-      },
+          ),
+        ),
+        if (widget.tables.length > 1) _buildPlatePager(),
+      ],
     );
   }
 

@@ -12,6 +12,7 @@ class ProtocolStepActionsTable extends StatefulWidget {
   final bool isLocked;
   final ActionRowTrailingBuilder? trailingBuilder;
   final ActionRowWrapperBuilder? rowWrapperBuilder;
+  final void Function(int index, String action)? onEdit;
 
   const ProtocolStepActionsTable({
     super.key,
@@ -19,6 +20,7 @@ class ProtocolStepActionsTable extends StatefulWidget {
     this.isLocked = false,
     this.trailingBuilder,
     this.rowWrapperBuilder,
+    this.onEdit,
   });
 
   @override
@@ -68,6 +70,9 @@ class _ProtocolStepActionsTableState extends State<ProtocolStepActionsTable> {
               final trailing = widget.trailingBuilder?.call(context, index);
               Widget row = ListTile(
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                onTap: !widget.isLocked && widget.onEdit != null
+                    ? () => widget.onEdit!(index, entry.value)
+                    : null,
                 leading: CircleAvatar(
                   radius: 14,
                   child: Text(

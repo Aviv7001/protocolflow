@@ -4,6 +4,8 @@ import '../../../models/plate_wizard.dart';
 import '../../../models/protocol_table.dart';
 import '../../../services/table_export_service.dart';
 import '../../../widgets/table_export_actions.dart';
+import '../../../widgets/horizontal_table_scroll.dart';
+import '../../../widgets/protocolflow_app_bar.dart';
 
 class PlateResultPreview extends StatefulWidget {
   final PlateLayoutWizard wizard;
@@ -87,49 +89,22 @@ class _PlateResultPreviewState extends State<PlateResultPreview> {
   }
 
   Widget _buildFittedPlateBoard(ProtocolTable table, int rows, int cols) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        const framePadding = EdgeInsets.fromLTRB(16, 16, 16, 28);
-        final boardWidth = _plateBoardWidth(
-          cols + 1,
-        ); // +1 so the columns wont over flow the container
-        final boardHeight = _plateBoardHeight(rows);
-        final availableWidth = constraints.hasBoundedWidth
-            ? constraints.maxWidth
-            : boardWidth;
-        final scale = availableWidth < boardWidth
-            ? (availableWidth / boardWidth).clamp(0.2, 1.0).toDouble()
-            : 1.0;
+    const framePadding = EdgeInsets.fromLTRB(16, 16, 16, 28);
+    final boardWidth = _plateBoardWidth(cols + 1);
+    final boardHeight = _plateBoardHeight(rows);
 
-        return Align(
-          alignment: Alignment.centerLeft,
-          child: SizedBox(
-            width: boardWidth * scale,
-            height: boardHeight * scale,
-            child: Transform.scale(
-              scale: scale,
-              alignment: Alignment.topLeft,
-              child: OverflowBox(
-                alignment: Alignment.topLeft,
-                minWidth: boardWidth,
-                maxWidth: boardWidth,
-                minHeight: boardHeight,
-                maxHeight: boardHeight,
-                child: SizedBox(
-                  width: boardWidth,
-                  height: boardHeight,
-                  child: _buildPlateFrame(
-                    child: Padding(
-                      padding: framePadding,
-                      child: _buildPlateBoard(table, rows, cols),
-                    ),
-                  ),
-                ),
-              ),
-            ),
+    return HorizontalTableScroll(
+      minWidth: boardWidth,
+      child: SizedBox(
+        width: boardWidth,
+        height: boardHeight,
+        child: _buildPlateFrame(
+          child: Padding(
+            padding: framePadding,
+            child: _buildPlateBoard(table, rows, cols),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 
@@ -137,14 +112,8 @@ class _PlateResultPreviewState extends State<PlateResultPreview> {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(color: Colors.grey.shade300),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
-          ),
-        ],
       ),
       child: child,
     );
@@ -425,9 +394,8 @@ class _FullScreenPlateViewState extends State<_FullScreenPlateView> {
     if (widget.pages.isEmpty) return const SizedBox.shrink();
 
     return Scaffold(
-      appBar: AppBar(
-        titleSpacing: 0,
-        title: Text(_page.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+      appBar: ProtocolFlowAppBar(
+        title: _page.title,
         actions: [
           IconButton(
             tooltip: 'Zoom out',

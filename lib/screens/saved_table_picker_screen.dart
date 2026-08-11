@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../models/protocol_table.dart';
 import '../services/storage_service.dart';
+import '../theme/app_colors.dart';
+import '../widgets/protocolflow_app_bar.dart';
+import '../widgets/table_workspace.dart';
 
 class SavedTablePickerScreen extends StatefulWidget {
   const SavedTablePickerScreen({super.key});
@@ -45,7 +48,7 @@ class _SavedTablePickerScreenState extends State<SavedTablePickerScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Choose Saved Table')),
+      appBar: ProtocolFlowAppBar(title: 'Choose Saved Table'),
       body: SafeArea(
         child: _isLoading
             ? const Center(child: CircularProgressIndicator())
@@ -64,6 +67,10 @@ class _SavedTablePickerScreenState extends State<SavedTablePickerScreen> {
                   final table = _tables[index];
                   return Card(
                     clipBehavior: Clip.antiAlias,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      side: const BorderSide(color: AppColors.outlineVariant),
+                    ),
                     child: InkWell(
                       onTap: () => _selectTable(table),
                       child: Padding(
@@ -78,7 +85,7 @@ class _SavedTablePickerScreenState extends State<SavedTablePickerScreen> {
                                 color: _typeColor(
                                   table.type,
                                 ).withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(12),
+                                borderRadius: BorderRadius.circular(8),
                                 border: Border.all(
                                   color: _typeColor(
                                     table.type,
@@ -132,37 +139,20 @@ class _SavedTablePickerScreenState extends State<SavedTablePickerScreen> {
   }
 
   Widget _buildEmptyState() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.table_chart_outlined,
-              size: 56,
-              color: Colors.grey.shade500,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'No saved tables yet',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Create one in Lab Tools, then attach it here.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey.shade600),
-            ),
-            const SizedBox(height: 20),
-            ElevatedButton.icon(
-              onPressed: _openLabTools,
-              icon: const Icon(Icons.science),
-              label: const Text('Open Lab Tools'),
-            ),
-          ],
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        TableWorkspaceEmptyState(
+          title: 'No saved tables yet',
+          message: 'Create one in Lab Tools, then attach it here.',
+          icon: Icons.table_chart_outlined,
+          action: ElevatedButton.icon(
+            onPressed: _openLabTools,
+            icon: const Icon(Icons.science),
+            label: const Text('Open Lab Tools'),
+          ),
         ),
-      ),
+      ],
     );
   }
 

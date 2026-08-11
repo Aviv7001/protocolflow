@@ -7,6 +7,8 @@ import '../services/serial_dilution_calculator_service.dart';
 import '../widgets/serial_dilution_result_table.dart';
 import '../../../widgets/unsaved_changes_pop_scope.dart';
 import '../../../widgets/protocolflow_app_bar.dart';
+import '../../../widgets/table_workspace.dart';
+import '../../../theme/app_colors.dart';
 
 class SerialDilutionManagerScreen extends StatefulWidget {
   final SerialDilutionInput input;
@@ -83,19 +85,23 @@ class _SerialDilutionManagerScreenState
             ),
           ],
         ),
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
+        body: ResponsiveTableManagerLayout(
+          controlsKey: const ValueKey('table-manager-controls'),
+          previewKey: const ValueKey('table-manager-preview'),
+          controls: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _buildGeneralInfo(),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
               _buildDilutionOptions(),
-              const SizedBox(height: 24),
+            ],
+          ),
+          preview: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
               _buildGlobalResultPreview(result),
               const SizedBox(height: 12),
               SerialDilutionResultTable(input: _input, calculator: _calculator),
-              const SizedBox(height: 80),
             ],
           ),
         ),
@@ -107,7 +113,7 @@ class _SerialDilutionManagerScreenState
     if (result.success != true) return const SizedBox.shrink();
 
     return Card(
-      color: Colors.blue.shade50,
+      color: AppColors.primaryContainer,
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -119,7 +125,7 @@ class _SerialDilutionManagerScreenState
                 _resItem(
                   'Dilutions',
                   result.calculatedNumberOfDilutions.toString(),
-                  Colors.blue,
+                  AppColors.primary,
                 ),
                 _resItemEditable(
                   'Final Volume',
@@ -143,7 +149,7 @@ class _SerialDilutionManagerScreenState
                 result.autoExtraVolumeReason!,
                 style: TextStyle(
                   fontSize: _uniformFontSize - 2,
-                  color: Colors.blue.shade900,
+                  color: AppColors.onPrimaryContainer,
                   fontWeight: FontWeight.w600,
                 ),
               ),

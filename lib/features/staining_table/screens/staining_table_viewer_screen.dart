@@ -5,6 +5,7 @@ import '../models/staining_wizard.dart';
 import 'staining_table_manager_screen.dart';
 import '../../../models/protocol_table.dart';
 import '../../../widgets/save_table_action.dart';
+import '../../../widgets/table_workspace.dart';
 
 class StainingTableViewerScreen extends StatefulWidget {
   final StainingWizard wizard;
@@ -57,28 +58,20 @@ class _StainingTableViewerScreenState extends State<StainingTableViewerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(_wizard.title.isEmpty ? 'Staining Table' : _wizard.title),
-        actions: [
-          SaveTableAction(table: _wizard.generateTable()),
-          if (!widget.isReadOnly)
-            IconButton(
-              icon: const Icon(Icons.edit),
-              onPressed: _editTable,
-              tooltip: 'Edit Table',
-            ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            StainingResultTable(wizard: _wizard, generator: _generator),
-          ],
-        ),
-      ),
+    return TableViewerScaffold(
+      title: _wizard.title.isEmpty ? 'Staining Table' : _wizard.title,
+      typeLabel: 'Staining table',
+      typeIcon: Icons.color_lens_outlined,
+      actions: [
+        SaveTableAction(table: _wizard.generateTable()),
+        if (!widget.isReadOnly)
+          IconButton(
+            icon: const Icon(Icons.edit),
+            onPressed: _editTable,
+            tooltip: 'Edit Table',
+          ),
+      ],
+      table: StainingResultTable(wizard: _wizard, generator: _generator),
     );
   }
 }
