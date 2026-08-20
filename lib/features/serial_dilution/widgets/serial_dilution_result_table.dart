@@ -4,6 +4,7 @@ import '../models/serial_dilution_input.dart';
 import '../services/serial_dilution_calculator_service.dart';
 import '../../../models/protocol_table.dart';
 import '../../../widgets/horizontal_table_scroll.dart';
+import '../../../widgets/protocolflow_ui.dart';
 import '../../../widgets/table_export_actions.dart';
 import '../../../widgets/transfer_status_icons.dart';
 import '../../../theme/app_colors.dart';
@@ -49,10 +50,7 @@ class SerialDilutionResultTable extends StatelessWidget {
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Output Table', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 12),
-        Card(
-          clipBehavior: Clip.antiAlias,
+        ProtocolFlowTableCard(
           child: HorizontalTableScroll(
             child: DataTable(
               border: TableBorder.all(color: AppColors.outlineVariant),
@@ -150,13 +148,14 @@ class SerialDilutionResultTable extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        Row(
+        Wrap(
+          spacing: 24,
+          runSpacing: 12,
           children: [
             _SummaryItem(
               label: 'Dilutions',
               value: result.calculatedNumberOfDilutions.toString(),
             ),
-            const SizedBox(width: 24),
             _SummaryItem(
               label: 'Optimized final volume',
               value: result.formattedOptimizedFinalVolume,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/protocol_table.dart';
 import '../theme/app_colors.dart';
 import 'horizontal_table_scroll.dart';
+import 'protocolflow_ui.dart';
 import 'table_export_actions.dart';
 import 'transfer_status_icons.dart';
 
@@ -24,8 +25,8 @@ class GenericResultTable extends StatelessWidget {
     return TableExportActions(
       table: table,
       includeRowHeaders: true,
-      child: Card(
-        clipBehavior: Clip.antiAlias,
+      child: ProtocolFlowTableCard(
+        title: null,
         child: HorizontalTableScroll(
           child: DataTable(
             border: TableBorder.all(color: AppColors.outlineVariant),

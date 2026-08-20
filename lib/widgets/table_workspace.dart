@@ -5,7 +5,7 @@ import 'protocolflow_app_bar.dart';
 
 abstract final class TableWorkspaceDimensions {
   static const double wideBreakpoint = 1040;
-  static const double maxContentWidth = 1440;
+  static const double maxContentWidth = 1180;
   static const double controlsFlex = 38;
   static const double previewFlex = 62;
 }
@@ -32,7 +32,7 @@ class TableWorkspaceSection extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.surface,
         border: Border.all(color: AppColors.outlineVariant),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Padding(
         padding: padding,
@@ -75,12 +75,16 @@ class ResponsiveTableManagerLayout extends StatelessWidget {
     required this.preview,
     this.controlsKey,
     this.previewKey,
+    this.widePreviewHeader,
+    this.narrowFooter,
   });
 
   final Widget controls;
   final Widget preview;
   final Key? controlsKey;
   final Key? previewKey;
+  final Widget? widePreviewHeader;
+  final Widget? narrowFooter;
 
   @override
   Widget build(BuildContext context) {
@@ -88,7 +92,7 @@ class ResponsiveTableManagerLayout extends StatelessWidget {
       data: Theme.of(context).copyWith(
         cardTheme: Theme.of(context).cardTheme.copyWith(
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(14),
             side: const BorderSide(color: AppColors.outlineVariant),
           ),
         ),
@@ -108,7 +112,16 @@ class ResponsiveTableManagerLayout extends StatelessWidget {
                     const SizedBox(width: 20),
                     Expanded(
                       flex: TableWorkspaceDimensions.previewFlex.round(),
-                      child: KeyedSubtree(key: previewKey, child: preview),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (widePreviewHeader != null) ...[
+                            widePreviewHeader!,
+                            const SizedBox(height: 20),
+                          ],
+                          KeyedSubtree(key: previewKey, child: preview),
+                        ],
+                      ),
                     ),
                   ],
                 )
@@ -116,6 +129,10 @@ class ResponsiveTableManagerLayout extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     KeyedSubtree(key: controlsKey, child: controls),
+                    if (narrowFooter != null) ...[
+                      const SizedBox(height: 16),
+                      narrowFooter!,
+                    ],
                     const SizedBox(height: 16),
                     KeyedSubtree(key: previewKey, child: preview),
                   ],
@@ -206,7 +223,7 @@ class TableViewerScaffold extends StatelessWidget {
       data: Theme.of(context).copyWith(
         cardTheme: Theme.of(context).cardTheme.copyWith(
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(14),
             side: const BorderSide(color: AppColors.outlineVariant),
           ),
         ),

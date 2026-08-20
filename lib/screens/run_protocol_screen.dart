@@ -21,6 +21,7 @@ import 'package:protocolflow/widgets/protocol_step_actions_table.dart';
 import 'package:protocolflow/widgets/protocol_step_notes_table.dart';
 import 'package:protocolflow/widgets/protocol_table_preview.dart';
 import 'package:protocolflow/widgets/protocolflow_app_bar.dart';
+import 'package:protocolflow/widgets/protocolflow_ui.dart';
 import 'package:protocolflow/widgets/responsive_layout.dart';
 import 'package:protocolflow/screens/home_screen.dart';
 
@@ -97,6 +98,7 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
         ? activeProtocol
         : null;
     activeProtocol = ActiveProtocol(
+      runId: currentSession?.runId,
       protocol: protocol,
       currentStepIndex: currentStepIndex,
       notes: _notes,
@@ -165,7 +167,11 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
     await savePersistentProtocols();
     if (!mounted) return;
     setState(() => _allowPop = true);
-    Navigator.of(context).pop();
+    if (decision == 'pause') {
+      _returnToLibrary(2);
+    } else {
+      Navigator.of(context).pop();
+    }
   }
 
   void _goToNextStep() {
@@ -262,7 +268,7 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
             },
             child: const Text('Keep in Running'),
           ),
-          ElevatedButton(
+          FilledButton(
             onPressed: () async {
               // Mark current step as completed
               if (currentStepIndex >= 0) {
@@ -277,7 +283,9 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
 
               completedProtocols.add(
                 CompletedProtocol(
-                  id: DateTime.now().millisecondsSinceEpoch.toString(),
+                  id:
+                      activeProtocol?.runId ??
+                      DateTime.now().millisecondsSinceEpoch.toString(),
                   protocol: protocol,
                   notes: List.from(_notes),
                   startedAt: activeProtocol?.startedAt,
@@ -397,7 +405,7 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
                                 child: IconButton(
                                   icon: const Icon(
                                     Icons.cancel,
-                                    color: Colors.red,
+                                    color: AppColors.error,
                                     size: 20,
                                   ),
                                   onPressed: () => setDialogState(
@@ -1020,7 +1028,7 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
           ],
         ),
         body: _buildRunBody(),
-        bottomNavigationBar: _buildBottomCommandBar(),
+        bottomNavigationBar: _buildResponsiveBottomCommandBar(),
       ),
     );
   }
@@ -1039,7 +1047,7 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
           child: Align(
             alignment: Alignment.topCenter,
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 1800),
+              constraints: const BoxConstraints(maxWidth: 1180),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -1413,18 +1421,7 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
   }
 
   Widget _buildEmptyState(String message) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceContainer,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.outlineVariant),
-      ),
-      child: Text(
-        message,
-        style: const TextStyle(color: AppColors.textSecondary),
-      ),
-    );
+    return ProtocolFlowEmptyState(message: message);
   }
 
   Widget _buildBottomCommandBar() {
@@ -1480,6 +1477,40 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
           label: 'Files',
         ),
       ],
+    );
+  }
+
+  Widget _buildResponsiveBottomCommandBar() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final navigation = _buildBottomCommandBar();
+        if (constraints.maxWidth < ProtocolFlowBreakpoints.desktop) {
+          return navigation;
+        }
+
+        return SafeArea(
+          top: false,
+          minimum: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            heightFactor: 1,
+            child: SizedBox(
+              key: const Key('floating-run-navigation'),
+              width: 560,
+              child: Material(
+                elevation: 8,
+                shadowColor: Colors.black.withValues(alpha: 0.18),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  side: const BorderSide(color: AppColors.outlineVariant),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: navigation,
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -1655,29 +1686,36 @@ class _ActionTimerInputState extends State<_ActionTimerInput> {
             decoration: const InputDecoration(
               isDense: true,
               contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-              border: OutlineInputBorder(),
+              border: InputBorder.none,
             ),
             style: const TextStyle(fontSize: 13),
             onChanged: (v) => _updateValue(),
           ),
         ),
         const SizedBox(width: 4),
-        DropdownButton<String>(
-          value: _unit,
-          isDense: true,
-          underline: const SizedBox(),
-          style: const TextStyle(fontSize: 13, color: Colors.black),
-          items: const [
-            DropdownMenuItem(value: 'H', child: Text('H')),
-            DropdownMenuItem(value: 'M', child: Text('M')),
-            DropdownMenuItem(value: 'S', child: Text('S')),
-          ],
-          onChanged: (v) {
-            if (v != null) {
-              setState(() => _unit = v);
-              _updateValue();
-            }
-          },
+        SizedBox(
+          width: 64,
+          child: DropdownButtonFormField<String>(
+            initialValue: _unit,
+            isDense: true,
+            decoration: const InputDecoration(
+              isDense: true,
+              border: InputBorder.none,
+              contentPadding: EdgeInsets.symmetric(horizontal: 4),
+            ),
+            style: const TextStyle(fontSize: 13, color: Colors.black),
+            items: const [
+              DropdownMenuItem(value: 'H', child: Text('H')),
+              DropdownMenuItem(value: 'M', child: Text('M')),
+              DropdownMenuItem(value: 'S', child: Text('S')),
+            ],
+            onChanged: (v) {
+              if (v != null) {
+                setState(() => _unit = v);
+                _updateValue();
+              }
+            },
+          ),
         ),
       ],
     );

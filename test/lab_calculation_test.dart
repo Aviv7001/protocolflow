@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocolflow/features/master_mix/services/master_mix_calculator_service.dart';
-import 'package:protocolflow/features/reagent_mix/services/reagent_mix_calculator_service.dart';
 import 'package:protocolflow/features/lab_math/lab_calculation.dart';
 import 'package:protocolflow/features/serial_dilution/models/serial_dilution_input.dart';
 import 'package:protocolflow/features/serial_dilution/services/serial_dilution_calculator_service.dart';
@@ -99,97 +98,6 @@ void main() {
       expect(suggestion.finalSolventVolumeUl, 950);
       expect(suggestion.message, contains('Suggested intermediate'));
     });
-  });
-
-  group('ReagentMixCalculatorService suspensions', () {
-    test('calculates solid mass for mg per mL target concentration', () {
-      final result = ReagentMixCalculatorService().calculateSuspension(
-        ReagentMixInput(
-          reagentName: 'Ovalbumin',
-          stockConcentration: 0,
-          stockUnit: ConcentrationUnit.ugML,
-          workingConcentration: 10,
-          workingUnit: ConcentrationUnit.mgML,
-          volumePerTube: 10,
-          volumePerTubeUnit: VolumeUnit.mL,
-          numberOfTubes: 1,
-        ),
-      );
-
-      expect(result.success, isTrue);
-      expect(result.reagentMassGrams, closeTo(0.1, 0.000001));
-      expect(result.totalVolumeUl, 10000);
-    });
-
-    test('calculates solid mass for percent w/v target concentration', () {
-      final result = ReagentMixCalculatorService().calculateSuspension(
-        ReagentMixInput(
-          reagentName: 'Ovalbumin',
-          stockConcentration: 0,
-          stockUnit: ConcentrationUnit.ugML,
-          workingConcentration: 1,
-          workingUnit: ConcentrationUnit.percent,
-          volumePerTube: 10,
-          volumePerTubeUnit: VolumeUnit.mL,
-          numberOfTubes: 1,
-        ),
-      );
-
-      expect(result.success, isTrue);
-      expect(result.reagentMassGrams, closeTo(0.1, 0.000001));
-      expect(result.formattedSolventVolume, contains('Bring to'));
-    });
-  });
-
-  group('ReagentMixCalculatorService smart pipetting', () {
-    test(
-      'recommends a compatible measuring tool for a small direct transfer',
-      () {
-        final result = ReagentMixCalculatorService().calculateMix(
-          ReagentMixInput(
-            reagentName: 'Antibody',
-            stockConcentration: 1000,
-            stockUnit: ConcentrationUnit.ugML,
-            workingConcentration: 1,
-            workingUnit: ConcentrationUnit.ugML,
-            volumePerTube: 1000,
-            volumePerTubeUnit: VolumeUnit.uL,
-            numberOfTubes: 1,
-            extraVolumePercent: 0,
-          ),
-        );
-
-        expect(result.success, isTrue);
-        expect(result.reagentVolumeUl, closeTo(1, 0.000001));
-        expect(result.reagentTransferEvaluation, isNotNull);
-        expect(result.reagentTransferEvaluation!.recommendedToolName, 'M2.5');
-        expect(result.reagentTransferEvaluation!.repeats, 1);
-        expect(result.suggestions, isEmpty);
-      },
-    );
-
-    test(
-      'does not suggest intermediate stock when direct transfer is practical',
-      () {
-        final result = ReagentMixCalculatorService().calculateMix(
-          ReagentMixInput(
-            reagentName: 'Buffer',
-            stockConcentration: 10,
-            stockUnit: ConcentrationUnit.X,
-            workingConcentration: 1,
-            workingUnit: ConcentrationUnit.X,
-            volumePerTube: 1000,
-            volumePerTubeUnit: VolumeUnit.uL,
-            numberOfTubes: 1,
-            extraVolumePercent: 0,
-          ),
-        );
-
-        expect(result.success, isTrue);
-        expect(result.reagentVolumeUl, closeTo(100, 0.000001));
-        expect(result.suggestions, isEmpty);
-      },
-    );
   });
 
   group('MasterMixCalculatorService smart pipetting', () {

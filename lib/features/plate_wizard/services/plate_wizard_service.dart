@@ -7,7 +7,7 @@ class PlateWizardService {
     }
 
     List<List<List<WellContent?>>> plates = [];
-    
+
     _addNewPlate(plates, input);
 
     for (var sample in input.samples) {
@@ -36,7 +36,7 @@ class PlateWizardService {
       }
 
       bool placed = false;
-      
+
       // Try to place on existing plates first
       for (int pIdx = 0; pIdx < plates.length; pIdx++) {
         var grid = plates[pIdx];
@@ -56,17 +56,18 @@ class PlateWizardService {
 
       if (!placed) {
         return PlateLayoutResult.failure(
-            "Could not fit sample '${sample.name}' even on a fresh plate. Block dimensions ($bWidth x $bHeight) exceed plate size.");
+          "Could not fit sample '${sample.name}' even on a fresh plate. Block dimensions ($bWidth x $bHeight) exceed plate size.",
+        );
       }
     }
 
-    return PlateLayoutResult(
-      success: true,
-      plates: plates,
-    );
+    return PlateLayoutResult(success: true, plates: plates);
   }
 
-  List<List<WellContent?>> _addNewPlate(List<List<List<WellContent?>>> plates, PlateWizardInput input) {
+  List<List<WellContent?>> _addNewPlate(
+    List<List<List<WellContent?>>> plates,
+    PlateWizardInput input,
+  ) {
     List<List<WellContent?>> grid = List.generate(
       input.plateRows,
       (_) => List.generate(input.plateCols, (_) => null),
@@ -75,7 +76,13 @@ class PlateWizardService {
     return grid;
   }
 
-  bool _tryPlaceSample(List<List<WellContent?>> grid, PlateWizardInput input, SampleSpec sample, int bWidth, int bHeight) {
+  bool _tryPlaceSample(
+    List<List<WellContent?>> grid,
+    PlateWizardInput input,
+    SampleSpec sample,
+    int bWidth,
+    int bHeight,
+  ) {
     int totalPlateWells = input.plateRows * input.plateCols;
     for (int i = 0; i < totalPlateWells; i++) {
       int r, c;
@@ -87,7 +94,15 @@ class PlateWizardService {
         r = i % input.plateRows;
       }
 
-      if (_canFitBlock(grid, r, c, bWidth, bHeight, input.plateRows, input.plateCols)) {
+      if (_canFitBlock(
+        grid,
+        r,
+        c,
+        bWidth,
+        bHeight,
+        input.plateRows,
+        input.plateCols,
+      )) {
         _fillSampleBlock(grid, input, sample, r, c);
         return true;
       }
@@ -95,7 +110,15 @@ class PlateWizardService {
     return false;
   }
 
-  bool _canFitBlock(List<List<WellContent?>> grid, int startR, int startC, int bW, int bH, int maxR, int maxC) {
+  bool _canFitBlock(
+    List<List<WellContent?>> grid,
+    int startR,
+    int startC,
+    int bW,
+    int bH,
+    int maxR,
+    int maxC,
+  ) {
     if (startR + bH > maxR || startC + bW > maxC) return false;
     for (int r = startR; r < startR + bH; r++) {
       for (int c = startC; c < startC + bW; c++) {
@@ -105,7 +128,13 @@ class PlateWizardService {
     return true;
   }
 
-  void _fillSampleBlock(List<List<WellContent?>> grid, PlateWizardInput input, SampleSpec sample, int startR, int startC) {
+  void _fillSampleBlock(
+    List<List<WellContent?>> grid,
+    PlateWizardInput input,
+    SampleSpec sample,
+    int startR,
+    int startC,
+  ) {
     int nCond = sample.conditions.length;
     int nDil = sample.dilutions.length;
     int nRep = sample.duplicates;
@@ -114,8 +143,11 @@ class PlateWizardService {
     int dilBlockW = input.duplicateDirection == Direction.horizontal ? nRep : 1;
     int dilBlockH = input.duplicateDirection == Direction.vertical ? nRep : 1;
 
-    int condBlockW = dilBlockW * (input.dilutionDirection == Direction.horizontal ? nDil : 1);
-    int condBlockH = dilBlockH * (input.dilutionDirection == Direction.vertical ? nDil : 1);
+    int condBlockW =
+        dilBlockW *
+        (input.dilutionDirection == Direction.horizontal ? nDil : 1);
+    int condBlockH =
+        dilBlockH * (input.dilutionDirection == Direction.vertical ? nDil : 1);
 
     for (int cIdx = 0; cIdx < nCond; cIdx++) {
       for (int dIdx = 0; dIdx < nDil; dIdx++) {

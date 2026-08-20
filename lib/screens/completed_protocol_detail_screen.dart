@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:protocolflow/models/completed_protocol.dart';
+import 'package:protocolflow/models/protocol_run.dart';
 import 'package:protocolflow/models/protocol_additional_data.dart';
 import 'package:protocolflow/models/project.dart';
 import 'package:protocolflow/models/protocol_step.dart';
@@ -11,6 +12,7 @@ import 'package:protocolflow/widgets/protocol_step_actions_table.dart';
 import 'package:protocolflow/widgets/protocol_step_notes_table.dart';
 import 'package:protocolflow/widgets/protocol_table_preview.dart';
 import 'package:protocolflow/widgets/protocolflow_app_bar.dart';
+import 'package:protocolflow/widgets/protocolflow_ui.dart';
 import 'package:protocolflow/widgets/protocol_publication_widgets.dart';
 import 'package:protocolflow/widgets/responsive_layout.dart';
 import 'package:protocolflow/widgets/sync_status_chip.dart';
@@ -18,17 +20,24 @@ import 'package:protocolflow/data/completed_protocols_data.dart';
 import 'package:protocolflow/services/docx_export_service.dart';
 import 'package:protocolflow/services/pdf_service.dart';
 import 'package:protocolflow/services/export_service.dart';
+import 'package:protocolflow/widgets/protocol_export_dialog.dart';
 import 'package:protocolflow/services/storage_service.dart';
+import 'package:protocolflow/services/protocol_run_service.dart';
 import 'package:protocolflow/theme/app_colors.dart';
 import 'package:protocolflow/utils/date_time_format.dart';
 
 class CompletedProtocolDetailScreen extends StatefulWidget {
   final CompletedProtocol completedProtocol;
+  final String? runId;
 
   const CompletedProtocolDetailScreen({
     super.key,
     required this.completedProtocol,
-  });
+  }) : runId = null;
+
+  CompletedProtocolDetailScreen.fromRun({super.key, required ProtocolRun run})
+    : completedProtocol = run.toCompletedProtocol(),
+      runId = run.id;
 
   @override
   State<CompletedProtocolDetailScreen> createState() =>
@@ -66,10 +75,18 @@ class _CompletedProtocolDetailScreenState
           ),
           TextButton(
             onPressed: () async {
-              completedProtocols.removeWhere(
-                (p) => p.id == completedProtocol.id,
+              final runId = widget.runId ?? completedProtocol.id;
+              final removed = await ProtocolRunService.instance.discardRun(
+                runId,
               );
-              await savePersistentProtocols();
+              if (!removed) {
+                completedProtocols.removeWhere(
+                  (p) => p.id == completedProtocol.id,
+                );
+                await savePersistentProtocols();
+              } else {
+                await loadPersistentProtocols();
+              }
               if (dialogContext.mounted) {
                 Navigator.pop(dialogContext); // Close dialog
                 Navigator.pop(context); // Go back to list
@@ -83,53 +100,23 @@ class _CompletedProtocolDetailScreenState
     );
   }
 
-  void _exportProtocol(BuildContext context) {
-    showModalBottomSheet(
+  Future<void> _exportProtocol(BuildContext context) async {
+    final format = await showDialog<ProtocolExportFormat>(
       context: context,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.picture_as_pdf),
-              title: const Text('Export as PDF'),
-              onTap: () {
-                Navigator.pop(context);
-                PdfService.exportToPdf(completedProtocol);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.description_outlined),
-              title: const Text('Export as Word (DOCX)'),
-              onTap: () {
-                Navigator.pop(context);
-                const DocxExportService().exportCompletedProtocol(
-                  completedProtocol,
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.code),
-              title: const Text('Export as ProtocolFlow file'),
-              onTap: () {
-                Navigator.pop(context);
-                ExportService().exportSingleCompletedProtocol(
-                  completedProtocol,
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.table_view),
-              title: const Text('Export as Excel (XLSX) (Coming Soon)'),
-              enabled: false,
-              onTap: () {
-                Navigator.pop(context);
-              },
-            ),
-          ],
-        ),
-      ),
+      builder: (_) =>
+          const ProtocolExportDialog(title: 'Export completed protocol'),
     );
+    if (!context.mounted || format == null) return;
+    switch (format) {
+      case ProtocolExportFormat.pdf:
+        await PdfService.exportToPdf(completedProtocol);
+      case ProtocolExportFormat.docx:
+        await const DocxExportService().exportCompletedProtocol(
+          completedProtocol,
+        );
+      case ProtocolExportFormat.protocolFlow:
+        await ExportService().exportSingleCompletedProtocol(completedProtocol);
+    }
   }
 
   @override
@@ -146,7 +133,7 @@ class _CompletedProtocolDetailScreenState
             tooltip: 'Export',
           ),
           IconButton(
-            icon: const Icon(Icons.delete_outline),
+            icon: const Icon(Icons.delete_outline, color: AppColors.error),
             onPressed: () => _confirmDelete(context),
             tooltip: 'Delete',
           ),
@@ -170,7 +157,7 @@ class _CompletedProtocolDetailScreenState
           child: Align(
             alignment: Alignment.topCenter,
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 1800),
+              constraints: const BoxConstraints(maxWidth: 1180),
               child: _buildDetailWorkspace(
                 context,
                 completedDate: completedDate,
@@ -668,18 +655,7 @@ class _CompletedProtocolDetailScreenState
   }
 
   Widget _buildEmptyState(String message) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 22),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceContainer,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.outlineVariant),
-      ),
-      child: Text(
-        message,
-        style: const TextStyle(color: AppColors.textSecondary),
-      ),
-    );
+    return ProtocolFlowEmptyState(message: message);
   }
 
   List<Widget> _buildGroupedSteps(BuildContext context) {

@@ -1,13 +1,16 @@
 import '../models/completed_protocol.dart';
 import '../models/active_protocol.dart';
 import '../models/protocol.dart';
-import '../services/storage_service.dart';
+import '../models/protocol_run.dart';
+import '../services/protocol_run_service.dart';
+import '../utils/protocol_run_id.dart';
 
 List<CompletedProtocol> completedProtocols = [];
 List<ActiveProtocol> runningProtocols = [];
 ActiveProtocol? activeProtocol;
+List<ProtocolRun> protocolRuns = [];
 
-final StorageService _storageService = StorageService();
+final ProtocolRunService _runService = ProtocolRunService.instance;
 
 void _upsertRunningProtocol(ActiveProtocol state) {
   runningProtocols.removeWhere(
@@ -44,6 +47,7 @@ ActiveProtocol activateProtocolSession(
   runningProtocols.removeWhere((entry) => entry.protocol.id == protocolId);
   session = session == null
       ? ActiveProtocol(
+          runId: generateProtocolRunId(),
           protocol: pendingProtocol,
           currentStepIndex: initialStepIndex ?? -1,
           notes: const [],
@@ -73,16 +77,33 @@ void discardProtocolSession(String protocolId) {
 }
 
 Future<void> loadPersistentProtocols() async {
-  completedProtocols = await _storageService.loadCompletedProtocols();
-  activeProtocol = await _storageService.loadActiveProtocol();
-  runningProtocols = await _storageService.loadRunningProtocols();
+  protocolRuns = await _runService.loadRuns();
+  _hydrateCompatibilityViews();
 }
 
 Future<void> savePersistentProtocols() async {
-  await _storageService.saveCompletedProtocols(
-    completedProtocols,
-    markPending: false,
+  await _runService.saveFromCompatibilityViews(
+    active: activeProtocol,
+    running: runningProtocols,
+    completed: completedProtocols,
   );
-  await _storageService.saveActiveProtocol(activeProtocol);
-  await _storageService.saveRunningProtocols(runningProtocols);
+  protocolRuns = await _runService.loadRuns();
+  _hydrateCompatibilityViews();
+}
+
+void _hydrateCompatibilityViews() {
+  final activeRuns = protocolRuns
+      .where((run) => run.status == ProtocolRunStatus.running)
+      .toList();
+  activeProtocol = activeRuns.isEmpty
+      ? null
+      : activeRuns.first.toActiveProtocol();
+  runningProtocols = protocolRuns
+      .where((run) => run.status == ProtocolRunStatus.paused)
+      .map((run) => run.toActiveProtocol())
+      .toList();
+  completedProtocols = protocolRuns
+      .where((run) => run.status == ProtocolRunStatus.completed)
+      .map((run) => run.toCompletedProtocol())
+      .toList();
 }

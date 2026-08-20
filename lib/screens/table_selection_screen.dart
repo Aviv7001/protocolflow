@@ -11,15 +11,68 @@ import '../services/storage_service.dart';
 import '../services/generic_table_import_service.dart';
 import '../widgets/protocolflow_app_bar.dart';
 import '../theme/app_colors.dart';
+import '../widgets/save_table_dialog.dart';
 import 'plate_wizard_samples_screen.dart';
 import 'saved_table_picker_screen.dart';
 import 'table_data_editor_screen.dart';
+
+Future<ProtocolTable?> showTableToolPicker(
+  BuildContext context, {
+  bool standaloneMode = false,
+  String? initialProjectId,
+}) {
+  return showDialog<ProtocolTable>(
+    context: context,
+    builder: (dialogContext) => _TableToolPickerDialog(
+      standaloneMode: standaloneMode,
+      initialProjectId: initialProjectId,
+    ),
+  );
+}
+
+enum TableTool {
+  masterMix,
+  staining,
+  serialDilution,
+  plateLayout,
+  generic,
+  importTable,
+}
+
+Future<void> openTableTool(
+  BuildContext context,
+  TableTool tool, {
+  bool standaloneMode = true,
+  String? initialProjectId,
+}) async {
+  final launcher = TableSelectionScreen(
+    standaloneMode: standaloneMode,
+    popAfterStandaloneCreate: false,
+    initialProjectId: initialProjectId,
+  );
+  switch (tool) {
+    case TableTool.masterMix:
+      await launcher._openMasterMix(context);
+    case TableTool.staining:
+      await launcher._openStaining(context);
+    case TableTool.serialDilution:
+      await launcher._openSerialDilution(context);
+    case TableTool.plateLayout:
+      await launcher._openPlateLayout(context);
+    case TableTool.generic:
+      await launcher._openGenericTable(context);
+    case TableTool.importTable:
+      await launcher._importGenericTable(context);
+  }
+}
 
 class TableSelectionScreen extends StatelessWidget {
   final String title;
   final String subtitle;
   final bool standaloneMode;
   final bool embedded;
+  final bool popAfterStandaloneCreate;
+  final String? initialProjectId;
 
   const TableSelectionScreen({
     super.key,
@@ -27,6 +80,8 @@ class TableSelectionScreen extends StatelessWidget {
     this.subtitle = 'Choose a specialized manager to create your table',
     this.standaloneMode = false,
     this.embedded = false,
+    this.popAfterStandaloneCreate = false,
+    this.initialProjectId,
   });
 
   @override
@@ -135,17 +190,7 @@ class TableSelectionScreen extends StatelessWidget {
     bool isAvailable = true,
   }) {
     return Card(
-      elevation: 0,
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: BorderSide(
-          color: isAvailable
-              ? color.withValues(alpha: 0.28)
-              : AppColors.outlineVariant,
-          width: 1,
-        ),
-      ),
       color: isAvailable ? Colors.white : Colors.grey.shade50,
       child: InkWell(
         onTap: isAvailable ? onTap : null,
@@ -221,93 +266,116 @@ class TableSelectionScreen extends StatelessWidget {
     );
   }
 
-  void _openMasterMix(BuildContext context) async {
-    final result = await Navigator.push(
+  Future<void> _openMasterMix(
+    BuildContext context, {
+    MasterMixWizard? initialWizard,
+  }) async {
+    final result = await Navigator.push<MasterMixWizard>(
       context,
       MaterialPageRoute(
         builder: (context) => MasterMixManagerScreen(
-          wizard: MasterMixWizard(),
+          wizard: initialWizard ?? MasterMixWizard(),
           onUpdate: (updated) {},
+          promptForSaveDetails: false,
         ),
       ),
     );
-    if (!context.mounted) return;
-    if (result != null && result is MasterMixWizard) {
-      await _handleCreatedTable(context, result.generateTable());
-    }
+    if (!context.mounted || result == null) return;
+    final saved = await _handleCreatedTable(context, result.generateTable());
+    if (!context.mounted || saved) return;
+    await _openMasterMix(context, initialWizard: result);
   }
 
-  void _openStaining(BuildContext context) async {
-    final result = await Navigator.push(
+  Future<void> _openStaining(
+    BuildContext context, {
+    StainingWizard? initialWizard,
+  }) async {
+    final result = await Navigator.push<StainingWizard>(
       context,
       MaterialPageRoute(
         builder: (context) => StainingTableManagerScreen(
-          wizard: StainingWizard(),
+          wizard: initialWizard ?? StainingWizard(),
           onUpdate: (updated) {},
+          promptForSaveDetails: false,
         ),
       ),
     );
-    if (!context.mounted) return;
-    if (result != null && result is StainingWizard) {
-      await _handleCreatedTable(context, result.generateTable());
-    }
+    if (!context.mounted || result == null) return;
+    final saved = await _handleCreatedTable(context, result.generateTable());
+    if (!context.mounted || saved) return;
+    await _openStaining(context, initialWizard: result);
   }
 
-  void _openSerialDilution(BuildContext context) async {
-    final result = await Navigator.push(
+  Future<void> _openSerialDilution(
+    BuildContext context, {
+    SerialDilutionInput? initialInput,
+  }) async {
+    final result = await Navigator.push<SerialDilutionInput>(
       context,
       MaterialPageRoute(
         builder: (context) => SerialDilutionManagerScreen(
-          input: SerialDilutionInput(),
+          input: initialInput ?? SerialDilutionInput(),
           onUpdate: (updated) {},
+          promptForSaveDetails: false,
         ),
       ),
     );
-    if (!context.mounted) return;
-    if (result != null && result is SerialDilutionInput) {
-      await _handleCreatedTable(context, result.generateTable());
-    }
+    if (!context.mounted || result == null) return;
+    final saved = await _handleCreatedTable(context, result.generateTable());
+    if (!context.mounted || saved) return;
+    await _openSerialDilution(context, initialInput: result);
   }
 
-  void _openGenericTable(BuildContext context) async {
-    final newTable = ProtocolTable(
-      id: 'table_${DateTime.now().millisecondsSinceEpoch}',
-      title: 'Generic Table',
-      type: TableType.generic,
-      metadata: {'needs_dimension_setup': 'true'},
-    );
-
-    final result = await Navigator.push(
+  Future<void> _openGenericTable(
+    BuildContext context, {
+    ProtocolTable? initialTable,
+  }) async {
+    final table =
+        initialTable ??
+        ProtocolTable(
+          id: 'table_${DateTime.now().millisecondsSinceEpoch}',
+          title: 'Generic Table',
+          type: TableType.generic,
+          metadata: {'needs_dimension_setup': 'true'},
+        );
+    final result = await Navigator.push<List<ProtocolTable>>(
       context,
       MaterialPageRoute(
-        builder: (context) =>
-            TableDataEditorScreen(tables: [newTable], onSave: (updated) {}),
+        builder: (context) => TableDataEditorScreen(
+          tables: [table],
+          onSave: (updated) {},
+          promptForSaveDetails: false,
+        ),
       ),
     );
-
-    if (!context.mounted) return;
-    if (result != null && result is List<ProtocolTable> && result.isNotEmpty) {
-      await _handleCreatedTable(context, result.first);
-    }
+    if (!context.mounted || result == null || result.isEmpty) return;
+    final updatedTable = result.first;
+    final saved = await _handleCreatedTable(context, updatedTable);
+    if (!context.mounted || saved) return;
+    await _openGenericTable(context, initialTable: updatedTable);
   }
 
-  void _openPlateLayout(BuildContext context) async {
-    final result = await Navigator.push(
+  Future<void> _openPlateLayout(
+    BuildContext context, {
+    PlateLayoutWizard? initialWizard,
+  }) async {
+    final result = await Navigator.push<PlateLayoutWizard>(
       context,
       MaterialPageRoute(
         builder: (context) => PlateWizardSamplesScreen(
-          wizard: PlateLayoutWizard(),
+          wizard: initialWizard ?? PlateLayoutWizard(),
           onUpdate: (updated) {},
+          promptForSaveDetails: false,
         ),
       ),
     );
-    if (!context.mounted) return;
-    if (result != null && result is PlateLayoutWizard) {
-      await _handleCreatedTable(context, result.toProtocolTable());
-    }
+    if (!context.mounted || result == null) return;
+    final saved = await _handleCreatedTable(context, result.toProtocolTable());
+    if (!context.mounted || saved) return;
+    await _openPlateLayout(context, initialWizard: result);
   }
 
-  void _openSavedTables(BuildContext context) async {
+  Future<void> _openSavedTables(BuildContext context) async {
     final result = await Navigator.push<ProtocolTable>(
       context,
       MaterialPageRoute(builder: (context) => const SavedTablePickerScreen()),
@@ -336,30 +404,183 @@ class TableSelectionScreen extends StatelessWidget {
     ).showSnackBar(SnackBar(content: Text(result.message)));
   }
 
-  Future<void> _handleCreatedTable(
+  Future<bool> _handleCreatedTable(
     BuildContext context,
     ProtocolTable table,
   ) async {
-    if (!context.mounted) return;
+    if (!context.mounted) return false;
+
+    final details = await showSaveTableDialog(
+      context,
+      suggestedName: table.title.isEmpty ? 'Untitled Table' : table.title,
+      initialProjectId: table.projectId ?? initialProjectId,
+    );
+    if (details == null || !context.mounted) return false;
+    final savedTable = details.projectId == null
+        ? table.copyWith(title: details.name, clearProjectId: true)
+        : table.copyWith(title: details.name, projectId: details.projectId);
 
     if (!standaloneMode) {
-      Navigator.pop(context, table);
-      return;
+      Navigator.pop(context, savedTable);
+      return true;
     }
 
-    await StorageService().upsertSavedTable(table);
-    if (!context.mounted) return;
+    await StorageService().upsertSavedTable(savedTable);
+    if (!context.mounted) return false;
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          '"${table.title.isEmpty ? 'Untitled Table' : table.title}" saved',
-        ),
+        content: Text('"${savedTable.title}" saved'),
         action: SnackBarAction(
           label: 'View',
           onPressed: () => Navigator.pushNamed(context, '/saved_tables'),
         ),
       ),
+    );
+    if (popAfterStandaloneCreate && context.mounted) {
+      Navigator.pop(context, savedTable);
+    }
+    return true;
+  }
+}
+
+class _TableToolPickerDialog extends StatelessWidget {
+  const _TableToolPickerDialog({
+    required this.standaloneMode,
+    this.initialProjectId,
+  });
+
+  final bool standaloneMode;
+  final String? initialProjectId;
+
+  @override
+  Widget build(BuildContext context) {
+    final launcher = TableSelectionScreen(
+      standaloneMode: standaloneMode,
+      popAfterStandaloneCreate: true,
+      initialProjectId: initialProjectId,
+    );
+    return KeyedSubtree(
+      key: ValueKey(
+        'table-tool-project-context-${initialProjectId ?? 'unassigned'}',
+      ),
+      child: AlertDialog(
+        key: const Key('table-tool-picker-dialog'),
+        title: Row(
+          children: [
+            const Icon(Icons.science_outlined, color: AppColors.primary),
+            const SizedBox(width: 12),
+            Expanded(child: Text(standaloneMode ? 'Lab tools' : 'Add table')),
+          ],
+        ),
+        contentPadding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 500, maxHeight: 620),
+          child: SingleChildScrollView(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                border: Border.all(color: AppColors.outlineVariant),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _ToolMenuItem(
+                    icon: Icons.biotech,
+                    color: Colors.blue,
+                    title: 'Master Mix',
+                    subtitle: 'Calculator',
+                    onTap: () => launcher._openMasterMix(context),
+                  ),
+                  const Divider(height: 1),
+                  _ToolMenuItem(
+                    icon: Icons.color_lens,
+                    color: Colors.indigo,
+                    title: 'Staining',
+                    subtitle: 'Panel generator',
+                    onTap: () => launcher._openStaining(context),
+                  ),
+                  const Divider(height: 1),
+                  _ToolMenuItem(
+                    icon: Icons.water_drop,
+                    color: Colors.cyan,
+                    title: 'Serial Dilution',
+                    subtitle: 'Standard curve',
+                    onTap: () => launcher._openSerialDilution(context),
+                  ),
+                  const Divider(height: 1),
+                  _ToolMenuItem(
+                    icon: Icons.grid_on,
+                    color: Colors.orange,
+                    title: 'Plate Layout',
+                    subtitle: 'Well designer',
+                    onTap: () => launcher._openPlateLayout(context),
+                  ),
+                  const Divider(height: 1),
+                  _ToolMenuItem(
+                    icon: Icons.table_chart,
+                    color: Colors.grey,
+                    title: 'Generic Table',
+                    subtitle: 'Custom grid',
+                    onTap: () => launcher._openGenericTable(context),
+                  ),
+                  if (!standaloneMode) ...[
+                    const Divider(height: 1),
+                    _ToolMenuItem(
+                      icon: Icons.folder_copy_outlined,
+                      color: Colors.green,
+                      title: 'Saved Tables',
+                      subtitle: 'Choose existing',
+                      onTap: () => launcher._openSavedTables(context),
+                    ),
+                  ],
+                  const Divider(height: 1),
+                  _ToolMenuItem(
+                    icon: Icons.file_upload_outlined,
+                    color: AppColors.primary,
+                    title: 'Import Table',
+                    subtitle: 'From CSV or Excel',
+                    onTap: () => launcher._importGenericTable(context),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ToolMenuItem extends StatelessWidget {
+  const _ToolMenuItem({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Icon(icon, color: color),
+      title: Text(title),
+      subtitle: Text(subtitle),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: onTap,
     );
   }
 }

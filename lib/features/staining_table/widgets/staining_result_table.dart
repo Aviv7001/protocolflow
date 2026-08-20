@@ -3,6 +3,7 @@ import '../models/staining_wizard.dart';
 import '../services/staining_table_generator_service.dart';
 import '../../../widgets/table_export_actions.dart';
 import '../../../widgets/horizontal_table_scroll.dart';
+import '../../../widgets/protocolflow_ui.dart';
 import '../../../theme/app_colors.dart';
 
 class StainingResultTable extends StatelessWidget {
@@ -25,8 +26,7 @@ class StainingResultTable extends StatelessWidget {
 
     return TableExportActions(
       table: wizard.generateTable(),
-      child: Card(
-        clipBehavior: Clip.antiAlias,
+      child: ProtocolFlowTableCard(
         child: HorizontalTableScroll(
           child: DataTable(
             border: TableBorder.all(color: AppColors.outlineVariant),

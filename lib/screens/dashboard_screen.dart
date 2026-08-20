@@ -61,7 +61,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             alignment: Alignment.topCenter,
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                maxWidth: 1800,
+                maxWidth: 1180,
                 minHeight: math.max(0, constraints.maxHeight - 40),
               ),
               child: child,
@@ -188,7 +188,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _responsivePanels([
             _DashboardPanel(
               title: 'Data footprint',
-              subtitle: 'Estimated local and Drive sync payload size',
+              subtitle: 'Local payload and private Drive app-data size',
               child: _buildDataFootprint(
                 data.footprint,
                 hasDriveAccount: data.hasDriveAccount,
@@ -895,9 +895,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
     }).toList();
 
-    if (footprint.localBytes == 0 && footprint.syncBytes == 0) {
-      return const _EmptyChart('No stored ProtocolFlow data yet.');
-    }
+    final driveUnavailableLabel = !hasDriveAccount
+        ? 'Not signed in'
+        : footprint.driveDataAvailable
+        ? null
+        : 'Unavailable';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -916,18 +918,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
         const SizedBox(height: 14),
         _FootprintBar(
-          label: hasDriveAccount ? 'Drive payload estimate' : 'Drive sync data',
-          totalBytes: hasDriveAccount ? footprint.syncBytes : 0,
-          unavailableLabel: hasDriveAccount ? null : 'Not signed in',
+          label: 'Drive app data',
+          totalBytes: footprint.driveDataAvailable ? footprint.syncBytes : 0,
+          unavailableLabel: driveUnavailableLabel,
           segments: segments
               .map(
                 (segment) => _FootprintBarSegment(
-                  bytes: hasDriveAccount ? segment.syncBytes : 0,
+                  bytes: footprint.driveDataAvailable ? segment.syncBytes : 0,
                   color: segment.color,
                 ),
               )
               .toList(),
         ),
+        if (hasDriveAccount && footprint.driveError != null) ...[
+          const SizedBox(height: 8),
+          const Text(
+            'Drive storage could not be read. Pull down to try again.',
+            style: TextStyle(fontSize: 11, color: AppColors.error),
+          ),
+        ],
         const SizedBox(height: 16),
         Wrap(
           spacing: 12,
@@ -939,7 +948,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   color: segment.color,
                   localBytes: segment.localBytes,
                   syncBytes: segment.syncBytes,
-                  hasDriveAccount: hasDriveAccount,
+                  hasDriveData: footprint.driveDataAvailable,
                 ),
               )
               .toList(),
@@ -1280,14 +1289,14 @@ class _FootprintLegendItem extends StatelessWidget {
   final Color color;
   final int localBytes;
   final int syncBytes;
-  final bool hasDriveAccount;
+  final bool hasDriveData;
 
   const _FootprintLegendItem({
     required this.label,
     required this.color,
     required this.localBytes,
     required this.syncBytes,
-    required this.hasDriveAccount,
+    required this.hasDriveData,
   });
 
   @override
@@ -1318,8 +1327,8 @@ class _FootprintLegendItem extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  hasDriveAccount
-                      ? '${_formatBytes(localBytes)} local, ${_formatBytes(syncBytes)} sync'
+                  hasDriveData
+                      ? '${_formatBytes(localBytes)} local, ${_formatBytes(syncBytes)} Drive'
                       : '${_formatBytes(localBytes)} local',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,

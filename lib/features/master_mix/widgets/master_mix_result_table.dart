@@ -4,6 +4,7 @@ import '../../../models/master_mix_wizard.dart';
 import '../../../models/protocol_table.dart';
 import '../../../theme/app_colors.dart';
 import '../../../widgets/horizontal_table_scroll.dart';
+import '../../../widgets/protocolflow_ui.dart';
 import '../../../widgets/table_export_actions.dart';
 import '../../../widgets/transfer_status_icons.dart';
 import '../../lab_math/lab_calculation.dart';
@@ -34,10 +35,7 @@ class MasterMixResultTable extends StatelessWidget {
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Output Table', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 12),
-        Card(
-          clipBehavior: Clip.antiAlias,
+        ProtocolFlowTableCard(
           child: HorizontalTableScroll(
             child: DataTable(
               border: TableBorder.all(color: AppColors.outlineVariant),

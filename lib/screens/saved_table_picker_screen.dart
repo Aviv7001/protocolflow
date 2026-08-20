@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../models/protocol_table.dart';
 import '../services/storage_service.dart';
-import '../theme/app_colors.dart';
 import '../widgets/protocolflow_app_bar.dart';
 import '../widgets/table_workspace.dart';
+import '../widgets/protocolflow_ui.dart';
+import 'table_selection_screen.dart';
 
 class SavedTablePickerScreen extends StatefulWidget {
   const SavedTablePickerScreen({super.key});
@@ -41,7 +42,7 @@ class _SavedTablePickerScreenState extends State<SavedTablePickerScreen> {
   }
 
   Future<void> _openLabTools() async {
-    await Navigator.pushNamed(context, '/lab_tools');
+    await showTableToolPicker(context, standaloneMode: true);
     if (mounted) _loadTables();
   }
 
@@ -50,85 +51,83 @@ class _SavedTablePickerScreenState extends State<SavedTablePickerScreen> {
     return Scaffold(
       appBar: ProtocolFlowAppBar(title: 'Choose Saved Table'),
       body: SafeArea(
-        child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : _tables.isEmpty
-            ? _buildEmptyState()
-            : GridView.builder(
-                padding: const EdgeInsets.all(12),
-                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: 170,
-                  mainAxisExtent: 142,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                ),
-                itemCount: _tables.length,
-                itemBuilder: (context, index) {
-                  final table = _tables[index];
-                  return Card(
-                    clipBehavior: Clip.antiAlias,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      side: const BorderSide(color: AppColors.outlineVariant),
-                    ),
-                    child: InkWell(
-                      onTap: () => _selectTable(table),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12.0),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Container(
-                              width: 64,
-                              height: 64,
-                              decoration: BoxDecoration(
-                                color: _typeColor(
-                                  table.type,
-                                ).withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
+        child: ProtocolFlowContentBoundary(
+          child: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _tables.isEmpty
+              ? _buildEmptyState()
+              : GridView.builder(
+                  padding: const EdgeInsets.all(12),
+                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: 170,
+                    mainAxisExtent: 142,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                  ),
+                  itemCount: _tables.length,
+                  itemBuilder: (context, index) {
+                    final table = _tables[index];
+                    return Card(
+                      clipBehavior: Clip.antiAlias,
+                      child: InkWell(
+                        onTap: () => _selectTable(table),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12.0),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Container(
+                                width: 64,
+                                height: 64,
+                                decoration: BoxDecoration(
                                   color: _typeColor(
                                     table.type,
-                                  ).withValues(alpha: 0.35),
+                                  ).withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: _typeColor(
+                                      table.type,
+                                    ).withValues(alpha: 0.35),
+                                  ),
+                                ),
+                                child: Icon(
+                                  _typeIcon(table.type),
+                                  size: 34,
+                                  color: _typeColor(table.type),
                                 ),
                               ),
-                              child: Icon(
-                                _typeIcon(table.type),
-                                size: 34,
-                                color: _typeColor(table.type),
+                              const SizedBox(height: 8),
+                              Text(
+                                table.title.isEmpty
+                                    ? 'Untitled Table'
+                                    : table.title,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              table.title.isEmpty
-                                  ? 'Untitled Table'
-                                  : table.title,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
+                              const SizedBox(height: 4),
+                              Text(
+                                _typeLabel(table.type),
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.grey.shade600,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              _typeLabel(table.type),
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: Colors.grey.shade600,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                },
-              ),
+                    );
+                  },
+                ),
+        ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _openLabTools,
@@ -146,7 +145,7 @@ class _SavedTablePickerScreenState extends State<SavedTablePickerScreen> {
           title: 'No saved tables yet',
           message: 'Create one in Lab Tools, then attach it here.',
           icon: Icons.table_chart_outlined,
-          action: ElevatedButton.icon(
+          action: FilledButton.icon(
             onPressed: _openLabTools,
             icon: const Icon(Icons.science),
             label: const Text('Open Lab Tools'),

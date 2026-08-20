@@ -2,6 +2,7 @@ import 'protocol.dart';
 import 'step_note.dart';
 
 class ActiveProtocol {
+  final String? runId;
   final Protocol protocol;
   int currentStepIndex;
   final List<StepNote> notes;
@@ -11,6 +12,7 @@ class ActiveProtocol {
   final Set<String> completedStepIds;
 
   ActiveProtocol({
+    this.runId,
     required this.protocol,
     this.currentStepIndex = -1,
     required this.notes,
@@ -22,6 +24,7 @@ class ActiveProtocol {
 
   Map<String, dynamic> toJson() {
     return {
+      'runId': runId,
       'protocol': protocol.toJson(),
       'currentStepIndex': currentStepIndex,
       'notes': notes.map((n) => n.toJson()).toList(),
@@ -36,6 +39,7 @@ class ActiveProtocol {
 
   factory ActiveProtocol.fromJson(Map<String, dynamic> json) {
     return ActiveProtocol(
+      runId: json['runId'] as String?,
       protocol: Protocol.fromJson(json['protocol']),
       currentStepIndex: json['currentStepIndex'] ?? -1,
       notes: (json['notes'] as List? ?? [])
@@ -55,6 +59,7 @@ class ActiveProtocol {
   }
 
   ActiveProtocol copyWith({
+    String? runId,
     Protocol? protocol,
     int? currentStepIndex,
     List<StepNote>? notes,
@@ -64,6 +69,7 @@ class ActiveProtocol {
     Set<String>? completedStepIds,
   }) {
     return ActiveProtocol(
+      runId: runId ?? this.runId,
       protocol: (protocol ?? this.protocol).deepCopy(),
       currentStepIndex: currentStepIndex ?? this.currentStepIndex,
       notes: (notes ?? this.notes).map((n) => n.deepCopy()).toList(),

@@ -24,7 +24,7 @@ void main() {
     );
   });
 
-  testWidgets('measuring tools screen groups liquid and solid tools', (
+  testWidgets('measuring tools screen shows editable tool list tiles', (
     tester,
   ) async {
     SharedPreferences.setMockInitialValues({});
@@ -35,17 +35,25 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Measuring Tools'), findsOneWidget);
-    expect(find.text('Liquid'), findsOneWidget);
-    expect(find.byTooltip('Expand Liquid tools'), findsOneWidget);
-    expect(find.byTooltip('Expand Solid tools'), findsOneWidget);
-    expect(find.text('Analytical balance'), findsNothing);
-
-    await tester.tap(find.byTooltip('Expand Solid tools'));
+    expect(find.textContaining('LIQUID'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('measuring-tool-balance_analytical')),
+      400,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Expand Analytical balance tools'));
+    expect(find.textContaining('SOLID'), findsOneWidget);
+    expect(
+      find.byKey(const Key('measuring-tool-balance_analytical')),
+      findsOneWidget,
+    );
+    expect(find.byTooltip('Manage Analytical balance'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const Key('measuring-tool-balance_analytical')),
+    );
     await tester.pumpAndSettle();
 
-    expect(find.text('Analytical balance'), findsWidgets);
-    expect(find.textContaining('Readability'), findsWidgets);
+    expect(find.text('Edit Tool'), findsOneWidget);
   });
 }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../../theme/app_colors.dart';
+import '../../../widgets/protocolflow_app_bar.dart';
+import '../../../widgets/protocolflow_ui.dart';
 import '../models/measuring_tool.dart';
 import '../services/measuring_tool_service.dart';
 
@@ -16,8 +18,6 @@ class MeasuringToolsManagerScreen extends StatefulWidget {
 class _MeasuringToolsManagerScreenState
     extends State<MeasuringToolsManagerScreen> {
   final MeasuringToolService _service = MeasuringToolService.instance;
-  final Set<String> _expandedCategories = {};
-  final Set<String> _expandedSubcategories = {};
 
   List<MeasuringTool> _tools = const [];
 
@@ -66,58 +66,55 @@ class _MeasuringToolsManagerScreenState
     return Scaffold(
       appBar: widget.embedded
           ? null
-          : AppBar(
-              title: const Text('Measuring Tools'),
+          : ProtocolFlowAppBar(
+              title: 'Measuring Tools',
               actions: [_buildResetAction()],
             ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _editTool(),
-        icon: const Icon(Icons.add),
-        label: const Text('Add Tool'),
-      ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (widget.embedded)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 8, 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Measuring Tools',
-                      style: Theme.of(context).textTheme.headlineSmall
-                          ?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                  _buildResetAction(),
-                ],
+      body: ProtocolFlowContentBoundary(
+        child: RefreshIndicator(
+          onRefresh: _loadTools,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
+            children: [
+              if (widget.embedded)
+                ProtocolFlowScreenHeader(
+                  title: 'Measuring Tools',
+                  subtitle: 'Configure the equipment used in calculations.',
+                  actions: [_buildResetAction()],
+                )
+              else
+                const Text(
+                  'Configure the equipment used in calculations.',
+                  style: TextStyle(color: AppColors.textSecondary),
+                ),
+              const SizedBox(height: 16),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FilledButton.icon(
+                  onPressed: () => _editTool(),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add Tool'),
+                ),
               ),
-            ),
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: _loadTools,
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-                children: _buildGroupedToolSections(),
-              ),
-            ),
+              const SizedBox(height: 24),
+              ..._buildToolSections(),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
 
-  List<Widget> _buildGroupedToolSections() {
+  List<Widget> _buildToolSections() {
     if (_tools.isEmpty) {
       return [
-        const SizedBox(height: 80),
-        Center(
-          child: Text(
-            'No measuring tools configured.',
-            style: TextStyle(color: Colors.grey.shade600),
-          ),
+        ProtocolFlowEmptyState(
+          icon: Icons.straighten_outlined,
+          title: 'No measuring tools configured.',
+          message: 'Add the equipment available in your lab.',
+          actionLabel: 'Add Tool',
+          onAction: () => _editTool(),
         ),
       ];
     }
@@ -127,239 +124,137 @@ class _MeasuringToolsManagerScreenState
       categories.putIfAbsent(_categoryLabel(tool), () => []).add(tool);
     }
 
-    final categoryOrder = ['Liquid', 'Solid'];
+    for (final tools in categories.values) {
+      tools.sort((left, right) {
+        final type = left.toolType.toLowerCase().compareTo(
+          right.toolType.toLowerCase(),
+        );
+        return type != 0
+            ? type
+            : left.toolName.toLowerCase().compareTo(
+                right.toolName.toLowerCase(),
+              );
+      });
+    }
+
+    const categoryOrder = ['Liquid', 'Solid'];
     final orderedCategories = [
       ...categoryOrder.where(categories.containsKey),
       ...categories.keys.where((category) => !categoryOrder.contains(category)),
     ];
 
     return [
-      for (final category in orderedCategories)
-        Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: _buildCategorySection(category, categories[category]!),
+      for (var index = 0; index < orderedCategories.length; index++) ...[
+        _buildToolSection(
+          orderedCategories[index],
+          categories[orderedCategories[index]]!,
         ),
+        if (index < orderedCategories.length - 1) const SizedBox(height: 20),
+      ],
     ];
   }
 
-  Widget _buildCategorySection(String category, List<MeasuringTool> tools) {
+  Widget _buildToolSection(String category, List<MeasuringTool> tools) {
     final activeCount = tools.where((tool) => tool.active).length;
-    final isExpanded = _expandedCategories.contains(category);
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      margin: EdgeInsets.zero,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          ListTile(
-            dense: true,
-            onTap: () => _toggleCategory(category),
-            leading: Icon(_categoryIcon(category), color: AppColors.primary),
-            title: Text(
-              category,
-              style: Theme.of(
-                context,
-              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            subtitle: Text('$activeCount/${tools.length} active'),
-            trailing: IconButton(
-              tooltip: isExpanded
-                  ? 'Shrink $category tools'
-                  : 'Expand $category tools',
-              onPressed: () => _toggleCategory(category),
-              icon: Icon(isExpanded ? Icons.unfold_less : Icons.unfold_more),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          child: Text(
+            '${category.toUpperCase()}  $activeCount/${tools.length} ACTIVE',
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: AppColors.textSecondary,
+              fontWeight: FontWeight.w700,
             ),
           ),
-          if (isExpanded) ...[
-            const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-              child: Column(
-                children: _buildSubcategorySections(category, tools),
-              ),
+        ),
+        Card(
+          margin: EdgeInsets.zero,
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            children: [
+              for (var index = 0; index < tools.length; index++) ...[
+                _buildToolTile(tools[index]),
+                if (index < tools.length - 1) const Divider(height: 1),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildToolTile(MeasuringTool tool) {
+    final color = tool.active ? AppColors.primary : AppColors.textDisabled;
+    return ListTile(
+      key: Key('measuring-tool-${tool.id}'),
+      leading: Icon(
+        tool.isMassTool ? Icons.scale_outlined : Icons.straighten_outlined,
+        color: color,
+      ),
+      title: Text(tool.toolName),
+      subtitle: Text(_toolSubtitle(tool)),
+      onTap: () => _editTool(existing: tool),
+      trailing: PopupMenuButton<_ToolAction>(
+        tooltip: 'Manage ${tool.toolName}',
+        onSelected: (action) => _handleToolAction(tool, action),
+        itemBuilder: (context) => [
+          const PopupMenuItem(
+            value: _ToolAction.edit,
+            child: ListTile(
+              leading: Icon(Icons.edit_outlined),
+              title: Text('Edit'),
+              contentPadding: EdgeInsets.zero,
             ),
-          ],
+          ),
+          PopupMenuItem(
+            value: _ToolAction.toggleActive,
+            child: ListTile(
+              leading: Icon(
+                tool.active
+                    ? Icons.pause_circle_outline
+                    : Icons.check_circle_outline,
+              ),
+              title: Text(tool.active ? 'Deactivate' : 'Activate'),
+              contentPadding: EdgeInsets.zero,
+            ),
+          ),
+          const PopupMenuItem(
+            value: _ToolAction.delete,
+            child: ListTile(
+              leading: Icon(Icons.delete_outline, color: AppColors.error),
+              title: Text('Delete', style: TextStyle(color: AppColors.error)),
+              contentPadding: EdgeInsets.zero,
+            ),
+          ),
         ],
       ),
     );
   }
 
-  void _toggleCategory(String category) {
-    setState(() {
-      if (!_expandedCategories.remove(category)) {
-        _expandedCategories.add(category);
-      }
-    });
-  }
-
-  List<Widget> _buildSubcategorySections(
-    String category,
-    List<MeasuringTool> tools,
-  ) {
-    final subcategories = <String, List<MeasuringTool>>{};
-    for (final tool in tools) {
-      subcategories.putIfAbsent(tool.toolType, () => []).add(tool);
+  Future<void> _handleToolAction(MeasuringTool tool, _ToolAction action) async {
+    switch (action) {
+      case _ToolAction.edit:
+        await _editTool(existing: tool);
+      case _ToolAction.toggleActive:
+        await _saveTools([
+          for (final item in _tools)
+            if (item.id == tool.id)
+              item.copyWith(active: !item.active)
+            else
+              item,
+        ]);
+      case _ToolAction.delete:
+        await _deleteTool(tool);
     }
-    final names = subcategories.keys.toList()
-      ..sort(
-        (left, right) => left.toLowerCase().compareTo(right.toLowerCase()),
-      );
-
-    return [
-      for (final name in names)
-        Padding(
-          padding: EdgeInsets.only(bottom: name == names.last ? 0 : 10),
-          child: _buildSubcategorySection(category, name, subcategories[name]!),
-        ),
-    ];
   }
 
-  Widget _buildSubcategorySection(
-    String category,
-    String subcategory,
-    List<MeasuringTool> tools,
-  ) {
-    final key = '$category|$subcategory';
-    final activeCount = tools.where((tool) => tool.active).length;
-    final isExpanded = _expandedSubcategories.contains(key);
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.outlineVariant),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        children: [
-          ListTile(
-            dense: true,
-            tileColor: AppColors.surfaceContainer,
-            onTap: () => _toggleSubcategory(key),
-            title: Text(
-              subcategory,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-            subtitle: Text('$activeCount/${tools.length} active'),
-            trailing: IconButton(
-              tooltip: isExpanded
-                  ? 'Shrink $subcategory tools'
-                  : 'Expand $subcategory tools',
-              onPressed: () => _toggleSubcategory(key),
-              icon: Icon(isExpanded ? Icons.unfold_less : Icons.unfold_more),
-            ),
-          ),
-          if (isExpanded) ...[
-            const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                children: [
-                  for (final tool in tools) ...[
-                    _buildToolCard(tool),
-                    if (tool != tools.last) const SizedBox(height: 10),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  void _toggleSubcategory(String key) {
-    setState(() {
-      if (!_expandedSubcategories.remove(key)) {
-        _expandedSubcategories.add(key);
-      }
-    });
-  }
-
-  Widget _buildToolCard(MeasuringTool tool) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      tool.toolName,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${tool.toolType} - rank ${tool.accuracyRank}',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
-                ),
-              ),
-              Switch(
-                value: tool.active,
-                onChanged: (value) async {
-                  await _saveTools([
-                    for (final item in _tools)
-                      if (item.id == tool.id)
-                        item.copyWith(active: value)
-                      else
-                        item,
-                  ]);
-                },
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 12,
-            runSpacing: 8,
-            children: tool.isMassTool
-                ? [
-                    _infoChip('Min', _formatMassMg(tool.minMassMg)),
-                    _infoChip(
-                      'Preferred min',
-                      _formatMassMg(tool.preferredMinMassMg),
-                    ),
-                    _infoChip('Max', _formatMassMg(tool.maxMassMg)),
-                    _infoChip(
-                      'Readability',
-                      _formatMassMg(tool.incrementMassMg),
-                    ),
-                  ]
-                : [
-                    _infoChip('Min', '${tool.minVolumeUl} uL'),
-                    _infoChip('Max', '${tool.maxVolumeUl} uL'),
-                    _infoChip('Increment', '${tool.incrementUl} uL'),
-                  ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              IconButton(
-                tooltip: 'Edit ${tool.toolName}',
-                onPressed: () => _editTool(existing: tool),
-                icon: const Icon(Icons.edit_outlined),
-              ),
-              IconButton(
-                tooltip: 'Delete ${tool.toolName}',
-                onPressed: () => _deleteTool(tool),
-                icon: const Icon(Icons.delete_outline),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
+  String _toolSubtitle(MeasuringTool tool) {
+    if (tool.isMassTool) {
+      return '${tool.toolType} - ${_formatMassMg(tool.minMassMg)}-${_formatMassMg(tool.maxMassMg)} - ${tool.active ? 'Active' : 'Inactive'}';
+    }
+    return '${tool.toolType} - ${tool.minVolumeUl}-${tool.maxVolumeUl} uL - ${tool.active ? 'Active' : 'Inactive'}';
   }
 
   Widget _buildResetAction() {
@@ -373,27 +268,9 @@ class _MeasuringToolsManagerScreenState
     );
   }
 
-  Widget _infoChip(String label, String value) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade100,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      child: Text('$label: $value'),
-    );
-  }
-
   String _categoryLabel(MeasuringTool tool) {
     if (tool.isMassTool) return 'Solid';
     return tool.category.isEmpty ? 'Liquid' : tool.category;
-  }
-
-  IconData _categoryIcon(String category) {
-    return category.toLowerCase() == 'solid'
-        ? Icons.scale_outlined
-        : Icons.water_drop_outlined;
   }
 
   String _formatMassMg(double? mg) {
@@ -403,6 +280,8 @@ class _MeasuringToolsManagerScreenState
     return '${(mg * 1000).toStringAsFixed(3)} ug';
   }
 }
+
+enum _ToolAction { edit, toggleActive, delete }
 
 class _MeasuringToolDialog extends StatefulWidget {
   final MeasuringTool? tool;

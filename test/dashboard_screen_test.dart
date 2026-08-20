@@ -101,7 +101,7 @@ void main() {
     expect(find.text('Measuring tools'), findsOneWidget);
     expect(find.text('Tables'), findsWidgets);
     expect(find.text('Local browser data'), findsOneWidget);
-    expect(find.text('Drive sync data'), findsOneWidget);
+    expect(find.text('Drive app data'), findsOneWidget);
     expect(find.text('Not signed in'), findsOneWidget);
     final tableSynced = tester.widget<Text>(
       find.descendant(
@@ -113,9 +113,7 @@ void main() {
     expectNoFlutterException(tester);
   });
 
-  testWidgets('dashboard panels expand into substantial desktop columns', (
-    tester,
-  ) async {
+  testWidgets('dashboard panels use bounded desktop columns', (tester) async {
     SharedPreferences.setMockInitialValues({});
     await tester.binding.setSurfaceSize(const Size(1800, 1600));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -132,8 +130,8 @@ void main() {
         )
         .first;
     final size = tester.getSize(activityCard);
-    expect(size.width, greaterThan(800));
-    expect(size.height, greaterThanOrEqualTo(300));
+    expect(size.width, inInclusiveRange(500, 650));
+    expect(size.height, greaterThanOrEqualTo(250));
     expectNoFlutterException(tester);
   });
 }

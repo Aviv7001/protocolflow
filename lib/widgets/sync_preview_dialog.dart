@@ -361,38 +361,37 @@ class _SyncPreviewDialogState extends State<SyncPreviewDialog> {
     DriveSyncPreviewItem item, {
     bool expanded = false,
   }) {
-    return DropdownButtonHideUnderline(
-      child: DropdownButton<DriveDeletionDecision>(
-        value: _deletionDecisions[item.key],
-        isExpanded: expanded,
-        borderRadius: BorderRadius.circular(6),
-        items: item.action == DriveSyncActionType.invalid
-            ? const [
-                DropdownMenuItem(
-                  value: DriveDeletionDecision.keepEverywhere,
-                  child: Text('Keep in cloud'),
-                ),
-                DropdownMenuItem(
-                  value: DriveDeletionDecision.deleteEverywhere,
-                  child: Text('Delete everywhere'),
-                ),
-              ]
-            : const [
-                DropdownMenuItem(
-                  value: DriveDeletionDecision.deleteEverywhere,
-                  child: Text('Delete everywhere'),
-                ),
-                DropdownMenuItem(
-                  value: DriveDeletionDecision.keepEverywhere,
-                  child: Text('Keep everywhere'),
-                ),
-              ],
-        onChanged: (value) {
-          if (value == null) return;
-          setState(() => _deletionDecisions[item.key] = value);
-        },
-      ),
+    final dropdown = DropdownButtonFormField<DriveDeletionDecision>(
+      initialValue: _deletionDecisions[item.key],
+      isExpanded: true,
+      decoration: const InputDecoration(isDense: true),
+      items: item.action == DriveSyncActionType.invalid
+          ? const [
+              DropdownMenuItem(
+                value: DriveDeletionDecision.keepEverywhere,
+                child: Text('Keep in cloud'),
+              ),
+              DropdownMenuItem(
+                value: DriveDeletionDecision.deleteEverywhere,
+                child: Text('Delete everywhere'),
+              ),
+            ]
+          : const [
+              DropdownMenuItem(
+                value: DriveDeletionDecision.deleteEverywhere,
+                child: Text('Delete everywhere'),
+              ),
+              DropdownMenuItem(
+                value: DriveDeletionDecision.keepEverywhere,
+                child: Text('Keep everywhere'),
+              ),
+            ],
+      onChanged: (value) {
+        if (value == null) return;
+        setState(() => _deletionDecisions[item.key] = value);
+      },
     );
+    return expanded ? dropdown : SizedBox(width: 190, child: dropdown);
   }
 
   Widget _buildActions() {
@@ -409,7 +408,7 @@ class _SyncPreviewDialogState extends State<SyncPreviewDialog> {
           label: const Text('Retry'),
         ),
       if (preview?.canApply ?? false)
-        ElevatedButton.icon(
+        FilledButton.icon(
           key: const Key('approve-sync-preview'),
           onPressed: _busy ? null : _apply,
           icon: Icon(preview!.hasChanges ? Icons.sync : Icons.check),

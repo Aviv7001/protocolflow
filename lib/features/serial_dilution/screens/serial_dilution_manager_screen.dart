@@ -13,11 +13,13 @@ import '../../../theme/app_colors.dart';
 class SerialDilutionManagerScreen extends StatefulWidget {
   final SerialDilutionInput input;
   final Function(SerialDilutionInput) onUpdate;
+  final bool promptForSaveDetails;
 
   const SerialDilutionManagerScreen({
     super.key,
     required this.input,
     required this.onUpdate,
+    this.promptForSaveDetails = true,
   });
 
   @override
@@ -120,13 +122,15 @@ class _SerialDilutionManagerScreenState
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                _resItem(
-                  'Dilutions',
-                  result.calculatedNumberOfDilutions.toString(),
-                  AppColors.primary,
+                Expanded(
+                  child: _resItem(
+                    'Dilutions',
+                    result.calculatedNumberOfDilutions.toString(),
+                    AppColors.primary,
+                  ),
                 ),
+                const SizedBox(width: 16),
                 _resItemEditable(
                   'Final Volume',
                   result.optimizedFinalVolumeUl,
@@ -173,37 +177,30 @@ class _SerialDilutionManagerScreenState
             ),
             const SizedBox(height: 16),
             _DelayedTextField(
-              decoration: const InputDecoration(
-                labelText: 'Table Title',
-                border: OutlineInputBorder(),
-              ),
+              decoration: const InputDecoration(labelText: 'Table Title'),
               initialValue: _input.title,
               style: const TextStyle(fontSize: _uniformFontSize),
               onCommit: (v) =>
                   setState(() => _input = _input.copyWith(title: v)),
             ),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _DelayedTextField(
-                    decoration: InputDecoration(
-                      labelText:
-                          _input.startingSourceType ==
-                              ReagentSourceType.solidMaterial
-                          ? 'Solid Material Name'
-                          : 'Stock Solution Name',
-                      border: const OutlineInputBorder(),
-                    ),
-                    initialValue: _input.stockSolutionName,
-                    style: const TextStyle(fontSize: _uniformFontSize),
-                    onCommit: (v) => setState(
-                      () => _input = _input.copyWith(stockSolutionName: v),
-                    ),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final nameField = _DelayedTextField(
+                  decoration: InputDecoration(
+                    labelText:
+                        _input.startingSourceType ==
+                            ReagentSourceType.solidMaterial
+                        ? 'Solid Material Name'
+                        : 'Stock Solution Name',
                   ),
-                ),
-                const SizedBox(width: 8),
-                SegmentedButton<ReagentSourceType>(
+                  initialValue: _input.stockSolutionName,
+                  style: const TextStyle(fontSize: _uniformFontSize),
+                  onCommit: (v) => setState(
+                    () => _input = _input.copyWith(stockSolutionName: v),
+                  ),
+                );
+                final sourceControl = SegmentedButton<ReagentSourceType>(
                   segments: const [
                     ButtonSegment(
                       value: ReagentSourceType.liquidStock,
@@ -244,8 +241,28 @@ class _SerialDilutionManagerScreenState
                   style: const ButtonStyle(
                     visualDensity: VisualDensity.compact,
                   ),
-                ),
-              ],
+                );
+                if (constraints.maxWidth < 720) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      nameField,
+                      const SizedBox(height: 10),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: sourceControl,
+                      ),
+                    ],
+                  );
+                }
+                return Row(
+                  children: [
+                    Expanded(child: nameField),
+                    const SizedBox(width: 8),
+                    sourceControl,
+                  ],
+                );
+              },
             ),
             if (_input.startingSourceType == ReagentSourceType.liquidStock) ...[
               const SizedBox(height: 12),
@@ -279,7 +296,6 @@ class _SerialDilutionManagerScreenState
               _DelayedTextField(
                 decoration: const InputDecoration(
                   labelText: 'Molecular weight (g/mol)',
-                  border: OutlineInputBorder(),
                 ),
                 initialValue: _input.molecularWeight?.toString() ?? '',
                 keyboardType: const TextInputType.numberWithOptions(
@@ -311,10 +327,7 @@ class _SerialDilutionManagerScreenState
               ),
             const SizedBox(height: 12),
             _DelayedTextField(
-              decoration: const InputDecoration(
-                labelText: 'Solvent Name',
-                border: OutlineInputBorder(),
-              ),
+              decoration: const InputDecoration(labelText: 'Solvent Name'),
               initialValue: _input.solventName,
               style: const TextStyle(fontSize: _uniformFontSize),
               onCommit: (v) =>
@@ -348,7 +361,6 @@ class _SerialDilutionManagerScreenState
                     ),
                     decoration: const InputDecoration(
                       labelText: 'Dilution Factor',
-                      border: OutlineInputBorder(),
                     ),
                     style: const TextStyle(fontSize: _uniformFontSize),
                     onCommit: (v) => setState(
@@ -367,7 +379,6 @@ class _SerialDilutionManagerScreenState
                     ),
                     decoration: const InputDecoration(
                       labelText: 'Extra Volume %',
-                      border: OutlineInputBorder(),
                     ),
                     style: const TextStyle(fontSize: _uniformFontSize),
                     onCommit: (v) => setState(
@@ -396,16 +407,16 @@ class _SerialDilutionManagerScreenState
             const SizedBox(height: 12),
             DropdownButtonFormField<DilutionMode>(
               initialValue: _input.dilutionMode,
-              decoration: const InputDecoration(
-                labelText: 'Dilution Mode',
-                border: OutlineInputBorder(),
-              ),
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'Dilution Mode'),
               items: DilutionMode.values
                   .map(
                     (m) => DropdownMenuItem(
                       value: m,
                       child: Text(
                         _dilutionModeLabel(m),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: _uniformFontSize),
                       ),
                     ),
@@ -417,9 +428,9 @@ class _SerialDilutionManagerScreenState
             const SizedBox(height: 12),
             DropdownButtonFormField<SeriesLengthMode>(
               initialValue: _input.seriesLengthMode,
+              isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'Series Length Mode',
-                border: OutlineInputBorder(),
               ),
               items: SeriesLengthMode.values
                   .map(
@@ -427,6 +438,8 @@ class _SerialDilutionManagerScreenState
                       value: m,
                       child: Text(
                         _seriesModeLabel(m),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: _uniformFontSize),
                       ),
                     ),
@@ -442,7 +455,6 @@ class _SerialDilutionManagerScreenState
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(
                   labelText: 'Number of Dilutions',
-                  border: OutlineInputBorder(),
                 ),
                 style: const TextStyle(fontSize: _uniformFontSize),
                 onCommit: (v) => setState(
@@ -531,7 +543,6 @@ class _SerialDilutionManagerScreenState
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: const InputDecoration(
               labelText: 'Final Volume / Dilution',
-              border: OutlineInputBorder(),
             ),
             style: const TextStyle(fontSize: _uniformFontSize),
             onCommit: (v) => setState(
@@ -545,10 +556,7 @@ class _SerialDilutionManagerScreenState
         Expanded(
           child: DropdownButtonFormField<VolumeUnit>(
             initialValue: _input.finalVolumeUnit,
-            decoration: const InputDecoration(
-              labelText: 'Unit',
-              border: OutlineInputBorder(),
-            ),
+            decoration: const InputDecoration(labelText: 'Unit'),
             items: VolumeUnit.values
                 .map(
                   (u) => DropdownMenuItem(
@@ -605,6 +613,14 @@ class _SerialDilutionManagerScreenState
   }
 
   Future<void> _handleDone(BuildContext context) async {
+    if (!widget.promptForSaveDetails) {
+      widget.onUpdate(_input);
+      if (context.mounted) {
+        setState(() => _canActuallyPop = true);
+        Navigator.pop(context, _input);
+      }
+      return;
+    }
     final name = await _showSaveDialog(context, _input.title);
     if (name != null) {
       setState(() => _input = _input.copyWith(title: name));

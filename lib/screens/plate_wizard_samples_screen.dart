@@ -11,11 +11,13 @@ import '../theme/app_colors.dart';
 class PlateWizardSamplesScreen extends StatefulWidget {
   final PlateLayoutWizard wizard;
   final Function(PlateLayoutWizard) onUpdate;
+  final bool promptForSaveDetails;
 
   const PlateWizardSamplesScreen({
     super.key,
     required this.wizard,
     required this.onUpdate,
+    this.promptForSaveDetails = true,
   });
 
   @override
@@ -136,19 +138,19 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
                   child: Wrap(
                     spacing: 8,
                     children: [
-                      ElevatedButton.icon(
+                      FilledButton.icon(
                         onPressed: () => _addTestItem(isStandardCurve: true),
                         icon: const Icon(Icons.show_chart, color: Colors.amber),
                         label: const Text(
                           'Add Std Curve',
                           style: TextStyle(fontSize: _uniformFontSize),
                         ),
-                        style: ElevatedButton.styleFrom(
+                        style: FilledButton.styleFrom(
                           backgroundColor: Colors.amber.shade50,
                           foregroundColor: Colors.amber.shade900,
                         ),
                       ),
-                      ElevatedButton.icon(
+                      FilledButton.icon(
                         onPressed: () => _addTestItem(isStandardCurve: false),
                         icon: const Icon(Icons.add),
                         label: const Text(
@@ -160,10 +162,10 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 24),
-              _buildLayoutControls(),
             ],
           ),
+          widePreviewHeader: _buildLayoutControls(),
+          narrowFooter: _buildLayoutControls(),
           preview: PlateResultPreview(wizard: _wizard),
         ),
       ),
@@ -210,6 +212,14 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
   }
 
   void _handleDone(BuildContext context) async {
+    if (!widget.promptForSaveDetails) {
+      widget.onUpdate(_wizard);
+      if (context.mounted) {
+        setState(() => _canActuallyPop = true);
+        Navigator.pop(context, _wizard);
+      }
+      return;
+    }
     final String? name = await _showSaveDialog(context, _wizard.title);
     if (name != null) {
       setState(() {
@@ -260,13 +270,7 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
 
   Widget _buildLayoutControls() {
     return Card(
-      color: AppColors.surface,
-      elevation: 0,
       margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: const BorderSide(color: AppColors.outlineVariant),
-      ),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -391,10 +395,7 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
                   child: _DelayedTextField(
                     initialValue: _wizard.rows.toString(),
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Rows',
-                      border: OutlineInputBorder(),
-                    ),
+                    decoration: const InputDecoration(labelText: 'Rows'),
                     style: const TextStyle(fontSize: _uniformFontSize),
                     onCommit: (v) => setState(
                       () => _wizard = _asGeneratedLayout(
@@ -408,10 +409,7 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
                   child: _DelayedTextField(
                     initialValue: _wizard.columns.toString(),
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Columns',
-                      border: OutlineInputBorder(),
-                    ),
+                    decoration: const InputDecoration(labelText: 'Columns'),
                     style: const TextStyle(fontSize: _uniformFontSize),
                     onCommit: (v) => setState(
                       () => _wizard = _asGeneratedLayout(
@@ -425,10 +423,7 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
                   child: _DelayedTextField(
                     initialValue: _wizard.plateCount.toString(),
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Plate Count',
-                      border: OutlineInputBorder(),
-                    ),
+                    decoration: const InputDecoration(labelText: 'Plate Count'),
                     style: const TextStyle(fontSize: _uniformFontSize),
                     onCommit: (v) => setState(
                       () => _wizard = _asGeneratedLayout(
@@ -519,7 +514,7 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
                   onPressed: () => _duplicateTestItem(index),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.delete, color: Colors.red),
+                  icon: const Icon(Icons.delete, color: AppColors.error),
                   onPressed: () => _removeTestItem(index),
                 ),
               ],
@@ -539,30 +534,22 @@ class _PlateWizardSamplesScreenState extends State<PlateWizardSamplesScreen> {
                   _updateTestItem(index, item.copyWith(dilutions: newList)),
             ),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                const Text(
-                  'Replicates: ',
-                  style: TextStyle(fontSize: _uniformFontSize),
-                ),
-                const SizedBox(width: 8),
-                DropdownButton<int>(
-                  value: item.duplicates,
-                  items: [1, 2, 3, 4, 5, 6, 8, 12]
-                      .map(
-                        (d) => DropdownMenuItem(
-                          value: d,
-                          child: Text(
-                            d.toString(),
-                            style: const TextStyle(fontSize: _uniformFontSize),
-                          ),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (v) =>
-                      _updateTestItem(index, item.copyWith(duplicates: v!)),
-                ),
-              ],
+            DropdownButtonFormField<int>(
+              initialValue: item.duplicates,
+              decoration: const InputDecoration(labelText: 'Replicates'),
+              items: [1, 2, 3, 4, 5, 6, 8, 12]
+                  .map(
+                    (d) => DropdownMenuItem(
+                      value: d,
+                      child: Text(
+                        d.toString(),
+                        style: const TextStyle(fontSize: _uniformFontSize),
+                      ),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (v) =>
+                  _updateTestItem(index, item.copyWith(duplicates: v!)),
             ),
           ],
         ),

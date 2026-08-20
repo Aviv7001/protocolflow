@@ -94,12 +94,12 @@ void main() {
     final stepsSection = find.byKey(const Key('builder-steps'));
     expect(tester.widget(stepsSection), isA<Card>());
 
-    var addStep = find.widgetWithText(ElevatedButton, 'Add Step');
+    var addStep = find.widgetWithText(FilledButton, 'Add Step');
     await tester.ensureVisible(addStep);
     await tester.tap(addStep);
     await tester.pump();
 
-    addStep = find.widgetWithText(ElevatedButton, 'Add Step');
+    addStep = find.widgetWithText(FilledButton, 'Add Step');
     await tester.ensureVisible(addStep);
     await tester.tap(addStep);
     await tester.pump();
@@ -216,7 +216,7 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: CreateProtocolScreen()));
     await tester.pump(const Duration(milliseconds: 300));
 
-    final addStep = find.widgetWithText(ElevatedButton, 'Add Step');
+    final addStep = find.widgetWithText(FilledButton, 'Add Step');
     await tester.ensureVisible(addStep);
     await tester.tap(addStep);
     await tester.pump();

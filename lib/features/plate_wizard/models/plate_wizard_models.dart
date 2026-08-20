@@ -66,11 +66,7 @@ class PlateLayoutResult {
   final String? errorMessage;
   final List<List<List<WellContent?>>>? plates;
 
-  PlateLayoutResult({
-    required this.success,
-    this.errorMessage,
-    this.plates,
-  });
+  PlateLayoutResult({required this.success, this.errorMessage, this.plates});
 
   factory PlateLayoutResult.failure(String message) {
     return PlateLayoutResult(success: false, errorMessage: message);

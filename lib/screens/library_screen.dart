@@ -3,15 +3,17 @@ import '../models/protocol.dart';
 import '../models/project.dart';
 import '../models/active_protocol.dart';
 import '../models/protocol_publication.dart';
+import '../models/protocol_run.dart';
 import '../data/completed_protocols_data.dart';
+import '../services/protocol_run_service.dart';
 import '../services/storage_service.dart';
-import '../services/export_service.dart';
 import '../services/import_service.dart';
 import '../theme/app_colors.dart';
-import '../widgets/sync_status_chip.dart';
 import '../widgets/running_protocol_summary_card.dart';
+import '../widgets/protocol_summary_card.dart';
+import '../widgets/sync_status_chip.dart';
 import '../widgets/publication_status_chip.dart';
-import '../utils/date_time_format.dart';
+import '../widgets/protocolflow_ui.dart';
 import 'protocol_detail_screen.dart';
 import 'projects_screen.dart';
 import 'completed_protocol_detail_screen.dart';
@@ -24,11 +26,13 @@ class LibraryScreen extends StatefulWidget {
   final int initialTabIndex;
   final String? initialProjectId;
   final bool embedded;
+  final bool protocolsPrimaryMode;
   const LibraryScreen({
     super.key,
     this.initialTabIndex = 0,
     this.initialProjectId,
     this.embedded = false,
+    this.protocolsPrimaryMode = false,
   });
 
   @override
@@ -39,12 +43,14 @@ class _LibraryScreenState extends State<LibraryScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final StorageService _storageService = StorageService();
-  final ExportService _exportService = ExportService();
   final ImportService _importService = ImportService();
+  final TextEditingController _searchController = TextEditingController();
   List<Protocol> _protocols = [];
   List<Project> _projects = [];
   String? _selectedProjectId;
   bool _isLoading = true;
+  String _searchQuery = '';
+  _LibraryDateSort _dateSort = _LibraryDateSort.newestFirst;
   static const String _allProjectsFilter = '__all__';
   static const String _unassignedProjectsFilter = '__unassigned__';
 
@@ -52,9 +58,11 @@ class _LibraryScreenState extends State<LibraryScreen>
   void initState() {
     super.initState();
     _tabController = TabController(
-      length: 4,
+      length: widget.protocolsPrimaryMode ? 2 : 4,
       vsync: this,
-      initialIndex: widget.initialTabIndex,
+      initialIndex: widget.protocolsPrimaryMode
+          ? (widget.initialTabIndex == 0 ? 1 : 0)
+          : widget.initialTabIndex,
     );
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) {
@@ -67,8 +75,14 @@ class _LibraryScreenState extends State<LibraryScreen>
 
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
-    _protocols = await _storageService.loadProtocols();
-    _projects = await _storageService.loadProjects();
+    final values = await Future.wait([
+      _storageService.loadProtocols(),
+      _storageService.loadProjects(),
+      loadPersistentProtocols(),
+    ]);
+    _protocols = values[0] as List<Protocol>;
+    _projects = values[1] as List<Project>;
+    if (!mounted) return;
     setState(() => _isLoading = false);
   }
 
@@ -94,12 +108,78 @@ class _LibraryScreenState extends State<LibraryScreen>
     if (imported == true) await _loadData();
   }
 
+  Future<void> _importProtocolFile() async {
+    final result = await _importService.importJson();
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(result.message)));
+    if (result.success) await _loadData();
+  }
+
+  Future<void> _handleImportSelection(_LibraryImportOption selection) async {
+    switch (selection) {
+      case _LibraryImportOption.file:
+        await _importProtocolFile();
+      case _LibraryImportOption.qrCode:
+        await _scanSharedProtocol();
+    }
+  }
+
+  Widget _buildImportMenu({String label = 'Import', Key? key}) {
+    return PopupMenuButton<_LibraryImportOption>(
+      key: key,
+      tooltip: 'Import protocol',
+      position: PopupMenuPosition.under,
+      onSelected: _handleImportSelection,
+      itemBuilder: (context) => const [
+        PopupMenuItem(
+          value: _LibraryImportOption.file,
+          child: ListTile(
+            leading: Icon(Icons.file_upload_outlined, color: AppColors.primary),
+            title: Text('Import from file'),
+            subtitle: Text('Choose a ProtocolFlow JSON file'),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+        PopupMenuItem(
+          value: _LibraryImportOption.qrCode,
+          child: ListTile(
+            leading: Icon(Icons.qr_code_scanner, color: AppColors.primary),
+            title: Text('Scan QR code'),
+            subtitle: Text('Import a shared protocol'),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+      ],
+      child: IgnorePointer(
+        child: OutlinedButton.icon(
+          onPressed: () {},
+          icon: const Icon(Icons.file_upload_outlined),
+          label: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(label),
+              const SizedBox(width: 4),
+              const Icon(Icons.arrow_drop_down, size: 20),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _refreshableEmpty(String message) {
     return RefreshIndicator(
       onRefresh: _refreshData,
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        children: [SizedBox(height: 320, child: Center(child: Text(message)))],
+        children: [
+          SizedBox(
+            height: 320,
+            child: ProtocolFlowEmptyState(message: message),
+          ),
+        ],
       ),
     );
   }
@@ -107,169 +187,209 @@ class _LibraryScreenState extends State<LibraryScreen>
   @override
   void dispose() {
     _tabController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final tabBar = ColoredBox(
-      color: AppColors.scaffoldBackground,
-      child: TabBar(
-        controller: _tabController,
-        isScrollable: false,
-        indicatorSize: TabBarIndicatorSize.tab,
-        indicatorColor: AppColors.primary,
-        dividerColor: AppColors.outlineVariant,
-        labelColor: AppColors.primary,
-        unselectedLabelColor: AppColors.primary,
-        labelPadding: const EdgeInsets.symmetric(horizontal: 2),
-        labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-        unselectedLabelStyle: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w500,
-        ),
-        tabs: const [
-          Tab(text: 'Templates', icon: Icon(Icons.copy_all, size: 20)),
-          Tab(text: 'Protocols', icon: Icon(Icons.description, size: 20)),
-          Tab(text: 'Running', icon: Icon(Icons.play_circle_outline, size: 20)),
-          Tab(text: 'Completed', icon: Icon(Icons.check_circle, size: 20)),
-        ],
-      ),
+    final tabBar = ProtocolFlowTabBar(
+      controller: _tabController,
+      tabs: widget.protocolsPrimaryMode
+          ? const [Tab(text: 'My Protocols'), Tab(text: 'Templates')]
+          : const [
+              Tab(text: 'Templates'),
+              Tab(text: 'Protocols'),
+              Tab(text: 'Running'),
+              Tab(text: 'Completed'),
+            ],
     );
     final body = SafeArea(
-      top: false,
-      child: Column(
-        children: [
-          if (widget.embedded) tabBar,
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildProtocolsTab(isTemplate: true),
-                _buildProtocolsTab(isTemplate: false),
-                _buildRunningTab(),
-                _buildHistoryTab(),
-              ],
+      top: !widget.embedded,
+      child: ProtocolFlowContentBoundary(
+        child: Column(
+          children: [
+            if (!widget.embedded) _buildLibraryBrandHeader(),
+            _buildLibraryHeading(),
+            tabBar,
+            _buildLibraryControls(),
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  if (widget.protocolsPrimaryMode) ...[
+                    _buildProtocolsTab(isTemplate: false),
+                    _buildProtocolsTab(isTemplate: true),
+                  ] else ...[
+                    _buildProtocolsTab(isTemplate: true),
+                    _buildProtocolsTab(isTemplate: false),
+                    _buildRunningTab(),
+                    _buildHistoryTab(),
+                  ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
 
-    return Scaffold(
-      appBar: widget.embedded
-          ? null
-          : AppBar(
-              title: const Text('Library'),
-              actions: [
-                IconButton(
-                  tooltip: 'Scan shared protocol',
-                  icon: const Icon(Icons.qr_code_scanner),
-                  onPressed: _scanSharedProtocol,
+    return Scaffold(body: body);
+  }
+
+  Widget _buildLibraryBrandHeader() {
+    return SizedBox(
+      height: 72,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Row(
+          children: [
+            if (Navigator.canPop(context)) ...[
+              IconButton(
+                tooltip: 'Back',
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.arrow_back),
+              ),
+              const SizedBox(width: 4),
+            ],
+            const Expanded(
+              child: Text(
+                'ProtocolFlow',
+                style: TextStyle(
+                  color: AppColors.primary,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
                 ),
-                IconButton(
-                  tooltip: 'Projects',
-                  icon: const Icon(Icons.folder_copy_outlined),
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const ProjectsScreen(),
-                    ),
-                  ).then((_) => _loadData()),
-                ),
-                PopupMenuButton<String>(
-                  onSelected: (value) async {
-                    if (value == 'export_all') {
-                      await _exportService.exportAllData();
-                    } else if (value == 'export_templates') {
-                      await _exportService.exportTemplates();
-                    } else if (value == 'export_history') {
-                      await _exportService.exportHistory();
-                    } else if (value == 'import') {
-                      final result = await _importService.importJson();
-                      if (!context.mounted) return;
-                      if (mounted) {
-                        ScaffoldMessenger.of(
-                          context,
-                        ).showSnackBar(SnackBar(content: Text(result.message)));
-                        if (result.success) _loadData();
-                      }
-                    }
-                  },
-                  itemBuilder: (context) => [
-                    const PopupMenuItem(
-                      value: 'import',
-                      child: ListTile(
-                        leading: Icon(Icons.file_upload),
-                        title: Text('Import ProtocolFlow file'),
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                    ),
-                    const PopupMenuDivider(),
-                    const PopupMenuItem(
-                      value: 'export_all',
-                      child: ListTile(
-                        leading: Icon(Icons.backup),
-                        title: Text('Export All Data'),
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                    ),
-                    const PopupMenuItem(
-                      value: 'export_templates',
-                      child: ListTile(
-                        leading: Icon(Icons.description),
-                        title: Text('Export Templates'),
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                    ),
-                    const PopupMenuItem(
-                      value: 'export_history',
-                      child: ListTile(
-                        leading: Icon(Icons.history),
-                        title: Text('Export History'),
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-              bottom: PreferredSize(
-                preferredSize: const Size.fromHeight(72),
-                child: tabBar,
               ),
             ),
-      body: body,
-      floatingActionButton:
-          (_tabController.index == 0 || _tabController.index == 1)
-          ? FloatingActionButton(
-              onPressed: () async {
-                final result = await _openCreateProtocol();
-                if (result != null) _loadData();
-              },
-              child: const Icon(Icons.add),
-            )
-          : null,
+            IconButton(
+              tooltip: 'Projects',
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ProjectsScreen()),
+              ).then((_) => _loadData()),
+              icon: const CircleAvatar(
+                backgroundColor: AppColors.surfaceContainer,
+                child: Icon(
+                  Icons.person_outline,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLibraryHeading() {
+    final showActions =
+        widget.protocolsPrimaryMode ||
+        _tabController.index == 0 ||
+        _tabController.index == 1;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 18),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final title = Text(
+            widget.protocolsPrimaryMode ? 'Protocols' : 'Library',
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              fontSize: 30,
+              fontWeight: FontWeight.w700,
+            ),
+          );
+          final actions = Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              FilledButton.icon(
+                onPressed: () async {
+                  final result = await _openCreateProtocol();
+                  if (result != null) _loadData();
+                },
+                icon: const Icon(Icons.add),
+                label: const Text('Create'),
+              ),
+              const SizedBox(width: 8),
+              _buildImportMenu(key: const Key('library-import-button')),
+            ],
+          );
+          if (showActions && constraints.maxWidth < 400) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [title, const SizedBox(height: 12), actions],
+            );
+          }
+          return Row(
+            children: [
+              Expanded(child: title),
+              if (showActions) actions,
+            ],
+          );
+        },
+      ),
     );
   }
 
   Widget _buildProtocolsTab({required bool isTemplate}) {
     if (_isLoading) return const Center(child: CircularProgressIndicator());
 
-    final filteredProtocols = _protocols
-        .where((p) => p.isTemplate == isTemplate)
-        .where((p) => _matchesSelectedProject(p))
-        .toList();
+    final filteredProtocols =
+        _protocols
+            .where((p) => p.isTemplate == isTemplate)
+            .where((p) => _matchesSelectedProject(p))
+            .where((p) => _matchesSearch(p.title, p.objective, p.description))
+            .toList()
+          ..sort((a, b) => _compareDates(a.createdAt, b.createdAt));
 
     if (filteredProtocols.isEmpty) {
-      return Column(
-        children: [
-          _buildProjectFilter(),
-          Expanded(
-            child: _refreshableEmpty(
-              isTemplate ? 'No templates found.' : 'No protocols found.',
-            ),
+      if (widget.protocolsPrimaryMode && !isTemplate) {
+        return RefreshIndicator(
+          onRefresh: _refreshData,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(24),
+            children: [
+              const SizedBox(height: 80),
+              const Icon(
+                Icons.description_outlined,
+                size: 48,
+                color: AppColors.primary,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'No protocols yet.',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Create a reusable procedure or import a shared protocol.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 20),
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  FilledButton.icon(
+                    onPressed: () async {
+                      final result = await _openCreateProtocol();
+                      if (result != null) _loadData();
+                    },
+                    icon: const Icon(Icons.add),
+                    label: const Text('Create protocol'),
+                  ),
+                  _buildImportMenu(label: 'Import protocol'),
+                ],
+              ),
+            ],
           ),
-        ],
+        );
+      }
+      return _refreshableEmpty(
+        isTemplate ? 'No templates found.' : 'No protocols found.',
       );
     }
 
@@ -277,29 +397,28 @@ class _LibraryScreenState extends State<LibraryScreen>
       onRefresh: _refreshData,
       child: ListView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
-        itemCount: filteredProtocols.length + 1,
+        itemCount: filteredProtocols.length,
         itemBuilder: (context, index) {
-          if (index == 0) return _buildProjectFilter();
-          final protocol = filteredProtocols[index - 1];
-          return _LibraryEntryCard(
-            entryId: protocol.id,
-            title: protocol.title,
+          final protocol = filteredProtocols[index];
+          void openDetail() => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ProtocolDetailScreen(protocol: protocol),
+            ),
+          ).then((_) => _loadData());
+          return ProtocolSummaryCard(
+            protocol: protocol,
             type: isTemplate
-                ? _LibraryEntryType.template
-                : _LibraryEntryType.protocol,
-            firstLabel: 'Created by',
-            firstValue: protocol.createdByName ?? 'Unknown user',
-            secondLabel: 'Created on',
-            secondValue: formatDate(protocol.createdAt),
-            projectChip: _buildProjectChip(protocol.projectId),
+                ? ProtocolSummaryType.template
+                : ProtocolSummaryType.protocol,
+            project: _projectFor(protocol.projectId),
             syncStatus: protocol.syncStatus,
             publicationStatus: protocol.publication?.status,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => ProtocolDetailScreen(protocol: protocol),
-              ),
-            ).then((_) => _loadData()),
+            actionLabel: isTemplate ? 'Use template' : 'Run protocol',
+            onAction: isTemplate
+                ? () => _useTemplate(protocol)
+                : () => _runProtocol(protocol),
+            onTap: openDetail,
           );
         },
       ),
@@ -317,6 +436,24 @@ class _LibraryScreenState extends State<LibraryScreen>
         ),
       ),
     );
+  }
+
+  Future<void> _useTemplate(Protocol template) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CreateProtocolScreen(initialProtocol: template),
+      ),
+    );
+    await _loadData();
+  }
+
+  Future<void> _runProtocol(Protocol protocol) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => RunProtocolScreen(protocol: protocol)),
+    );
+    await _refreshData();
   }
 
   bool _matchesSelectedProject(Protocol protocol) {
@@ -339,15 +476,54 @@ class _LibraryScreenState extends State<LibraryScreen>
     return null;
   }
 
-  Widget _buildProjectChip(String? projectId) {
-    final project = _projectFor(projectId);
-    final color = project == null
-        ? AppColors.textSecondary
-        : Color(project.colorValue);
-    return _LibraryBadge(
-      label: project?.name ?? 'Unassigned',
-      icon: project == null ? Icons.folder_off_outlined : Icons.folder_outlined,
-      color: color,
+  Widget _buildLibraryControls() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ProtocolFlowSearchField(
+            controller: _searchController,
+            hintText: 'Search protocols...',
+            onChanged: (value) => setState(() => _searchQuery = value),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              _buildProjectFilter(),
+              const Spacer(),
+              PopupMenuButton<_LibraryDateSort>(
+                tooltip: 'Sort by date',
+                initialValue: _dateSort,
+                onSelected: (value) => setState(() => _dateSort = value),
+                itemBuilder: (context) => const [
+                  PopupMenuItem(
+                    value: _LibraryDateSort.newestFirst,
+                    child: ListTile(
+                      leading: Icon(Icons.arrow_downward),
+                      title: Text('Date (descending)'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: _LibraryDateSort.oldestFirst,
+                    child: ListTile(
+                      leading: Icon(Icons.arrow_upward),
+                      title: Text('Date (ascending)'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                ],
+                child: const ProtocolFlowFilterPill(
+                  icon: Icons.swap_vert,
+                  label: 'Sort',
+                  showDropdown: false,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -357,56 +533,65 @@ class _LibraryScreenState extends State<LibraryScreen>
         ? AppColors.primary
         : Color(project.colorValue);
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: PopupMenuButton<String>(
-          tooltip: 'Filter by project',
-          initialValue: _selectedProjectId ?? _allProjectsFilter,
-          onSelected: (value) => setState(
-            () =>
-                _selectedProjectId = value == _allProjectsFilter ? null : value,
-          ),
-          itemBuilder: (context) => [
-            const PopupMenuItem<String>(
-              value: _allProjectsFilter,
-              child: ListTile(
-                leading: Icon(Icons.all_inbox_outlined),
-                title: Text('All projects'),
-                contentPadding: EdgeInsets.zero,
-              ),
-            ),
-            for (final project in _projects)
-              PopupMenuItem<String>(
-                value: project.id,
-                child: ListTile(
-                  leading: Icon(
-                    Icons.folder_outlined,
-                    color: Color(project.colorValue),
-                  ),
-                  title: Text(project.name),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-            const PopupMenuDivider(),
-            const PopupMenuItem<String>(
-              value: _unassignedProjectsFilter,
-              child: ListTile(
-                leading: Icon(Icons.folder_off_outlined),
-                title: Text('Unassigned'),
-                contentPadding: EdgeInsets.zero,
-              ),
-            ),
-          ],
-          child: Chip(
-            avatar: Icon(_projectFilterIcon(), color: color, size: 18),
-            label: Text(_projectFilterLabel()),
-            side: BorderSide(color: color.withValues(alpha: 0.35)),
+    return PopupMenuButton<String>(
+      tooltip: 'Filter by project',
+      initialValue: _selectedProjectId ?? _allProjectsFilter,
+      onSelected: (value) => setState(
+        () => _selectedProjectId = value == _allProjectsFilter ? null : value,
+      ),
+      itemBuilder: (context) => [
+        const PopupMenuItem<String>(
+          value: _allProjectsFilter,
+          child: ListTile(
+            leading: Icon(Icons.all_inbox_outlined),
+            title: Text('All projects'),
+            contentPadding: EdgeInsets.zero,
           ),
         ),
+        for (final project in _projects)
+          PopupMenuItem<String>(
+            value: project.id,
+            child: ListTile(
+              leading: Icon(
+                Icons.folder_outlined,
+                color: Color(project.colorValue),
+              ),
+              title: Text(project.name),
+              contentPadding: EdgeInsets.zero,
+            ),
+          ),
+        const PopupMenuDivider(),
+        const PopupMenuItem<String>(
+          value: _unassignedProjectsFilter,
+          child: ListTile(
+            leading: Icon(Icons.folder_off_outlined),
+            title: Text('Unassigned'),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+      ],
+      child: ProtocolFlowFilterPill(
+        icon: _projectFilterIcon(),
+        iconColor: color,
+        label: _selectedProjectId == null ? 'Project' : _projectFilterLabel(),
       ),
     );
+  }
+
+  bool _matchesSearch(String title, [String? secondary, String? tertiary]) {
+    final query = _searchQuery.trim().toLowerCase();
+    if (query.isEmpty) return true;
+    return [
+      title,
+      secondary ?? '',
+      tertiary ?? '',
+    ].any((value) => value.toLowerCase().contains(query));
+  }
+
+  int _compareDates(DateTime a, DateTime b) {
+    return _dateSort == _LibraryDateSort.newestFirst
+        ? b.compareTo(a)
+        : a.compareTo(b);
   }
 
   Project? _selectedProject() {
@@ -431,69 +616,36 @@ class _LibraryScreenState extends State<LibraryScreen>
   }
 
   Widget _buildRunningTab() {
-    final activeMatches =
-        activeProtocol != null &&
-        _matchesSelectedProject(activeProtocol!.protocol);
-    final filteredRunning = runningProtocols
-        .where(
-          (p) =>
-              (activeProtocol == null ||
-                  p.protocol.id != activeProtocol!.protocol.id) &&
-              _matchesSelectedProject(p.protocol),
-        )
-        .toList();
-
-    if (!activeMatches && filteredRunning.isEmpty) {
-      return Column(
-        children: [
-          _buildProjectFilter(),
-          Expanded(child: _refreshableEmpty('No protocols currently running.')),
-        ],
-      );
+    final filteredRuns =
+        protocolRuns
+            .where((run) => run.status != ProtocolRunStatus.completed)
+            .where((run) => _matchesSelectedProject(run.protocolSnapshot))
+            .where((run) => _matchesSearch(run.protocolSnapshot.title))
+            .toList()
+          ..sort((a, b) => _compareDates(a.startedAt, b.startedAt));
+    if (filteredRuns.isEmpty) {
+      return _refreshableEmpty('No protocols currently running.');
     }
 
     return RefreshIndicator(
       onRefresh: _refreshData,
-      child: ListView(
+      child: ListView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
-        children: [
-          _buildProjectFilter(),
-          if (activeMatches) ...[
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Text(
-                'ACTIVE SESSION',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                  color: Colors.grey,
-                ),
-              ),
-            ),
-            _buildActiveProtocolItem(),
-          ],
-          if (filteredRunning.isNotEmpty) ...[
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Text(
-                'IN PROGRESS',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                  color: Colors.grey,
-                ),
-              ),
-            ),
-            ...filteredRunning.map((p) => _buildRunningProtocolItem(p)),
-          ],
-        ],
+        padding: const EdgeInsets.only(top: 8, bottom: 20),
+        itemCount: filteredRuns.length,
+        itemBuilder: (context, index) {
+          final run = filteredRuns[index];
+          return run.status == ProtocolRunStatus.running
+              ? _buildActiveProtocolItem(run.toActiveProtocol())
+              : _buildRunningProtocolItem(run.toActiveProtocol());
+        },
       ),
     );
   }
 
-  Widget _buildActiveProtocolItem() {
-    final protocol = activeProtocol!.protocol;
-    final currentIdx = activeProtocol!.currentStepIndex;
+  Widget _buildActiveProtocolItem(ActiveProtocol state) {
+    final protocol = state.protocol;
+    final currentIdx = state.currentStepIndex;
     String status = 'Preparing';
     if (currentIdx >= 0 && currentIdx < protocol.steps.length) {
       final step = protocol.steps[currentIdx];
@@ -504,22 +656,23 @@ class _LibraryScreenState extends State<LibraryScreen>
     }
 
     final totalSteps = protocol.steps.length;
-    final completedCount = activeProtocol!.completedStepIds.length;
+    final completedCount = state.completedStepIds.length;
     return RunningProtocolSummaryCard(
-      state: activeProtocol!,
+      state: state,
       detail: status,
       progressValue: '$completedCount of $totalSteps steps',
       project: _projectFor(protocol.projectId),
       phaseKeyPrefix: 'active-library',
-      action: IconButton(
-        icon: const Icon(Icons.delete_outline, color: AppColors.error),
-        tooltip: 'Terminate progress',
-        onPressed: () => _confirmRemoveRunningProtocol(activeProtocol!),
-      ),
+      compact: true,
+      paused: false,
+      compactActionLabel: 'Resume',
+      onCompactAction: () => _openRunningDetail(state),
+      onTerminate: () => _confirmRemoveRunningProtocol(state),
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => RunProtocolScreen(protocol: protocol),
+          builder: (context) =>
+              ProtocolDetailScreen(protocol: protocol, activeState: state),
         ),
       ).then((_) => setState(() {})),
     );
@@ -537,11 +690,11 @@ class _LibraryScreenState extends State<LibraryScreen>
       progressValue: '${(progress * 100).toInt()}% complete',
       project: _projectFor(protocol.projectId),
       phaseKeyPrefix: 'running-library',
-      action: IconButton(
-        icon: const Icon(Icons.delete_outline, color: AppColors.error),
-        tooltip: 'Remove progress',
-        onPressed: () => _confirmRemoveRunningProtocol(runningState),
-      ),
+      compact: true,
+      paused: true,
+      compactActionLabel: 'Resume',
+      onCompactAction: () => _openRunningDetail(runningState),
+      onTerminate: () => _confirmRemoveRunningProtocol(runningState),
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(
@@ -554,8 +707,21 @@ class _LibraryScreenState extends State<LibraryScreen>
     );
   }
 
+  Future<void> _openRunningDetail(ActiveProtocol state) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            ProtocolDetailScreen(protocol: state.protocol, activeState: state),
+      ),
+    );
+    await _refreshData();
+  }
+
   void _confirmRemoveRunningProtocol(ActiveProtocol state) {
-    final isActive = activeProtocol?.protocol.id == state.protocol.id;
+    final isActive = protocolRuns.any(
+      (run) => run.id == state.runId && run.status == ProtocolRunStatus.running,
+    );
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -575,13 +741,14 @@ class _LibraryScreenState extends State<LibraryScreen>
           TextButton(
             onPressed: () async {
               Navigator.pop(dialogContext);
-              if (isActive) {
-                activeProtocol = null;
+              final runId = state.runId;
+              if (runId != null) {
+                await ProtocolRunService.instance.discardRun(runId);
+                await loadPersistentProtocols();
+              } else {
+                discardProtocolSession(state.protocol.id);
+                await savePersistentProtocols();
               }
-              runningProtocols.removeWhere(
-                (p) => p.protocol.id == state.protocol.id,
-              );
-              await savePersistentProtocols();
               if (!mounted) return;
               setState(() {});
             },
@@ -594,47 +761,49 @@ class _LibraryScreenState extends State<LibraryScreen>
   }
 
   Widget _buildHistoryTab() {
-    final filteredCompleted = completedProtocols
-        .where((completed) => _matchesSelectedProject(completed.protocol))
-        .toList();
+    final filteredCompleted =
+        protocolRuns
+            .where((run) => run.status == ProtocolRunStatus.completed)
+            .where((run) => _matchesSelectedProject(run.protocolSnapshot))
+            .where((run) => _matchesSearch(run.protocolSnapshot.title))
+            .toList()
+          ..sort(
+            (a, b) => _compareDates(
+              a.completedAt ?? a.updatedAt,
+              b.completedAt ?? b.updatedAt,
+            ),
+          );
 
     if (filteredCompleted.isEmpty) {
-      return Column(
-        children: [
-          _buildProjectFilter(),
-          Expanded(child: _refreshableEmpty('No completed protocols found.')),
-        ],
-      );
+      return _refreshableEmpty('No completed protocols found.');
     }
 
     return RefreshIndicator(
       onRefresh: _refreshData,
       child: ListView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
-        itemCount: filteredCompleted.length + 1,
+        itemCount: filteredCompleted.length,
         itemBuilder: (context, index) {
-          if (index == 0) return _buildProjectFilter();
-          final completed = filteredCompleted[index - 1];
-          final dateStr = formatDate(completed.completedAt);
-
-          return _LibraryEntryCard(
-            entryId: completed.id,
-            title: completed.protocol.title,
-            type: _LibraryEntryType.completed,
-            firstLabel: 'Completed by',
-            firstValue: completed.completedByName ?? 'Unknown user',
-            secondLabel: 'Completed on',
-            secondValue: dateStr,
-            projectChip: _buildProjectChip(completed.protocol.projectId),
+          final run = filteredCompleted[index];
+          final completed = run.toCompletedProtocol();
+          void review() => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) =>
+                  CompletedProtocolDetailScreen.fromRun(run: run),
+            ),
+          ).then((_) => setState(() {}));
+          return ProtocolSummaryCard(
+            protocol: completed.protocol,
+            type: ProtocolSummaryType.completed,
+            project: _projectFor(completed.protocol.projectId),
+            startedAt: completed.startedAt,
+            completedAt: completed.completedAt,
             syncStatus: completed.syncStatus,
             publicationStatus: completed.protocol.publication?.status,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) =>
-                    CompletedProtocolDetailScreen(completedProtocol: completed),
-              ),
-            ).then((_) => setState(() {})),
+            actionLabel: 'Review',
+            onAction: review,
+            onTap: review,
           );
         },
       ),
@@ -642,10 +811,15 @@ class _LibraryScreenState extends State<LibraryScreen>
   }
 }
 
-enum _LibraryEntryType { template, protocol, running, completed }
+enum _LibraryImportOption { file, qrCode }
 
-class _LibraryEntryCard extends StatelessWidget {
-  const _LibraryEntryCard({
+enum _LibraryDateSort { newestFirst, oldestFirst }
+
+enum LibraryEntryType { template, protocol, running, completed }
+
+class LibraryEntryCard extends StatelessWidget {
+  const LibraryEntryCard({
+    super.key,
     required this.entryId,
     required this.title,
     required this.type,
@@ -661,7 +835,7 @@ class _LibraryEntryCard extends StatelessWidget {
 
   final String entryId;
   final String title;
-  final _LibraryEntryType type;
+  final LibraryEntryType type;
   final String firstLabel;
   final String firstValue;
   final String secondLabel;
@@ -862,27 +1036,27 @@ class _LibraryMetadata extends StatelessWidget {
 class _LibraryTypeBadge extends StatelessWidget {
   const _LibraryTypeBadge({super.key, required this.type});
 
-  final _LibraryEntryType type;
+  final LibraryEntryType type;
 
   @override
   Widget build(BuildContext context) {
     final (label, icon, color) = switch (type) {
-      _LibraryEntryType.template => (
+      LibraryEntryType.template => (
         'TEMPLATE',
         Icons.copy_all_outlined,
         AppColors.aiPrimary,
       ),
-      _LibraryEntryType.protocol => (
+      LibraryEntryType.protocol => (
         'PROTOCOL',
         Icons.article_outlined,
         AppColors.primary,
       ),
-      _LibraryEntryType.running => (
+      LibraryEntryType.running => (
         'RUNNING',
         Icons.play_circle_outline,
         AppColors.info,
       ),
-      _LibraryEntryType.completed => (
+      LibraryEntryType.completed => (
         'COMPLETED',
         Icons.check_circle_outline,
         AppColors.success,

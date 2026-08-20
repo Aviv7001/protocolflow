@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:protocolflow/screens/user_guide_screen.dart';
 
 void main() {
-  testWidgets('user guide sections and subsections start collapsed', (
+  testWidgets('user guide shows topic list tiles with collapsed content', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -11,12 +11,8 @@ void main() {
     );
 
     expect(find.text('User Guide'), findsOneWidget);
-    expect(find.text('Installing ProtocolFlow'), findsOneWidget);
-    expect(find.text('Google Sync and Data Safety'), findsOneWidget);
-    expect(find.text('Windows'), findsNothing);
-
-    await tester.tap(find.byTooltip('Expand Installing ProtocolFlow'));
-    await tester.pumpAndSettle();
+    expect(find.text('INSTALLING PROTOCOLFLOW'), findsOneWidget);
+    expect(find.text('GOOGLE SYNC AND DATA SAFETY'), findsOneWidget);
     expect(find.text('Windows'), findsOneWidget);
     expect(find.textContaining('progressive web app'), findsNothing);
 
@@ -32,8 +28,6 @@ void main() {
       const MaterialApp(home: UserGuideScreen(embedded: true)),
     );
 
-    await tester.tap(find.byTooltip('Expand Google Sync and Data Safety'));
-    await tester.pumpAndSettle();
     expect(find.text('Request access'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Expand Request access'));

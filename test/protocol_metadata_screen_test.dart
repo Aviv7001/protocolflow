@@ -6,6 +6,7 @@ import 'package:protocolflow/models/protocol.dart';
 import 'package:protocolflow/models/project.dart';
 import 'package:protocolflow/models/completed_protocol.dart';
 import 'package:protocolflow/models/active_protocol.dart';
+import 'package:protocolflow/models/protocol_run.dart';
 import 'package:protocolflow/models/protocol_additional_data.dart';
 import 'package:protocolflow/models/protocol_step.dart';
 import 'package:protocolflow/models/protocol_publication.dart';
@@ -45,14 +46,9 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.text('TEMPLATE'), findsOneWidget);
-    expect(find.text('CREATED ON'), findsOneWidget);
-    expect(find.text('2026-07-23'), findsOneWidget);
-    expect(find.text('CREATED BY'), findsOneWidget);
-    expect(find.text('Aviv Researcher'), findsOneWidget);
-    expect(find.text('BCA Study'), findsOneWidget);
+    expect(find.text('Created by Aviv Researcher'), findsOneWidget);
     expect(
-      find.byKey(const Key('library-tags-placeholder-protocol-1')),
+      find.byKey(const Key('library-project-badge-protocol-1')),
       findsOneWidget,
     );
     final typeBadge = tester.getSize(
@@ -64,8 +60,9 @@ void main() {
     final projectBadge = tester.getSize(
       find.byKey(const Key('library-project-badge-protocol-1')),
     );
-    expect(typeBadge.height, syncBadge.height);
-    expect(projectBadge.height, syncBadge.height);
+    expect(typeBadge, const Size(60, 60));
+    expect(syncBadge.height, greaterThan(0));
+    expect(projectBadge, const Size(60, 60));
     expect(tester.takeException(), isNull);
   });
 
@@ -148,14 +145,45 @@ void main() {
     runningProtocols = [running];
     completedProtocols = [completed];
     activeProtocol = null;
+    final runningRun = ProtocolRun(
+      id: 'RUN-20260723-RUNNING1',
+      protocolId: ready.id,
+      projectId: ready.projectId,
+      protocolSnapshot: ready,
+      status: ProtocolRunStatus.paused,
+      currentStepIndex: running.currentStepIndex,
+      completedStepIds: running.completedStepIds,
+      notes: running.notes,
+      startedAt: running.startedAt,
+      createdAt: running.startedAt,
+      updatedAt: running.startedAt,
+    );
+    final completedRun = ProtocolRun(
+      id: completed.id,
+      protocolId: ready.id,
+      projectId: ready.projectId,
+      protocolSnapshot: ready,
+      status: ProtocolRunStatus.completed,
+      notes: completed.notes,
+      startedAt: completed.completedAt,
+      completedAt: completed.completedAt,
+      createdAt: completed.completedAt,
+      updatedAt: completed.completedAt,
+      completedByName: completed.completedByName,
+    );
     addTearDown(() {
       runningProtocols = [];
       completedProtocols = [];
       activeProtocol = null;
+      protocolRuns = [];
     });
     SharedPreferences.setMockInitialValues({
       'protocols_library_json': jsonEncode([ready.toJson()]),
       'projects_json': jsonEncode([project.toJson()]),
+      'protocol_runs_json': jsonEncode([
+        runningRun.toJson(),
+        completedRun.toJson(),
+      ]),
     });
 
     await tester.pumpWidget(
@@ -163,22 +191,20 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.text('PROTOCOL'), findsOneWidget);
+    expect(find.byKey(const Key('library-type-badge-ready-1')), findsOneWidget);
     await tester.tap(find.text('Running'));
     await tester.pumpAndSettle();
-    expect(find.text('RUNNING'), findsOneWidget);
+    expect(find.byKey(const Key('library-type-badge-ready-1')), findsOneWidget);
     expect(
       find.byKey(const Key('running-library-phase-progress-ready-1')),
       findsOneWidget,
     );
-    expect(find.text('Preparation'), findsOneWidget);
-    expect(find.text('Measurement'), findsOneWidget);
+    expect(find.text('Phase 2/2'), findsOneWidget);
 
     await tester.tap(find.text('Completed'));
     await tester.pumpAndSettle();
-    expect(find.text('COMPLETED'), findsOneWidget);
-    expect(find.text('COMPLETED BY'), findsOneWidget);
-    expect(find.text('Lab Manager'), findsOneWidget);
+    expect(find.byKey(const Key('library-type-badge-ready-1')), findsOneWidget);
+    expect(find.text('Completed on 2026-07-24'), findsOneWidget);
   });
 
   testWidgets('protocol detail shows protocol creation metadata', (
@@ -189,7 +215,11 @@ void main() {
     });
 
     await tester.pumpWidget(
-      MaterialApp(home: ProtocolDetailScreen(protocol: protocol)),
+      MaterialApp(
+        home: ProtocolDetailScreen(
+          protocol: protocol.copyWith(isTemplate: false),
+        ),
+      ),
     );
     await tester.pump(const Duration(milliseconds: 300));
 
@@ -197,6 +227,11 @@ void main() {
     expect(find.text('Created by: Aviv Researcher'), findsOneWidget);
     expect(find.text('Project: BCA Study'), findsOneWidget);
     expect(find.byType(ProtocolFlowAppBar), findsOneWidget);
+    expect(find.byTooltip('Edit'), findsOneWidget);
+    expect(find.byTooltip('Publish protocol'), findsOneWidget);
+    expect(find.byTooltip('Export'), findsOneWidget);
+    expect(find.byTooltip('Delete'), findsOneWidget);
+    expect(find.byTooltip('Protocol options'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -400,6 +435,9 @@ void main() {
 
     expect(find.byKey(const Key('detail-phase-progress')), findsOneWidget);
     expect(find.byKey(const Key('detail-phase-progress-add')), findsOneWidget);
+    expect(find.byKey(const Key('detail-current-run')), findsOneWidget);
+    expect(find.text('Resume'), findsOneWidget);
+    expect(find.text('Run Protocol'), findsNothing);
 
     await tester.tap(find.byKey(const Key('detail-phase-progress-add')));
     await tester.pumpAndSettle();
@@ -408,6 +446,37 @@ void main() {
     expect(find.text('Phase 3'), findsWidgets);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'protocol detail reveals only existing current and previous runs',
+    (tester) async {
+      final completedAt = DateTime(2026, 8, 14);
+      protocolRuns = [
+        ProtocolRun(
+          id: 'RUN-20260814-PREVIOUS',
+          protocolId: protocol.id,
+          projectId: protocol.projectId,
+          protocolSnapshot: protocol,
+          status: ProtocolRunStatus.completed,
+          startedAt: completedAt.subtract(const Duration(hours: 2)),
+          completedAt: completedAt,
+          createdAt: completedAt.subtract(const Duration(hours: 2)),
+          updatedAt: completedAt,
+        ),
+      ];
+      addTearDown(() => protocolRuns = []);
+
+      await tester.pumpWidget(
+        MaterialApp(home: ProtocolDetailScreen(protocol: protocol)),
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.byKey(const Key('detail-current-run')), findsNothing);
+      expect(find.byKey(const Key('detail-previous-runs')), findsOneWidget);
+      expect(find.text('Previous Runs'), findsOneWidget);
+      expect(find.text('Current Run'), findsNothing);
+    },
+  );
 
   testWidgets('completed detail shows creator and completer metadata', (
     tester,

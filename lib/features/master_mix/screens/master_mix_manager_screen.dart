@@ -13,11 +13,13 @@ import '../widgets/master_mix_result_table.dart';
 class MasterMixManagerScreen extends StatefulWidget {
   final MasterMixWizard wizard;
   final Function(MasterMixWizard) onUpdate;
+  final bool promptForSaveDetails;
 
   const MasterMixManagerScreen({
     super.key,
     required this.wizard,
     required this.onUpdate,
+    this.promptForSaveDetails = true,
   });
 
   @override
@@ -195,7 +197,7 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
               const SizedBox(height: 8),
               Align(
                 alignment: Alignment.center,
-                child: ElevatedButton.icon(
+                child: FilledButton.icon(
                   onPressed: _addMix,
                   icon: const Icon(Icons.add),
                   label: const Text(
@@ -217,17 +219,10 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
 
   Widget _buildTableNameCard() {
     return Card(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: const BorderSide(color: AppColors.outlineVariant),
-      ),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: _DelayedTextField(
-          decoration: const InputDecoration(
-            labelText: 'Table Name',
-            border: OutlineInputBorder(),
-          ),
+          decoration: const InputDecoration(labelText: 'Table Name'),
           initialValue: _wizard.tableName,
           style: const TextStyle(fontSize: _uniformFontSize),
           onCommit: (v) =>
@@ -243,10 +238,6 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: const BorderSide(color: AppColors.outlineVariant),
-      ),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -271,7 +262,10 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
                 if (_wizard.mixes.length > 1)
                   IconButton(
                     tooltip: 'Remove mix',
-                    icon: const Icon(Icons.delete_outline, color: Colors.red),
+                    icon: const Icon(
+                      Icons.delete_outline,
+                      color: AppColors.error,
+                    ),
                     onPressed: () => _removeMix(mixIndex),
                   ),
               ],
@@ -286,10 +280,7 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
             if (!isCollapsed) ...[
               const SizedBox(height: 12),
               _DelayedTextField(
-                decoration: const InputDecoration(
-                  labelText: 'Mix Name',
-                  border: OutlineInputBorder(),
-                ),
+                decoration: const InputDecoration(labelText: 'Mix Name'),
                 initialValue: mix.mixName,
                 style: const TextStyle(fontSize: _uniformFontSize),
                 onCommit: (v) => _updateMix(mixIndex, mix.copyWith(mixName: v)),
@@ -299,7 +290,6 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
                 initialValue: mix.baseSolventName,
                 decoration: const InputDecoration(
                   labelText: 'Base Solvent Name',
-                  border: OutlineInputBorder(),
                 ),
                 style: const TextStyle(fontSize: _uniformFontSize),
                 onCommit: (v) =>
@@ -313,10 +303,7 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
-                decoration: const InputDecoration(
-                  labelText: 'Extra Volume %',
-                  border: OutlineInputBorder(),
-                ),
+                decoration: const InputDecoration(labelText: 'Extra Volume %'),
                 style: const TextStyle(fontSize: _uniformFontSize),
                 onCommit: (v) => _updateMix(
                   mixIndex,
@@ -363,10 +350,7 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
           child: _DelayedTextField(
             initialValue: mix.finalVolume.toString(),
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              labelText: 'Final Volume',
-              border: OutlineInputBorder(),
-            ),
+            decoration: const InputDecoration(labelText: 'Final Volume'),
             style: const TextStyle(fontSize: _uniformFontSize),
             onCommit: (v) => _updateMix(
               mixIndex,
@@ -378,10 +362,7 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
         Expanded(
           child: DropdownButtonFormField<VolumeUnit>(
             initialValue: mix.finalVolumeUnit,
-            decoration: const InputDecoration(
-              labelText: 'Unit',
-              border: OutlineInputBorder(),
-            ),
+            decoration: const InputDecoration(labelText: 'Unit'),
             items: VolumeUnit.values
                 .map(
                   (u) => DropdownMenuItem(
@@ -417,13 +398,15 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _resItem(
-                'Solvent',
-                result.formattedBaseSolventVolume,
-                Colors.green,
+              Expanded(
+                child: _resItem(
+                  'Solvent',
+                  result.formattedBaseSolventVolume,
+                  Colors.green,
+                ),
               ),
+              const SizedBox(width: 16),
               _resItemEditable(
                 'V2 (Total Mix)',
                 result.optimizedFinalVolumeUl,
@@ -490,10 +473,7 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
             Expanded(
               child: _DelayedTextField(
                 initialValue: item.name,
-                decoration: const InputDecoration(
-                  labelText: 'Reagent Name',
-                  border: OutlineInputBorder(),
-                ),
+                decoration: const InputDecoration(labelText: 'Reagent Name'),
                 style: const TextStyle(
                   fontSize: _uniformFontSize,
                   fontWeight: FontWeight.bold,
@@ -533,7 +513,7 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
             ),
             IconButton(
               tooltip: 'Remove reagent',
-              icon: const Icon(Icons.delete_outline, color: Colors.red),
+              icon: const Icon(Icons.delete_outline, color: AppColors.error),
               onPressed: () => _removeReagent(mixIndex, reagentIndex),
             ),
           ],
@@ -585,7 +565,6 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: const InputDecoration(
               labelText: 'Molecular weight (g/mol)',
-              border: OutlineInputBorder(),
             ),
             style: const TextStyle(fontSize: _uniformFontSize),
             onCommit: (v) => _updateReagent(
@@ -617,8 +596,9 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
     final mix = _wizard.mixes[mixIndex];
     final isMass = rRes.reagentMassGrams != null;
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return Wrap(
+      spacing: 20,
+      runSpacing: 12,
       children: [
         if (isMass)
           _resItemEditableMass('V1 (from Stock)', rRes.reagentMassGrams!, (
@@ -699,6 +679,14 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
   }
 
   void _handleDone(BuildContext context) async {
+    if (!widget.promptForSaveDetails) {
+      widget.onUpdate(_wizard);
+      if (context.mounted) {
+        setState(() => _canActuallyPop = true);
+        Navigator.pop(context, _wizard);
+      }
+      return;
+    }
     final name = await _showSaveDialog(context, _wizard.tableName);
     if (name != null) {
       setState(() {

@@ -33,4 +33,35 @@ void main() {
       isNull,
     );
   });
+
+  test('Drive file records read API size metadata', () {
+    final record = DriveFileRecord.fromJson({
+      'id': 'file-1',
+      'name': 'projects.json',
+      'size': '4096',
+    });
+
+    expect(record.sizeBytes, 4096);
+  });
+
+  test('Drive footprint categorizes synced files and journal metadata', () {
+    expect(
+      DriveSyncService.footprintCategoryForFile('projects.json'),
+      'Projects',
+    );
+    expect(
+      DriveSyncService.footprintCategoryForFile(
+        'completed_protocol_run-1.json',
+      ),
+      'Completed',
+    );
+    expect(
+      DriveSyncService.footprintCategoryForFile('sync_journal_device.json'),
+      'Sync metadata',
+    );
+    expect(
+      DriveSyncService.footprintCategoryForFile('protocol-1.json'),
+      'Protocols',
+    );
+  });
 }

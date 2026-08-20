@@ -170,7 +170,6 @@ class _ConcentrationInputRowState extends State<ConcentrationInputRow> {
       decoration: InputDecoration(
         labelText: widget.label,
         hintText: _isRatio ? '1:50 or 1/50' : null,
-        border: const OutlineInputBorder(),
       ),
       style: TextStyle(fontSize: widget.fontSize),
       onSubmitted: _commitValue,
@@ -182,10 +181,7 @@ class _ConcentrationInputRowState extends State<ConcentrationInputRow> {
       controller: _exponentController,
       focusNode: _exponentFocusNode,
       keyboardType: const TextInputType.numberWithOptions(signed: true),
-      decoration: const InputDecoration(
-        labelText: 'x10^',
-        border: OutlineInputBorder(),
-      ),
+      decoration: const InputDecoration(labelText: 'x10^'),
       style: TextStyle(fontSize: widget.fontSize),
       onSubmitted: _commitExponent,
     );
@@ -195,10 +191,7 @@ class _ConcentrationInputRowState extends State<ConcentrationInputRow> {
     return DropdownButtonFormField<ConcentrationUnit>(
       key: ValueKey('${widget.label}_${widget.unit.name}'),
       initialValue: widget.unit,
-      decoration: const InputDecoration(
-        labelText: 'Unit',
-        border: OutlineInputBorder(),
-      ),
+      decoration: const InputDecoration(labelText: 'Unit'),
       items: widget.units
           .map(
             (unit) => DropdownMenuItem(

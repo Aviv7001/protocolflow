@@ -9,9 +9,12 @@ import '../models/project.dart';
 import '../models/protocol.dart';
 import '../models/protocol_table.dart';
 import '../models/task.dart';
+import '../models/protocol_run.dart';
 import 'auth_service.dart';
 import 'storage_service.dart';
 import 'dashboard_activity_service.dart';
+import 'drive_sync_service.dart';
+import 'protocol_run_service.dart';
 
 class DashboardFootprintSegment {
   final String label;
@@ -27,8 +30,14 @@ class DashboardFootprintSegment {
 
 class DashboardFootprint {
   final List<DashboardFootprintSegment> segments;
+  final bool driveDataAvailable;
+  final String? driveError;
 
-  const DashboardFootprint({required this.segments});
+  const DashboardFootprint({
+    required this.segments,
+    this.driveDataAvailable = false,
+    this.driveError,
+  });
 
   int get localBytes =>
       segments.fold(0, (sum, segment) => sum + segment.localBytes);
@@ -79,12 +88,16 @@ class DashboardService {
   final TaskService taskService;
   final MeasuringToolService measuringToolService;
   final DashboardActivityService activityService;
+  final Future<DriveAppDataFootprint> Function()? driveFootprintLoader;
+  final bool Function()? hasDriveAccountResolver;
 
   DashboardService({
     StorageService? storageService,
     TaskService? taskService,
     MeasuringToolService? measuringToolService,
     DashboardActivityService? activityService,
+    this.driveFootprintLoader,
+    this.hasDriveAccountResolver,
   }) : storageService = storageService ?? StorageService(),
        taskService = taskService ?? TaskService(),
        measuringToolService =
@@ -93,9 +106,15 @@ class DashboardService {
 
   Future<DashboardData> load() async {
     final protocols = await storageService.loadProtocols();
-    final completed = await storageService.loadCompletedProtocols();
-    final running = await storageService.loadRunningProtocols();
-    final active = await storageService.loadActiveProtocol();
+    final runs = await ProtocolRunService.instance.loadRuns();
+    final completed = runs
+        .where((run) => run.status == ProtocolRunStatus.completed)
+        .map((run) => run.toCompletedProtocol())
+        .toList();
+    final allRunning = runs
+        .where((run) => run.status != ProtocolRunStatus.completed)
+        .map((run) => run.toActiveProtocol())
+        .toList();
     final projects = await storageService.loadProjects();
     final savedTables = await storageService.loadSavedTables();
     final measuringTools = await measuringToolService.loadTools();
@@ -115,13 +134,20 @@ class DashboardService {
     final measuringToolsSyncState = await storageService.loadSyncBundleState(
       SyncBundleType.measuringTools,
     );
-
-    final allRunning = <ActiveProtocol>[
-      ?active,
-      ...running.where(
-        (item) => active == null || item.protocol.id != active.protocol.id,
-      ),
-    ];
+    final hasDriveAccount =
+        hasDriveAccountResolver?.call() ??
+        AuthService.instance.hasAuthenticatedAccount;
+    DriveAppDataFootprint? driveFootprint;
+    String? driveError;
+    if (hasDriveAccount) {
+      try {
+        driveFootprint =
+            await (driveFootprintLoader?.call() ??
+                DriveSyncService.instance.loadAppDataFootprint());
+      } catch (error) {
+        driveError = error.toString();
+      }
+    }
 
     return DashboardData(
       protocols: protocols,
@@ -146,8 +172,10 @@ class DashboardService {
         measuringTools: measuringTools,
         todayTasks: todayTasks,
         taskHistory: taskHistory,
+        driveFootprint: driveFootprint,
+        driveError: driveError,
       ),
-      hasDriveAccount: AuthService.instance.hasAuthenticatedAccount,
+      hasDriveAccount: hasDriveAccount,
     );
   }
 
@@ -159,6 +187,8 @@ class DashboardService {
     required List<MeasuringTool> measuringTools,
     required List<Task> todayTasks,
     required List<Task> taskHistory,
+    required DriveAppDataFootprint? driveFootprint,
+    required String? driveError,
   }) {
     final protocolJson = protocols.map((item) => item.toJson()).toList();
     final projectJson = projects.map((item) => item.toJson()).toList();
@@ -168,73 +198,49 @@ class DashboardService {
     final historyJson = taskHistory.map((item) => item.toJson()).toList();
     final toolJson = measuringTools.map((item) => item.toJson()).toList();
 
-    final taskPayload = {
-      'updatedAt': DateTime.fromMillisecondsSinceEpoch(
-        0,
-        isUtc: true,
-      ).toIso8601String(),
-      'today': todayJson,
-      'history': historyJson,
-    };
-    final measuringPayload = {
-      'updatedAt': DateTime.fromMillisecondsSinceEpoch(
-        0,
-        isUtc: true,
-      ).toIso8601String(),
-      'tools': toolJson,
-    };
-    final projectPayload = {
-      'updatedAt': DateTime.fromMillisecondsSinceEpoch(
-        0,
-        isUtc: true,
-      ).toIso8601String(),
-      'projects': projectJson,
-    };
-
     return DashboardFootprint(
       segments: [
         DashboardFootprintSegment(
           label: 'Projects',
           localBytes: _compactBytes(projectJson),
-          syncBytes: _prettyBytes(projectPayload),
+          syncBytes: driveFootprint?.bytesFor('Projects') ?? 0,
         ),
         DashboardFootprintSegment(
           label: 'Protocols',
           localBytes: _compactBytes(protocolJson),
-          syncBytes: protocolJson.fold<int>(
-            0,
-            (sum, item) => sum + _prettyBytes(item),
-          ),
+          syncBytes: driveFootprint?.bytesFor('Protocols') ?? 0,
         ),
         DashboardFootprintSegment(
           label: 'Completed',
           localBytes: _compactBytes(completedJson),
-          syncBytes: completedJson.fold<int>(
-            0,
-            (sum, item) => sum + _prettyBytes(item),
-          ),
+          syncBytes: driveFootprint?.bytesFor('Completed') ?? 0,
         ),
         DashboardFootprintSegment(
           label: 'Tables',
           localBytes: _compactBytes(tableJson),
-          syncBytes: _prettyBytes(tableJson),
+          syncBytes: driveFootprint?.bytesFor('Tables') ?? 0,
         ),
         DashboardFootprintSegment(
           label: 'Tasks',
           localBytes: _compactBytes(todayJson) + _compactBytes(historyJson),
-          syncBytes: _prettyBytes(taskPayload),
+          syncBytes: driveFootprint?.bytesFor('Tasks') ?? 0,
         ),
         DashboardFootprintSegment(
           label: 'Measuring',
           localBytes: _compactBytes(toolJson),
-          syncBytes: _prettyBytes(measuringPayload),
+          syncBytes: driveFootprint?.bytesFor('Measuring') ?? 0,
         ),
+        if ((driveFootprint?.bytesFor('Sync metadata') ?? 0) > 0)
+          DashboardFootprintSegment(
+            label: 'Sync metadata',
+            localBytes: 0,
+            syncBytes: driveFootprint!.bytesFor('Sync metadata'),
+          ),
       ],
+      driveDataAvailable: driveFootprint != null,
+      driveError: driveError,
     );
   }
 
   int _compactBytes(Object value) => utf8.encode(jsonEncode(value)).length;
-
-  int _prettyBytes(Object value) =>
-      utf8.encode(const JsonEncoder.withIndent('  ').convert(value)).length;
 }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
+import '../widgets/protocolflow_app_bar.dart';
+import '../widgets/protocolflow_ui.dart';
 
 class UserGuideScreen extends StatefulWidget {
   final bool embedded;
@@ -12,129 +14,105 @@ class UserGuideScreen extends StatefulWidget {
 }
 
 class _UserGuideScreenState extends State<UserGuideScreen> {
-  final Set<String> _expandedSections = {};
   final Set<String> _expandedSubsections = {};
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: widget.embedded ? null : AppBar(title: const Text('User Guide')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-        children: [
-          if (widget.embedded)
-            Text(
-              'User Guide',
-              style: Theme.of(
-                context,
-              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
-            ),
-          if (widget.embedded) const SizedBox(height: 6),
-          const Text(
-            'Open a section to learn a workflow. The guide is available inside the app, including when ProtocolFlow is installed as a web app.',
-            style: TextStyle(color: AppColors.textSecondary),
-          ),
-          const SizedBox(height: 16),
-          for (final section in _guideSections) ...[
-            _buildSection(section),
-            const SizedBox(height: 12),
+      appBar: widget.embedded ? null : ProtocolFlowAppBar(title: 'User Guide'),
+      body: ProtocolFlowContentBoundary(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
+          children: [
+            if (widget.embedded)
+              const ProtocolFlowScreenHeader(
+                title: 'User Guide',
+                subtitle: 'Open a topic to learn a ProtocolFlow workflow.',
+              )
+            else
+              const Text(
+                'Open a topic to learn a ProtocolFlow workflow.',
+                style: TextStyle(color: AppColors.textSecondary),
+              ),
+            const SizedBox(height: 24),
+            for (var index = 0; index < _guideSections.length; index++) ...[
+              _buildSection(_guideSections[index]),
+              if (index < _guideSections.length - 1) const SizedBox(height: 20),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
 
   Widget _buildSection(_GuideSection section) {
-    final isExpanded = _expandedSections.contains(section.id);
-    return Card(
-      margin: EdgeInsets.zero,
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          ListTile(
-            dense: true,
-            onTap: () => _toggleSection(section.id),
-            leading: Icon(section.icon, color: AppColors.primary),
-            title: Text(
-              section.title,
-              style: Theme.of(
-                context,
-              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            subtitle: Text(
-              '${section.subsections.length} ${section.subsections.length == 1 ? 'topic' : 'topics'}',
-            ),
-            trailing: IconButton(
-              tooltip: isExpanded
-                  ? 'Shrink ${section.title}'
-                  : 'Expand ${section.title}',
-              onPressed: () => _toggleSection(section.id),
-              icon: Icon(isExpanded ? Icons.unfold_less : Icons.unfold_more),
-            ),
-          ),
-          if (isExpanded) ...[
-            const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-              child: Column(
-                children: [
-                  for (
-                    var index = 0;
-                    index < section.subsections.length;
-                    index++
-                  ) ...[
-                    _buildSubsection(section, section.subsections[index]),
-                    if (index < section.subsections.length - 1)
-                      const SizedBox(height: 10),
-                  ],
-                ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          child: Row(
+            children: [
+              Icon(section.icon, color: AppColors.primary, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  section.title.toUpperCase(),
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
-            ),
-          ],
-        ],
-      ),
+            ],
+          ),
+        ),
+        Card(
+          margin: EdgeInsets.zero,
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            children: [
+              for (
+                var index = 0;
+                index < section.subsections.length;
+                index++
+              ) ...[
+                _buildSubsection(section, section.subsections[index]),
+                if (index < section.subsections.length - 1)
+                  const Divider(height: 1),
+              ],
+            ],
+          ),
+        ),
+      ],
     );
   }
 
   Widget _buildSubsection(_GuideSection section, _GuideSubsection subsection) {
     final key = '${section.id}|${subsection.id}';
     final isExpanded = _expandedSubsections.contains(key);
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.outlineVariant),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          ListTile(
-            dense: true,
-            tileColor: AppColors.surfaceContainer,
-            onTap: () => _toggleSubsection(key),
-            title: Text(
-              subsection.title,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-            trailing: IconButton(
-              tooltip: isExpanded
-                  ? 'Shrink ${subsection.title}'
-                  : 'Expand ${subsection.title}',
-              onPressed: () => _toggleSubsection(key),
-              icon: Icon(isExpanded ? Icons.unfold_less : Icons.unfold_more),
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ListTile(
+          onTap: () => _toggleSubsection(key),
+          title: Text(subsection.title),
+          trailing: IconButton(
+            tooltip: isExpanded
+                ? 'Shrink ${subsection.title}'
+                : 'Expand ${subsection.title}',
+            onPressed: () => _toggleSubsection(key),
+            icon: Icon(isExpanded ? Icons.expand_less : Icons.chevron_right),
           ),
-          if (isExpanded) ...[
-            const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.all(14),
-              child: _buildGuideText(subsection),
-            ),
-          ],
+        ),
+        if (isExpanded) ...[
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+            child: _buildGuideText(subsection),
+          ),
         ],
-      ),
+      ],
     );
   }
 
@@ -160,12 +138,6 @@ class _UserGuideScreenState extends State<UserGuideScreen> {
         ],
       ],
     );
-  }
-
-  void _toggleSection(String id) {
-    setState(() {
-      if (!_expandedSections.remove(id)) _expandedSections.add(id);
-    });
   }
 
   void _toggleSubsection(String key) {
@@ -581,7 +553,7 @@ const List<_GuideSection> _guideSections = [
         id: 'export',
         title: 'Import and export',
         paragraphs: [
-          'Use Import / Export in the sidebar for backups and interchange. JSON preserves ProtocolFlow structure. Document and table formats are useful for sharing or review but may not preserve every editable app field.',
+          'Use Backup and restore in Settings for complete local or private Drive backups. JSON preserves ProtocolFlow structure. Document and table formats are useful for sharing or review but may not preserve every editable app field.',
         ],
       ),
     ],

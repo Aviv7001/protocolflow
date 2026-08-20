@@ -132,22 +132,72 @@ class TaskService {
   }
 
   Future<void> archiveDoneTasks() async {
-    List<Task> today = await loadTodayTasks();
-    List<Task> history = await loadHistoryTasks();
+    final today = await loadTodayTasks();
+    await archiveTasks(
+      today.where((task) => task.isDone).map((task) => task.id),
+    );
+  }
 
-    final done = today
-        .where((t) => t.status == TaskStatus.completed)
-        .map((t) => t.copyWith(completedAt: DateTime.now()))
+  Future<int> archiveTasks(Iterable<String> taskIds) async {
+    final ids = taskIds.toSet();
+    if (ids.isEmpty) return 0;
+
+    final today = await loadTodayTasks();
+    final history = await loadHistoryTasks();
+    final archivedAt = DateTime.now();
+    final archived = today
+        .where((task) => ids.contains(task.id) && task.isDone)
+        .map((task) => task.copyWith(completedAt: archivedAt))
         .toList();
-    final remaining = today
-        .where((t) => t.status != TaskStatus.completed)
-        .toList();
+    if (archived.isEmpty) return 0;
 
-    if (done.isEmpty) return;
-
-    history.insertAll(0, done);
-
-    await saveTodayTasks(remaining);
+    history.insertAll(0, archived);
+    await saveTodayTasks(
+      today
+          .where((task) => !archived.any((item) => item.id == task.id))
+          .toList(),
+    );
     await saveHistoryTasks(history);
+    return archived.length;
+  }
+
+  Future<int> restoreTasks(Iterable<String> taskIds) async {
+    final ids = taskIds.toSet();
+    if (ids.isEmpty) return 0;
+
+    final today = await loadTodayTasks();
+    final history = await loadHistoryTasks();
+    final restored = history.where((task) => ids.contains(task.id)).toList();
+    if (restored.isEmpty) return 0;
+
+    today.addAll(restored);
+    await saveTodayTasks(today);
+    await saveHistoryTasks(
+      history.where((task) => !ids.contains(task.id)).toList(),
+    );
+    return restored.length;
+  }
+
+  Future<void> unassignProject(String projectId) async {
+    final today = await loadTodayTasks();
+    final history = await loadHistoryTasks();
+    await saveTodayTasks(
+      today
+          .map(
+            (task) => task.projectId == projectId
+                ? task.copyWith(clearProjectId: true)
+                : task,
+          )
+          .toList(),
+    );
+    await saveHistoryTasks(
+      history
+          .map(
+            (task) => task.projectId == projectId
+                ? task.copyWith(clearProjectId: true)
+                : task,
+          )
+          .toList(),
+    );
   }
 }

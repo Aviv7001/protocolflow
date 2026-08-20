@@ -100,17 +100,32 @@ class _ProtocolStepNotesTableState extends State<ProtocolStepNotesTable> {
                               PopupMenuItem(
                                 value: 'moveUp',
                                 enabled: index > 0,
-                                child: const Text('Move up'),
+                                child: const ListTile(
+                                  leading: Icon(Icons.arrow_upward),
+                                  title: Text('Move up'),
+                                  contentPadding: EdgeInsets.zero,
+                                ),
                               ),
                               PopupMenuItem(
                                 value: 'moveDown',
                                 enabled: index < widget.notes.length - 1,
-                                child: const Text('Move down'),
+                                child: const ListTile(
+                                  leading: Icon(Icons.arrow_downward),
+                                  title: Text('Move down'),
+                                  contentPadding: EdgeInsets.zero,
+                                ),
                               ),
                               const PopupMenuDivider(),
                               const PopupMenuItem(
                                 value: 'delete',
-                                child: Text('Delete note'),
+                                child: ListTile(
+                                  leading: Icon(
+                                    Icons.delete_outline,
+                                    color: AppColors.error,
+                                  ),
+                                  title: Text('Delete note'),
+                                  contentPadding: EdgeInsets.zero,
+                                ),
                               ),
                             ],
                           )

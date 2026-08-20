@@ -13,11 +13,13 @@ import '../widgets/table_workspace.dart';
 class TableDataEditorScreen extends StatefulWidget {
   final List<ProtocolTable> tables;
   final Function(List<ProtocolTable>) onSave;
+  final bool promptForSaveDetails;
 
   const TableDataEditorScreen({
     super.key,
     required this.tables,
     required this.onSave,
+    this.promptForSaveDetails = true,
   });
 
   @override
@@ -300,6 +302,20 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
         row.add('');
       }
       _colHeaders.add(_columnName(_colHeaders.length));
+      if (_isEditableGridType) _genericColumns = _colHeaders.length;
+    });
+  }
+
+  void _removeColumn(int index) {
+    if (_colHeaders.length <= 1) return;
+    setState(() {
+      _colHeaders.removeAt(index);
+      for (final row in _data) {
+        if (index < row.length) row.removeAt(index);
+      }
+      for (final row in _cellColors) {
+        if (index < row.length) row.removeAt(index);
+      }
       if (_isEditableGridType) _genericColumns = _colHeaders.length;
     });
   }
@@ -659,10 +675,10 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
             onPressed: () => Navigator.pop(context, false),
             child: const Text('Keep Editing'),
           ),
-          ElevatedButton(
+          FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.error,
               foregroundColor: Colors.white,
             ),
             child: const Text('Discard'),
@@ -677,6 +693,16 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Generate the table grid before saving.')),
       );
+      return;
+    }
+
+    if (!widget.promptForSaveDetails) {
+      _saveCurrentTable();
+      widget.onSave(_allTables);
+      if (context.mounted) {
+        setState(() => _canActuallyPop = true);
+        Navigator.pop(context, _allTables);
+      }
       return;
     }
 
@@ -866,10 +892,34 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
                           color: Colors.grey.shade50,
                           border: Border.all(color: Colors.grey.shade400),
                         ),
-                        child: _ExcelCell(
-                          initialValue: _colHeaders[index],
-                          hintText: 'Header ${_columnName(index)}',
-                          onChanged: (value) => _colHeaders[index] = value,
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _ExcelCell(
+                                initialValue: _colHeaders[index],
+                                hintText: 'Header ${_columnName(index)}',
+                                onChanged: (value) =>
+                                    _colHeaders[index] = value,
+                              ),
+                            ),
+                            IconButton(
+                              key: Key('delete-generic-column-$index'),
+                              tooltip: 'Delete column',
+                              onPressed: _colHeaders.length > 1
+                                  ? () => _removeColumn(index)
+                                  : null,
+                              icon: const Icon(
+                                Icons.close,
+                                color: AppColors.error,
+                                size: 18,
+                              ),
+                              constraints: const BoxConstraints.tightFor(
+                                width: 32,
+                                height: 40,
+                              ),
+                              padding: EdgeInsets.zero,
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -923,7 +973,7 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
                       IconButton(
                         icon: const Icon(
                           Icons.remove_circle_outline,
-                          color: Colors.red,
+                          color: AppColors.error,
                           size: 20,
                         ),
                         onPressed: () => _removeRow(rIdx),

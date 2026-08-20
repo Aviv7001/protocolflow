@@ -7,6 +7,9 @@ class Task {
   final TaskStatus status;
   final DateTime createdAt;
   final DateTime? completedAt;
+  final String? projectId;
+  final String? protocolId;
+  final String? runId;
 
   Task({
     required this.id,
@@ -15,6 +18,9 @@ class Task {
     this.status = TaskStatus.notStarted,
     required this.createdAt,
     this.completedAt,
+    this.projectId,
+    this.protocolId,
+    this.runId,
   });
 
   bool get isDone => status == TaskStatus.completed;
@@ -24,6 +30,12 @@ class Task {
     String? description,
     TaskStatus? status,
     DateTime? completedAt,
+    String? projectId,
+    bool clearProjectId = false,
+    String? protocolId,
+    String? runId,
+    bool clearProtocolId = false,
+    bool clearRunId = false,
   }) {
     return Task(
       id: id,
@@ -32,6 +44,9 @@ class Task {
       status: status ?? this.status,
       createdAt: createdAt,
       completedAt: completedAt ?? this.completedAt,
+      projectId: clearProjectId ? null : projectId ?? this.projectId,
+      protocolId: clearProtocolId ? null : protocolId ?? this.protocolId,
+      runId: clearRunId ? null : runId ?? this.runId,
     );
   }
 
@@ -43,6 +58,9 @@ class Task {
     'isDone': isDone,
     'createdAt': createdAt.toIso8601String(),
     'completedAt': completedAt?.toIso8601String(),
+    'projectId': projectId,
+    'protocolId': protocolId,
+    'runId': runId,
   };
 
   factory Task.fromJson(Map<String, dynamic> json) {
@@ -64,6 +82,9 @@ class Task {
       completedAt: json['completedAt'] != null
           ? DateTime.parse(json['completedAt'])
           : null,
+      projectId: json['projectId'] as String?,
+      protocolId: json['protocolId'] as String?,
+      runId: json['runId'] as String?,
     );
   }
 }

@@ -9,6 +9,7 @@ import 'package:protocolflow/models/protocol_table.dart';
 import 'package:protocolflow/models/step_note.dart';
 import 'package:protocolflow/screens/run_protocol_screen.dart';
 import 'package:protocolflow/screens/home_screen.dart';
+import 'package:protocolflow/screens/library_screen.dart';
 import 'package:protocolflow/widgets/protocolflow_app_bar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -202,6 +203,7 @@ void main() {
     final navigationBar = tester.widget<NavigationBar>(
       find.byKey(const Key('run-navigation-bar')),
     );
+    expect(find.byKey(const Key('floating-run-navigation')), findsOneWidget);
     expect(navigationBar.height, 68);
     expect(navigationBar.selectedIndex, 2);
     expect(
@@ -233,6 +235,7 @@ void main() {
     );
 
     await pumpAtSize(const Size(390, 1600));
+    expect(find.byKey(const Key('floating-run-navigation')), findsNothing);
     final mobileOrder = [
       progress,
       currentStep,
@@ -284,13 +287,13 @@ void main() {
 
     await tester.tap(find.byKey(const Key('run-primary-action')));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(ElevatedButton, 'Complete Protocol'));
+    await tester.tap(find.widgetWithText(FilledButton, 'Complete Protocol'));
     await tester.pumpAndSettle();
 
     expect(find.byType(HomeScreen), findsOneWidget);
     expect(find.byType(ProtocolFlowAppBar), findsNothing);
-    final completedTabBar = tester.widget<TabBar>(find.byType(TabBar));
-    expect(completedTabBar.controller?.index, 3);
+    expect(find.byType(LibraryScreen), findsOneWidget);
+    expect(find.text('Completed'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -456,7 +459,10 @@ void main() {
     await tester.tap(find.text('Pause run'));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('open-run')), findsOneWidget);
+    expect(find.byType(HomeScreen), findsOneWidget);
+    expect(find.text('No protocols currently running.'), findsNothing);
+    final tabBar = tester.widget<TabBar>(find.byType(TabBar));
+    expect(tabBar.controller?.index, 2);
     expect(activeProtocol, isNull);
     expect(runningProtocols, hasLength(1));
     expect(runningProtocols.single.protocol.id, protocol.id);

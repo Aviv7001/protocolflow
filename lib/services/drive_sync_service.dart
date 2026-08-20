@@ -16,6 +16,7 @@ import '../features/measuring_tools/services/measuring_tool_service.dart';
 import '../utils/protocol_id.dart';
 import 'auth_service.dart';
 import 'storage_service.dart';
+import 'protocol_run_service.dart';
 import 'sync_journal.dart';
 import 'sync_journal_store.dart';
 
@@ -103,12 +104,14 @@ class DriveFileRecord {
   final String name;
   final DateTime? modifiedTime;
   final String? md5Checksum;
+  final int? sizeBytes;
 
   const DriveFileRecord({
     required this.id,
     required this.name,
     this.modifiedTime,
     this.md5Checksum,
+    this.sizeBytes,
   });
 
   factory DriveFileRecord.fromJson(Map<String, dynamic> json) {
@@ -117,7 +120,75 @@ class DriveFileRecord {
       name: json['name'] ?? '',
       modifiedTime: DateTime.tryParse(json['modifiedTime']?.toString() ?? ''),
       md5Checksum: json['md5Checksum']?.toString(),
+      sizeBytes: int.tryParse(json['size']?.toString() ?? ''),
     );
+  }
+}
+
+class DriveAppDataFootprint {
+  const DriveAppDataFootprint({
+    required this.bytesByCategory,
+    required this.fileCount,
+  });
+
+  final Map<String, int> bytesByCategory;
+  final int fileCount;
+
+  int get totalBytes =>
+      bytesByCategory.values.fold(0, (sum, size) => sum + size);
+
+  int bytesFor(String category) => bytesByCategory[category] ?? 0;
+}
+
+class DriveAppDataBackup {
+  const DriveAppDataBackup({required this.files});
+
+  final List<DriveAppDataBackupFile> files;
+
+  Map<String, dynamic> toJson() => {
+    'format': 'protocolflow-drive-backup',
+    'version': 1,
+    'exportDate': DateTime.now().toIso8601String(),
+    'files': files.map((file) => file.toJson()).toList(),
+  };
+
+  factory DriveAppDataBackup.fromJson(Map<String, dynamic> json) {
+    if (json['format'] != 'protocolflow-drive-backup' || json['version'] != 1) {
+      throw const FormatException('Unsupported ProtocolFlow Drive backup.');
+    }
+    final rawFiles = json['files'];
+    if (rawFiles is! List) {
+      throw const FormatException('Drive backup is missing its file list.');
+    }
+    final files = rawFiles.map((entry) {
+      if (entry is! Map) {
+        throw const FormatException('Drive backup contains an invalid file.');
+      }
+      return DriveAppDataBackupFile.fromJson(Map<String, dynamic>.from(entry));
+    }).toList();
+    return DriveAppDataBackup(files: files);
+  }
+}
+
+class DriveAppDataBackupFile {
+  const DriveAppDataBackupFile({required this.name, required this.content});
+
+  final String name;
+  final String content;
+
+  Map<String, dynamic> toJson() => {'name': name, 'content': content};
+
+  factory DriveAppDataBackupFile.fromJson(Map<String, dynamic> json) {
+    final name = json['name'];
+    final content = json['content'];
+    if (name is! String ||
+        name.trim().isEmpty ||
+        name.contains('/') ||
+        name.contains(r'\') ||
+        content is! String) {
+      throw const FormatException('Drive backup contains invalid file data.');
+    }
+    return DriveAppDataBackupFile(name: name, content: content);
   }
 }
 
@@ -151,6 +222,124 @@ class DriveSyncService {
   final SyncJournalStore _journalStore = SyncJournalStore();
 
   Future<DriveSyncSummary>? _activeSync;
+
+  Future<int> clearAppDataFiles({bool promptIfNecessary = true}) async {
+    final headers = await _authHeaders(promptIfNecessary: promptIfNecessary);
+    if (headers == null) {
+      throw StateError(
+        'Drive authorization was not granted. Sign in and approve Drive access.',
+      );
+    }
+
+    return _clearAppDataFiles(headers);
+  }
+
+  Future<DriveAppDataBackup> createAppDataBackup({
+    bool promptIfNecessary = true,
+  }) async {
+    final headers = await _authHeaders(promptIfNecessary: promptIfNecessary);
+    if (headers == null) {
+      throw StateError(
+        'Drive authorization was not granted. Sign in and approve Drive access.',
+      );
+    }
+
+    final records = await _listAppDataFiles(headers);
+    final files = <DriveAppDataBackupFile>[];
+    for (final record in records) {
+      final response = await http.get(
+        Uri.parse('$_baseUrl/files/${record.id}?alt=media'),
+        headers: headers,
+      );
+      _throwIfFailed(response);
+      files.add(
+        DriveAppDataBackupFile(
+          name: record.name,
+          content: utf8.decode(response.bodyBytes),
+        ),
+      );
+    }
+    return DriveAppDataBackup(files: files);
+  }
+
+  Future<DriveAppDataFootprint> loadAppDataFootprint({
+    bool promptIfNecessary = false,
+  }) async {
+    final headers = await _authHeaders(promptIfNecessary: promptIfNecessary);
+    if (headers == null) {
+      throw StateError(
+        'Drive authorization was not granted. Sign in and approve Drive access.',
+      );
+    }
+
+    final records = await _listAppDataFiles(headers);
+    final sizes = <String, int>{};
+    for (final record in records) {
+      var size = record.sizeBytes;
+      if (size == null) {
+        final response = await http.get(
+          Uri.parse('$_baseUrl/files/${record.id}?alt=media'),
+          headers: headers,
+        );
+        _throwIfFailed(response);
+        size = response.bodyBytes.length;
+      }
+      final category = _footprintCategoryForFile(record.name);
+      sizes[category] = (sizes[category] ?? 0) + size;
+    }
+    return DriveAppDataFootprint(
+      bytesByCategory: sizes,
+      fileCount: records.length,
+    );
+  }
+
+  @visibleForTesting
+  static String footprintCategoryForFile(String fileName) =>
+      _footprintCategoryForFile(fileName);
+
+  static String _footprintCategoryForFile(String fileName) {
+    if (fileName == _projectsFileName) return 'Projects';
+    if (fileName == _savedTablesFileName) return 'Tables';
+    if (fileName == _tasksFileName) return 'Tasks';
+    if (fileName == _measuringToolsFileName) return 'Measuring';
+    if (fileName.startsWith('completed_protocol_')) return 'Completed';
+    if (fileName.startsWith(_journalPrefix)) return 'Sync metadata';
+    return 'Protocols';
+  }
+
+  Future<int> restoreAppDataBackup(
+    DriveAppDataBackup backup, {
+    bool promptIfNecessary = true,
+  }) async {
+    final headers = await _authHeaders(promptIfNecessary: promptIfNecessary);
+    if (headers == null) {
+      throw StateError(
+        'Drive authorization was not granted. Sign in and approve Drive access.',
+      );
+    }
+
+    await _clearAppDataFiles(headers);
+    for (final file in backup.files) {
+      await _createDriveFile(
+        fileName: file.name,
+        content: file.content,
+        headers: headers,
+      );
+    }
+    return backup.files.length;
+  }
+
+  Future<int> _clearAppDataFiles(Map<String, String> headers) async {
+    final files = await _listAppDataFiles(headers);
+    for (final file in files) {
+      final response = await http.delete(
+        Uri.parse('$_baseUrl/files/${file.id}'),
+        headers: headers,
+      );
+      _throwIfFailed(response);
+    }
+    return files.length;
+  }
 
   String _completedFileName(String completedId) {
     return 'completed_protocol_$completedId.json';
@@ -1348,7 +1537,9 @@ class DriveSyncService {
     ActiveProtocol? activeAfterSync;
     if (activeBeforeSync != null) {
       final activeIndex = running.indexWhere(
-        (session) => session.protocol.id == activeBeforeSync.protocol.id,
+        (session) => activeBeforeSync.runId != null
+            ? session.runId == activeBeforeSync.runId
+            : session.protocol.id == activeBeforeSync.protocol.id,
       );
       if (activeIndex >= 0) {
         activeAfterSync = running.removeAt(activeIndex);
@@ -1356,6 +1547,11 @@ class DriveSyncService {
     }
     await _storageService.saveActiveProtocol(activeAfterSync);
     await _storageService.saveRunningProtocols(running);
+    await ProtocolRunService.instance.replaceFromLegacySync(
+      active: activeAfterSync,
+      running: running,
+      completed: completed,
+    );
     await _storageService.saveSavedTables(tables, markPending: false);
     await _taskService.replaceFromSyncPayload({
       'updatedAt': now.toUtc().toIso8601String(),
@@ -1602,6 +1798,13 @@ class DriveSyncService {
     }
 
     await _storageService.saveCompletedProtocols(merged, markPending: false);
+    final active = await _storageService.loadActiveProtocol();
+    final running = await _storageService.loadRunningProtocols();
+    await ProtocolRunService.instance.replaceFromLegacySync(
+      active: active,
+      running: running,
+      completed: merged,
+    );
     await _storageService.saveSyncBundleState(
       SyncBundleType.completedProtocols,
       SyncBundleState.synced,
@@ -1928,7 +2131,7 @@ class DriveSyncService {
           : '&pageToken=${Uri.encodeQueryComponent(pageToken)}';
       final uri = Uri.parse(
         '$_baseUrl/files?spaces=appDataFolder&q=$query'
-        '&fields=nextPageToken,files(id,name,modifiedTime,md5Checksum)'
+        '&fields=nextPageToken,files(id,name,modifiedTime,md5Checksum,size)'
         '&pageSize=1000$tokenQuery',
       );
       final response = await http.get(uri, headers: headers);

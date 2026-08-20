@@ -10,6 +10,7 @@ import '../services/storage_service.dart';
 import '../theme/app_colors.dart';
 import '../utils/date_time_format.dart';
 import '../widgets/protocolflow_app_bar.dart';
+import '../widgets/protocolflow_ui.dart';
 import 'home_screen.dart';
 
 class SharedProtocolImportScreen extends StatefulWidget {
@@ -195,7 +196,7 @@ class _SharedProtocolImportScreenState
     return Scaffold(
       backgroundColor: AppColors.scaffoldBackground,
       appBar: ProtocolFlowAppBar(title: 'Import Protocol'),
-      body: _buildBody(),
+      body: ProtocolFlowContentBoundary(child: _buildBody()),
     );
   }
 
@@ -288,36 +289,29 @@ class _SharedProtocolImportScreenState
                       ),
                       const SizedBox(height: 10),
                       if (manifest.versions.length > 1) ...[
-                        InputDecorator(
+                        DropdownButtonFormField<int>(
+                          key: const Key('shared-protocol-version-selector'),
+                          initialValue: package.version,
+                          isExpanded: true,
                           decoration: const InputDecoration(
                             labelText: 'Published version',
-                            border: OutlineInputBorder(),
                             prefixIcon: Icon(Icons.history),
                           ),
-                          child: DropdownButtonHideUnderline(
-                            child: DropdownButton<int>(
-                              key: const Key(
-                                'shared-protocol-version-selector',
+                          items: manifest.versions.reversed.map((entry) {
+                            final latest =
+                                entry.version == manifest.latestVersion;
+                            return DropdownMenuItem<int>(
+                              value: entry.version,
+                              child: Text(
+                                'Version ${entry.version}${latest ? ' (Latest)' : ''} - ${formatDate(entry.publishedAt)}',
                               ),
-                              value: package.version,
-                              isExpanded: true,
-                              items: manifest.versions.reversed.map((entry) {
-                                final latest =
-                                    entry.version == manifest.latestVersion;
-                                return DropdownMenuItem<int>(
-                                  value: entry.version,
-                                  child: Text(
-                                    'Version ${entry.version}${latest ? ' (Latest)' : ''} - ${formatDate(entry.publishedAt)}',
-                                  ),
-                                );
-                              }).toList(),
-                              onChanged: _versionLoading || _saving
-                                  ? null
-                                  : (value) {
-                                      if (value != null) _selectVersion(value);
-                                    },
-                            ),
-                          ),
+                            );
+                          }).toList(),
+                          onChanged: _versionLoading || _saving
+                              ? null
+                              : (value) {
+                                  if (value != null) _selectVersion(value);
+                                },
                         ),
                         if (_versionLoading) const LinearProgressIndicator(),
                         const SizedBox(height: 14),

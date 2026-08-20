@@ -95,7 +95,11 @@ class ProtocolTableWidget extends StatelessWidget {
             initialTable: table,
             isReadOnly: isReadOnly,
             onUpdate: (updated) {
-              if (onSave != null) onSave(updated.copyWith(id: table.id));
+              if (onSave != null) {
+                onSave(
+                  updated.copyWith(id: table.id, projectId: table.projectId),
+                );
+              }
             },
           ),
         ),
@@ -111,7 +115,11 @@ class ProtocolTableWidget extends StatelessWidget {
             wizard: wizard,
             isReadOnly: isReadOnly,
             onUpdate: (updated) {
-              if (onSave != null) onSave(updated.copyWith(id: table.id));
+              if (onSave != null) {
+                onSave(
+                  updated.copyWith(id: table.id, projectId: table.projectId),
+                );
+              }
             },
           ),
         ),
@@ -128,7 +136,11 @@ class ProtocolTableWidget extends StatelessWidget {
             initialTable: table,
             isReadOnly: isReadOnly,
             onUpdate: (updated) {
-              if (onSave != null) onSave(updated.copyWith(id: table.id));
+              if (onSave != null) {
+                onSave(
+                  updated.copyWith(id: table.id, projectId: table.projectId),
+                );
+              }
             },
           ),
         ),
@@ -154,7 +166,9 @@ class ProtocolTableWidget extends StatelessWidget {
             originalMetadata: table.metadata,
             isReadOnly: isReadOnly,
             onUpdate: (updated) {
-              if (onSave != null) onSave(updated);
+              if (onSave != null) {
+                onSave(updated.copyWith(projectId: table.projectId));
+              }
             },
           ),
         ),
@@ -168,7 +182,11 @@ class ProtocolTableWidget extends StatelessWidget {
             table: table,
             isReadOnly: isReadOnly,
             onUpdate: (updated) {
-              if (onSave != null) onSave(updated.copyWith(id: table.id));
+              if (onSave != null) {
+                onSave(
+                  updated.copyWith(id: table.id, projectId: table.projectId),
+                );
+              }
             },
           ),
         ),

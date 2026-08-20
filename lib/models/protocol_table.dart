@@ -42,6 +42,9 @@ class ProtocolTable {
   final List<List<String>> cellColors; // Hex codes for cell backgrounds
   final Map<String, String> metadata; // e.g., {'plateSize': '96', 'unit': 'µL'}
 
+  final String? projectId;
+  final DateTime? createdAt;
+
   ProtocolTable({
     required this.id,
     required this.title,
@@ -51,6 +54,8 @@ class ProtocolTable {
     this.data = const [],
     this.cellColors = const [],
     this.metadata = const {},
+    this.projectId,
+    this.createdAt,
   });
 
   Map<String, dynamic> toJson() {
@@ -63,6 +68,8 @@ class ProtocolTable {
       'data': data,
       'cellColors': cellColors,
       'metadata': metadata,
+      'projectId': projectId,
+      if (createdAt != null) 'createdAt': createdAt!.toIso8601String(),
     };
   }
 
@@ -87,6 +94,8 @@ class ProtocolTable {
           .map<List<String>>((row) => List<String>.from(row))
           .toList(),
       metadata: Map<String, String>.from(json['metadata'] ?? {}),
+      projectId: json['projectId'] as String?,
+      createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? ''),
     );
   }
 
@@ -99,6 +108,9 @@ class ProtocolTable {
     List<List<dynamic>>? data,
     List<List<String>>? cellColors,
     Map<String, String>? metadata,
+    String? projectId,
+    bool clearProjectId = false,
+    DateTime? createdAt,
   }) {
     return ProtocolTable(
       id: id ?? this.id,
@@ -113,6 +125,8 @@ class ProtocolTable {
           .map<List<String>>((row) => List<String>.from(row))
           .toList(),
       metadata: Map<String, String>.from(metadata ?? this.metadata),
+      projectId: clearProjectId ? null : projectId ?? this.projectId,
+      createdAt: createdAt ?? this.createdAt,
     );
   }
 }

@@ -56,7 +56,7 @@ class ProtocolFlowTheme {
         margin: EdgeInsets.symmetric(vertical: 4),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.all(Radius.circular(14)),
-          side: BorderSide(color: AppColors.outlineVariant),
+          side: BorderSide(color: AppColors.outline),
         ),
       ),
       dialogTheme: const DialogThemeData(
@@ -72,6 +72,26 @@ class ProtocolFlowTheme {
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ButtonStyle(
+          elevation: const WidgetStatePropertyAll(0),
+          backgroundColor: const WidgetStatePropertyAll(AppColors.primary),
+          foregroundColor: const WidgetStatePropertyAll(AppColors.onPrimary),
+          shape: const WidgetStatePropertyAll(rounded12),
+          overlayColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.pressed)) {
+              return AppColors.onPrimary.withValues(alpha: 0.18);
+            }
+            if (states.contains(WidgetState.hovered)) {
+              return AppColors.onPrimary.withValues(alpha: 0.10);
+            }
+            if (states.contains(WidgetState.focused)) {
+              return AppColors.focus.withValues(alpha: 0.35);
+            }
+            return null;
+          }),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
         style: ButtonStyle(
           elevation: const WidgetStatePropertyAll(0),
           backgroundColor: const WidgetStatePropertyAll(AppColors.primary),

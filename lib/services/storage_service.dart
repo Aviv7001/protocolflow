@@ -6,6 +6,7 @@ import '../models/deleted_protocol_record.dart';
 import '../models/project.dart';
 import '../models/protocol.dart';
 import '../models/protocol_table.dart';
+import '../models/protocol_run.dart';
 
 enum SavedTablesSyncState { synced, pending, error }
 
@@ -17,6 +18,7 @@ class StorageService {
   static const String _storageKey = 'completed_protocols_json';
   static const String _activeKey = 'active_protocol_json';
   static const String _runningKey = 'running_protocols_json';
+  static const String _protocolRunsKey = 'protocol_runs_json';
   static const String _libraryKey = 'protocols_library_json';
   static const String _projectsKey = 'projects_json';
   static const String _projectsSyncUpdatedAtKey = 'projects_sync_updated_at';
@@ -41,6 +43,7 @@ class StorageService {
       _deletedProtocolsKey: 'protocol deletions',
       _deletedSavedTablesKey: 'saved-table deletions',
       _runningKey: 'running protocols',
+      _protocolRunsKey: 'protocol runs',
     }.entries) {
       final encoded = prefs.getString(entry.key);
       if (encoded == null) continue;
@@ -146,6 +149,17 @@ class StorageService {
             (protocol) => protocol.projectId == projectId
                 ? protocol.copyWith(projectId: '')
                 : protocol,
+          )
+          .toList(),
+    );
+
+    final tables = await loadSavedTables();
+    await saveSavedTables(
+      tables
+          .map(
+            (table) => table.projectId == projectId
+                ? table.copyWith(clearProjectId: true)
+                : table,
           )
           .toList(),
     );
@@ -374,6 +388,39 @@ class StorageService {
     }
   }
 
+  Future<bool> hasProtocolRunsStorage() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.containsKey(_protocolRunsKey);
+  }
+
+  Future<void> saveProtocolRuns(List<ProtocolRun> runs) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _protocolRunsKey,
+      jsonEncode(runs.map((run) => run.toJson()).toList()),
+    );
+    await saveSyncBundleState(
+      SyncBundleType.completedProtocols,
+      SyncBundleState.pending,
+    );
+  }
+
+  Future<List<ProtocolRun>> loadProtocolRuns() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final encoded = prefs.getString(_protocolRunsKey);
+      if (encoded == null || encoded.isEmpty) return [];
+      final decoded = jsonDecode(encoded) as List<dynamic>;
+      return decoded
+          .whereType<Map<String, dynamic>>()
+          .map(ProtocolRun.fromJson)
+          .where((run) => run.id.trim().isNotEmpty)
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   Future<void> clearPublicationReferences(String publicationId) async {
     if (publicationId.trim().isEmpty) return;
 
@@ -431,6 +478,26 @@ class StorageService {
                   item.protocol.publication?.publicationId == publicationId
                   ? item.copyWith(protocol: clearFromProtocol(item.protocol))
                   : item,
+            )
+            .toList(),
+      );
+    }
+
+    final runs = await loadProtocolRuns();
+    if (runs.any(
+      (run) => run.protocolSnapshot.publication?.publicationId == publicationId,
+    )) {
+      await saveProtocolRuns(
+        runs
+            .map(
+              (run) =>
+                  run.protocolSnapshot.publication?.publicationId ==
+                      publicationId
+                  ? run.copyWith(
+                      protocolSnapshot: clearFromProtocol(run.protocolSnapshot),
+                      syncStatus: ProtocolSyncStatus.modified,
+                    )
+                  : run,
             )
             .toList(),
       );
@@ -525,9 +592,16 @@ class StorageService {
     final tables = await loadSavedTables();
     final index = tables.indexWhere((existing) => existing.id == table.id);
     if (index == -1) {
-      tables.insert(0, table);
+      tables.insert(
+        0,
+        table.createdAt == null
+            ? table.copyWith(createdAt: DateTime.now())
+            : table,
+      );
     } else {
-      tables[index] = table;
+      tables[index] = table.createdAt == null && tables[index].createdAt != null
+          ? table.copyWith(createdAt: tables[index].createdAt)
+          : table;
     }
     await saveSavedTables(tables);
   }

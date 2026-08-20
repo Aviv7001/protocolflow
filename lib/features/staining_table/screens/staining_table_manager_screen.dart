@@ -12,11 +12,13 @@ import '../../../theme/app_colors.dart';
 class StainingTableManagerScreen extends StatefulWidget {
   final StainingWizard wizard;
   final Function(StainingWizard) onUpdate;
+  final bool promptForSaveDetails;
 
   const StainingTableManagerScreen({
     super.key,
     required this.wizard,
     required this.onUpdate,
+    this.promptForSaveDetails = true,
   });
 
   @override
@@ -165,7 +167,7 @@ class _StainingTableManagerScreenState
               Padding(
                 padding: const EdgeInsets.only(top: 8.0),
                 child: Center(
-                  child: ElevatedButton.icon(
+                  child: FilledButton.icon(
                     onPressed: _addChain,
                     icon: const Icon(Icons.add),
                     label: const Text(
@@ -187,7 +189,7 @@ class _StainingTableManagerScreenState
               Padding(
                 padding: const EdgeInsets.only(top: 8.0),
                 child: Center(
-                  child: ElevatedButton.icon(
+                  child: FilledButton.icon(
                     onPressed: _addSample,
                     icon: const Icon(Icons.add),
                     label: const Text(
@@ -214,6 +216,14 @@ class _StainingTableManagerScreenState
   }
 
   void _handleDone(BuildContext context) async {
+    if (!widget.promptForSaveDetails) {
+      widget.onUpdate(_wizard);
+      if (context.mounted) {
+        setState(() => _canActuallyPop = true);
+        Navigator.pop(context, _wizard);
+      }
+      return;
+    }
     final String? name = await _showSaveDialog(context, _wizard.title);
     if (name != null) {
       setState(() {
@@ -324,7 +334,7 @@ class _StainingTableManagerScreenState
                 IconButton(
                   icon: const Icon(
                     Icons.delete_outline,
-                    color: Colors.red,
+                    color: AppColors.error,
                     size: 20,
                   ),
                   onPressed: () => _removeChain(index),
@@ -345,23 +355,19 @@ class _StainingTableManagerScreenState
                     PopupMenuItem(
                       value: _ReorderAction.moveUp,
                       enabled: index > 0,
-                      child: const Row(
-                        children: [
-                          Icon(Icons.keyboard_arrow_up),
-                          SizedBox(width: 8),
-                          Text('Move up'),
-                        ],
+                      child: const ListTile(
+                        leading: Icon(Icons.keyboard_arrow_up),
+                        title: Text('Move up'),
+                        contentPadding: EdgeInsets.zero,
                       ),
                     ),
                     PopupMenuItem(
                       value: _ReorderAction.moveDown,
                       enabled: index < _wizard.panel.length - 1,
-                      child: const Row(
-                        children: [
-                          Icon(Icons.keyboard_arrow_down),
-                          SizedBox(width: 8),
-                          Text('Move down'),
-                        ],
+                      child: const ListTile(
+                        leading: Icon(Icons.keyboard_arrow_down),
+                        title: Text('Move down'),
+                        contentPadding: EdgeInsets.zero,
                       ),
                     ),
                   ],
@@ -441,7 +447,6 @@ class _StainingTableManagerScreenState
                     decoration: const InputDecoration(
                       labelText: 'Laser / Channel',
                       isDense: true,
-                      border: OutlineInputBorder(),
                     ),
                     controller: TextEditingController(text: chain.channel)
                       ..selection = TextSelection.fromPosition(
@@ -534,11 +539,7 @@ class _StainingTableManagerScreenState
   ) {
     return Expanded(
       child: TextField(
-        decoration: InputDecoration(
-          labelText: label,
-          isDense: true,
-          border: const OutlineInputBorder(),
-        ),
+        decoration: InputDecoration(labelText: label, isDense: true),
         keyboardType: const TextInputType.numberWithOptions(decimal: true),
         controller: TextEditingController(text: value)
           ..selection = TextSelection.fromPosition(
@@ -553,10 +554,6 @@ class _StainingTableManagerScreenState
   Widget _buildSampleCard(int sampleIndex, StainingSample sample) {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: const BorderSide(color: AppColors.outlineVariant),
-      ),
       child: Column(
         children: [
           Container(
@@ -595,7 +592,7 @@ class _StainingTableManagerScreenState
                 IconButton(
                   icon: const Icon(
                     Icons.delete_outline,
-                    color: Colors.red,
+                    color: AppColors.error,
                     size: 20,
                   ),
                   onPressed: () => _removeSample(sampleIndex),
@@ -616,23 +613,19 @@ class _StainingTableManagerScreenState
                     PopupMenuItem(
                       value: _ReorderAction.moveUp,
                       enabled: sampleIndex > 0,
-                      child: const Row(
-                        children: [
-                          Icon(Icons.keyboard_arrow_up),
-                          SizedBox(width: 8),
-                          Text('Move up'),
-                        ],
+                      child: const ListTile(
+                        leading: Icon(Icons.keyboard_arrow_up),
+                        title: Text('Move up'),
+                        contentPadding: EdgeInsets.zero,
                       ),
                     ),
                     PopupMenuItem(
                       value: _ReorderAction.moveDown,
                       enabled: sampleIndex < _wizard.samples.length - 1,
-                      child: const Row(
-                        children: [
-                          Icon(Icons.keyboard_arrow_down),
-                          SizedBox(width: 8),
-                          Text('Move down'),
-                        ],
+                      child: const ListTile(
+                        leading: Icon(Icons.keyboard_arrow_down),
+                        title: Text('Move down'),
+                        contentPadding: EdgeInsets.zero,
                       ),
                     ),
                   ],

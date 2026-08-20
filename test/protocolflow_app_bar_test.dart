@@ -58,7 +58,7 @@ void main() {
         ),
       ),
       (
-        title: 'Generic Table Editor',
+        title: 'Generic Table',
         screen: TableDataEditorScreen(
           tables: [
             ProtocolTable(

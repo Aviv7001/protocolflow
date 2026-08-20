@@ -15,6 +15,7 @@ import '../widgets/protocol_table_preview.dart';
 import '../widgets/protocol_step_actions_table.dart';
 import '../widgets/protocol_step_notes_table.dart';
 import '../widgets/protocolflow_app_bar.dart';
+import '../widgets/protocolflow_ui.dart';
 import '../services/auth_service.dart';
 import '../services/drive_sync_service.dart';
 import '../services/picked_image_store.dart';
@@ -448,27 +449,13 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
   }
 
   void _addNewTable() async {
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        fullscreenDialog: true,
-        builder: (context) => const TableSelectionScreen(),
-      ),
-    );
+    final result = await showTableToolPicker(context);
 
     if (result != null) {
       setState(() {
-        if (result is ProtocolTable) {
-          final coloredTable = _withTableColor(result);
-          _tables.add(coloredTable);
-          _syncMaterialsFromTable(coloredTable);
-        } else if (result is List<ProtocolTable>) {
-          for (final table in result) {
-            final coloredTable = _withTableColor(table);
-            _tables.add(coloredTable);
-            _syncMaterialsFromTable(coloredTable);
-          }
-        }
+        final coloredTable = _withTableColor(result);
+        _tables.add(coloredTable);
+        _syncMaterialsFromTable(coloredTable);
       });
     }
   }
@@ -572,7 +559,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
                                   child: IconButton(
                                     icon: const Icon(
                                       Icons.cancel,
-                                      color: Colors.red,
+                                      color: AppColors.error,
                                       size: 20,
                                     ),
                                     onPressed: () => setDialogState(
@@ -817,10 +804,10 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
             onPressed: () => Navigator.pop(context, false),
             child: const Text('Keep Editing'),
           ),
-          ElevatedButton(
+          FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.error,
               foregroundColor: Colors.white,
             ),
             child: const Text('Discard'),
@@ -968,7 +955,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
                 child: Align(
                   alignment: Alignment.topCenter,
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 1800),
+                    constraints: const BoxConstraints(maxWidth: 1180),
                     child: _buildBuilderWorkspace(desktop: desktop),
                   ),
                 ),
@@ -1150,7 +1137,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
           const SizedBox(height: 6),
           Align(
             alignment: Alignment.centerLeft,
-            child: ElevatedButton.icon(
+            child: FilledButton.icon(
               onPressed: _isInProgress ? null : _addNewSample,
               icon: const Icon(Icons.add),
               label: const Text('Add Sample'),
@@ -1270,7 +1257,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
           const SizedBox(height: 12),
           Align(
             alignment: Alignment.centerLeft,
-            child: ElevatedButton.icon(
+            child: FilledButton.icon(
               onPressed: _isInProgress ? null : _addNewTable,
               icon: const Icon(Icons.add),
               label: const Text('Add Table'),
@@ -1365,7 +1352,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
           const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerLeft,
-            child: ElevatedButton.icon(
+            child: FilledButton.icon(
               onPressed: _isInProgress ? null : _addAdditionalData,
               icon: const Icon(Icons.add_link),
               label: const Text('Add Additional Data'),
@@ -1386,19 +1373,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
   }
 
   Widget _buildEmptyState(String message) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 22),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceContainer,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.outlineVariant),
-      ),
-      child: Text(
-        message,
-        textAlign: TextAlign.center,
-        style: const TextStyle(color: AppColors.textSecondary),
-      ),
-    );
+    return ProtocolFlowEmptyState(message: message);
   }
 
   Widget _buildFieldSection(
@@ -1466,7 +1441,11 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
         ),
         const SizedBox(height: 8),
         TextFormField(
+          key: const Key('protocol-title-field'),
           controller: _titleController,
+          minLines: 1,
+          maxLines: null,
+          keyboardType: TextInputType.multiline,
           validator: (value) =>
               value == null || value.isEmpty ? 'Please enter a title' : null,
           readOnly: _isInProgress,
@@ -1562,7 +1541,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
               onPressed: () => Navigator.pop(dialogContext),
               child: const Text('Cancel'),
             ),
-            ElevatedButton(
+            FilledButton(
               onPressed: () =>
                   Navigator.pop(dialogContext, controller.text.trim()),
               child: const Text('Create'),
@@ -1621,7 +1600,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
         ),
         const SizedBox(height: 8),
         Center(
-          child: ElevatedButton.icon(
+          child: FilledButton.icon(
             onPressed: () => _addNewStep(),
             icon: const Icon(Icons.add),
             label: const Text('Add Step'),
@@ -1682,7 +1661,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
     items.add(const SizedBox(height: 16));
     items.add(
       Center(
-        child: ElevatedButton.icon(
+        child: FilledButton.icon(
           onPressed: _addNewPhase,
           icon: const Icon(Icons.library_add),
           label: const Text('Add New Phase'),
@@ -2341,7 +2320,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
         const PopupMenuItem(
           value: 'delete',
           child: ListTile(
-            leading: Icon(Icons.delete, color: Colors.red),
+            leading: Icon(Icons.delete, color: AppColors.error),
             title: Text('Delete Step'),
             contentPadding: EdgeInsets.zero,
           ),
@@ -2678,7 +2657,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
             onPressed: () => Navigator.pop(dialogContext, 0),
             child: const Text('Clear'),
           ),
-          ElevatedButton(
+          FilledButton(
             onPressed: () => Navigator.pop(dialogContext, selectedTimer),
             child: const Text('Save'),
           ),
@@ -2944,29 +2923,36 @@ class _ActionTimerInputState extends State<_ActionTimerInput> {
             decoration: const InputDecoration(
               isDense: true,
               contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-              border: OutlineInputBorder(),
+              border: InputBorder.none,
             ),
             style: const TextStyle(fontSize: 13),
             onChanged: (v) => _updateValue(),
           ),
         ),
         const SizedBox(width: 4),
-        DropdownButton<String>(
-          value: _unit,
-          isDense: true,
-          underline: const SizedBox(),
-          style: const TextStyle(fontSize: 13, color: Colors.black),
-          items: const [
-            DropdownMenuItem(value: 'H', child: Text('H')),
-            DropdownMenuItem(value: 'M', child: Text('M')),
-            DropdownMenuItem(value: 'S', child: Text('S')),
-          ],
-          onChanged: (v) {
-            if (v != null) {
-              setState(() => _unit = v);
-              _updateValue();
-            }
-          },
+        SizedBox(
+          width: 64,
+          child: DropdownButtonFormField<String>(
+            initialValue: _unit,
+            isDense: true,
+            decoration: const InputDecoration(
+              isDense: true,
+              border: InputBorder.none,
+              contentPadding: EdgeInsets.symmetric(horizontal: 4),
+            ),
+            style: const TextStyle(fontSize: 13, color: Colors.black),
+            items: const [
+              DropdownMenuItem(value: 'H', child: Text('H')),
+              DropdownMenuItem(value: 'M', child: Text('M')),
+              DropdownMenuItem(value: 'S', child: Text('S')),
+            ],
+            onChanged: (v) {
+              if (v != null) {
+                setState(() => _unit = v);
+                _updateValue();
+              }
+            },
+          ),
         ),
       ],
     );

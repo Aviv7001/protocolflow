@@ -38,9 +38,9 @@ class _UnsavedChangesPopScopeState extends State<UnsavedChangesPopScope> {
                 onPressed: () => Navigator.pop(context, false),
                 child: const Text('Keep Editing'),
               ),
-              ElevatedButton(
+              FilledButton(
                 onPressed: () => Navigator.pop(context, true),
-                style: ElevatedButton.styleFrom(
+                style: FilledButton.styleFrom(
                   backgroundColor: AppColors.error,
                   foregroundColor: AppColors.onPrimary,
                 ),

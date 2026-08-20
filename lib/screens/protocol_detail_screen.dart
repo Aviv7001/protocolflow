@@ -7,28 +7,33 @@ import '../models/protocol_additional_data.dart';
 import '../models/protocol_step.dart';
 import '../models/protocol_table.dart';
 import '../models/protocol_publication.dart';
+import '../models/protocol_run.dart';
 import '../data/completed_protocols_data.dart';
 import '../services/storage_service.dart';
 import '../services/auth_service.dart';
 import '../services/drive_sync_service.dart';
 import '../services/protocol_publication_service.dart';
+import '../services/protocol_run_service.dart';
 import '../widgets/local_image.dart';
 import '../widgets/sync_status_chip.dart';
 import '../services/docx_export_service.dart';
 import '../services/pdf_service.dart';
 import '../services/export_service.dart';
+import '../widgets/protocol_export_dialog.dart';
 import '../theme/app_colors.dart';
 import '../widgets/protocol_step_actions_table.dart';
 import '../widgets/protocol_step_notes_table.dart';
 import '../widgets/protocol_table_preview.dart';
 import '../widgets/phase_segmented_progress.dart';
 import '../widgets/protocolflow_app_bar.dart';
+import '../widgets/protocolflow_ui.dart';
 import '../widgets/protocol_publication_widgets.dart';
 import '../widgets/publication_status_chip.dart';
 import '../widgets/responsive_layout.dart';
 import '../utils/date_time_format.dart';
 import 'run_protocol_screen.dart';
 import 'create_protocol_screen.dart';
+import 'completed_protocol_detail_screen.dart';
 
 class ProtocolDetailScreen extends StatefulWidget {
   final Protocol protocol;
@@ -88,8 +93,25 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
   void initState() {
     super.initState();
     protocol = widget.protocol;
-    activeState = widget.activeState;
+    activeState = widget.activeState ?? _runningStateFor(protocol.id);
     _loadProjects();
+  }
+
+  ActiveProtocol? _runningStateFor(String protocolId) {
+    for (final run in protocolRuns) {
+      if (run.protocolId == protocolId &&
+          run.status != ProtocolRunStatus.completed) {
+        return run.toActiveProtocol();
+      }
+    }
+    return null;
+  }
+
+  ProtocolRun? _runForId(String runId) {
+    for (final run in protocolRuns) {
+      if (run.id == runId) return run;
+    }
+    return null;
   }
 
   Future<void> _loadProjects() async {
@@ -310,17 +332,7 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
       setState(() {
         protocol = updated;
         if (activeState != null) {
-          ActiveProtocol? refreshed;
-          if (activeProtocol?.protocol.id == protocol.id) {
-            refreshed = activeProtocol;
-          } else {
-            for (final running in runningProtocols) {
-              if (running.protocol.id == protocol.id) {
-                refreshed = running;
-                break;
-              }
-            }
-          }
+          final refreshed = _runningStateFor(protocol.id);
           activeState = refreshed ?? activeState!.copyWith(protocol: updated);
         }
         _publicationBusy = false;
@@ -364,71 +376,45 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
         protocol = updatedProtocol;
         if (activeState != null) {
           activeState = activeState!.copyWith(protocol: updatedProtocol);
-          // Sync with global state
-          int idx = runningProtocols.indexWhere(
-            (p) => p.protocol.id == protocol.id,
-          );
-          if (idx != -1) {
-            runningProtocols[idx] = activeState!;
-            savePersistentProtocols();
+          final runId = activeState!.runId;
+          final run = runId == null ? null : _runForId(runId);
+          if (run != null) {
+            ProtocolRunService.instance
+                .updateRun(run.copyWith(protocolSnapshot: updatedProtocol))
+                .then((_) => loadPersistentProtocols());
           }
         }
       });
     }
   }
 
-  void _exportProtocol(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.picture_as_pdf),
-              title: const Text('Export as PDF'),
-              onTap: () {
-                Navigator.pop(context);
-                PdfService.exportProtocolToPdf(protocol);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.description_outlined),
-              title: const Text('Export as Word (DOCX)'),
-              onTap: () {
-                Navigator.pop(context);
-                const DocxExportService().exportProtocol(protocol);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.code),
-              title: const Text('Export as ProtocolFlow file'),
-              onTap: () {
-                Navigator.pop(context);
-                ExportService().exportSingleTemplate(protocol);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.table_view),
-              title: const Text('Export as Excel (XLSX) (Coming Soon)'),
-              enabled: false,
-              onTap: () {
-                Navigator.pop(context);
-              },
-            ),
-          ],
-        ),
+  Future<void> _useTemplate(BuildContext context) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CreateProtocolScreen(initialProtocol: protocol),
       ),
     );
   }
 
+  Future<void> _exportProtocol(BuildContext context) async {
+    final format = await showDialog<ProtocolExportFormat>(
+      context: context,
+      builder: (_) => const ProtocolExportDialog(),
+    );
+    if (!context.mounted || format == null) return;
+    switch (format) {
+      case ProtocolExportFormat.pdf:
+        await PdfService.exportProtocolToPdf(protocol);
+      case ProtocolExportFormat.docx:
+        await const DocxExportService().exportProtocol(protocol);
+      case ProtocolExportFormat.protocolFlow:
+        await ExportService().exportSingleTemplate(protocol);
+    }
+  }
+
   void _refreshActiveState() {
-    final updatedState = activeProtocol?.protocol.id == protocol.id
-        ? activeProtocol
-        : runningProtocols
-              .where((p) => p.protocol.id == protocol.id)
-              .cast<ActiveProtocol?>()
-              .firstWhere((p) => p != null, orElse: () => activeState);
+    final updatedState = _runningStateFor(protocol.id) ?? activeState;
     setState(() => activeState = updatedState);
   }
 
@@ -510,6 +496,12 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
       }
     }
 
+    if (activeState != null) {
+      fabLabel = 'Resume';
+      nextPhaseStartIdx = null;
+      nextPhaseEndIdx = null;
+    }
+
     return Scaffold(
       appBar: ProtocolFlowAppBar(
         title: 'Protocol Detail',
@@ -522,17 +514,7 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
             ),
           if (!protocol.isTemplate)
             IconButton(
-              icon: _publicationBusy
-                  ? const SizedBox.square(
-                      dimension: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Icon(
-                      protocol.publication?.status ==
-                              ProtocolPublicationStatus.published
-                          ? Icons.qr_code_2
-                          : Icons.public,
-                    ),
+              icon: const Icon(Icons.public_outlined),
               onPressed: _publicationBusy ? null : _handlePublicationAction,
               tooltip:
                   protocol.publication?.status ==
@@ -541,34 +523,31 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
                   : 'Publish protocol',
             ),
           IconButton(
-            icon: const Icon(Icons.share),
-            onPressed: () => _exportProtocol(context),
+            icon: const Icon(Icons.file_download_outlined),
+            onPressed: _publicationBusy ? null : () => _exportProtocol(context),
             tooltip: 'Export',
           ),
           IconButton(
-            icon: const Icon(Icons.delete_outline),
-            onPressed: () => _confirmDelete(context),
+            icon: const Icon(Icons.delete_outline, color: AppColors.error),
+            onPressed: _publicationBusy ? null : () => _confirmDelete(context),
             tooltip: 'Delete',
           ),
         ],
       ),
       body: _buildDetailBody(),
-      floatingActionButton:
-          (fabLabel == 'Protocol Completed' || protocol.isTemplate)
+      floatingActionButton: protocol.isTemplate
+          ? FloatingActionButton.extended(
+              onPressed: () => _useTemplate(context),
+              label: const Text('Use template'),
+              icon: const Icon(Icons.copy_all_outlined),
+            )
+          : (fabLabel == 'Protocol Completed' || activeState != null)
           ? null
           : FloatingActionButton.extended(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => RunProtocolScreen(
-                      protocol: protocol,
-                      initialStepIndex: nextPhaseStartIdx,
-                      finalStepIndex: nextPhaseEndIdx,
-                    ),
-                  ),
-                ).then((_) => _refreshActiveState());
-              },
+              onPressed: () => _openRun(
+                initialStepIndex: nextPhaseStartIdx,
+                finalStepIndex: nextPhaseEndIdx,
+              ),
               label: Text(fabLabel),
               icon: const Icon(Icons.play_arrow),
             ),
@@ -597,7 +576,7 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
           child: Align(
             alignment: Alignment.topCenter,
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 1800),
+              constraints: const BoxConstraints(maxWidth: 1180),
               child: _buildDetailWorkspace(desktop: desktop),
             ),
           ),
@@ -629,11 +608,29 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
     final publication = protocol.publication == null
         ? null
         : _buildPublicationSection();
+    final currentRun = activeState == null ? null : _buildCurrentRunSection();
+    final previousRuns =
+        protocolRuns
+            .where(
+              (run) =>
+                  run.protocolId == protocol.id &&
+                  run.status == ProtocolRunStatus.completed,
+            )
+            .toList()
+          ..sort(
+            (a, b) => (b.completedAt ?? b.updatedAt).compareTo(
+              a.completedAt ?? a.updatedAt,
+            ),
+          );
+    final previousRunsSection = previousRuns.isEmpty
+        ? null
+        : _buildPreviousRunsSection(previousRuns);
 
     if (!desktop) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (currentRun != null) ...[currentRun, const SizedBox(height: 24)],
           if (publication != null) ...[publication, const SizedBox(height: 24)],
           if (phaseProgress != null) ...[
             phaseProgress,
@@ -649,6 +646,10 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
           if (additionalData != null) ...[
             const SizedBox(height: 24),
             additionalData,
+          ],
+          if (previousRunsSection != null) ...[
+            const SizedBox(height: 24),
+            previousRunsSection,
           ],
         ],
       );
@@ -690,14 +691,122 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (currentRun != null) ...[currentRun, const SizedBox(height: 24)],
         if (publication != null) ...[publication, const SizedBox(height: 24)],
         if (phaseProgress != null) ...[
           phaseProgress,
           const SizedBox(height: 24),
         ],
         desktopColumns,
+        if (previousRunsSection != null) ...[
+          const SizedBox(height: 24),
+          previousRunsSection,
+        ],
       ],
     );
+  }
+
+  Widget _buildCurrentRunSection() {
+    final state = activeState!;
+    final steps = protocol.sortedSteps;
+    final completed = state.completedStepIds.length;
+    final total = steps.length;
+    final currentIndex = state.currentStepIndex;
+    final current = currentIndex >= 0 && currentIndex < steps.length
+        ? steps[currentIndex]
+        : null;
+    final run = state.runId == null ? null : _runForId(state.runId!);
+    final isPaused =
+        run?.status == ProtocolRunStatus.paused ||
+        (run == null && activeProtocol?.protocol.id != protocol.id);
+    final status = isPaused ? 'Paused' : 'Running';
+    return _buildSectionSurface(
+      key: const Key('detail-current-run'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildSectionHeader('Current Run'),
+          const SizedBox(height: 10),
+          Text(
+            current == null
+                ? '$status | Ready to continue'
+                : '$status | Step ${currentIndex + 1}: ${current.title}',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 10),
+          LinearProgressIndicator(
+            value: total == 0 ? 0 : (completed / total).clamp(0, 1),
+            minHeight: 6,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '$completed of $total steps completed',
+            style: const TextStyle(color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 14),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FilledButton.icon(
+              onPressed: () => _openRun(),
+              icon: const Icon(Icons.play_arrow),
+              label: Text(status == 'Paused' ? 'Resume' : 'Continue'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPreviousRunsSection(List<ProtocolRun> runs) {
+    return _buildSectionSurface(
+      key: const Key('detail-previous-runs'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildSectionHeader('Previous Runs'),
+          const SizedBox(height: 8),
+          for (final run in runs.take(3))
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(
+                Icons.check_circle_outline,
+                color: AppColors.success,
+              ),
+              title: Text(
+                run.protocolSnapshot.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: Text(
+                'Completed ${formatDate(run.completedAt ?? run.updatedAt)}',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      CompletedProtocolDetailScreen.fromRun(run: run),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openRun({int? initialStepIndex, int? finalStepIndex}) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RunProtocolScreen(
+          protocol: protocol,
+          initialStepIndex: activeState == null ? initialStepIndex : null,
+          finalStepIndex: activeState == null ? finalStepIndex : null,
+        ),
+      ),
+    );
+    _refreshActiveState();
   }
 
   Widget _buildPublicationSection() {
@@ -1034,18 +1143,7 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
   }
 
   Widget _buildEmptyState(String message) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 22),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceContainer,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.outlineVariant),
-      ),
-      child: Text(
-        message,
-        style: const TextStyle(color: AppColors.textSecondary),
-      ),
-    );
+    return ProtocolFlowEmptyState(message: message);
   }
 
   List<Widget> _buildGroupedSteps(BuildContext context) {
