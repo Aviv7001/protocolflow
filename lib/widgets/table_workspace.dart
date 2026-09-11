@@ -77,6 +77,7 @@ class ResponsiveTableManagerLayout extends StatelessWidget {
     this.previewKey,
     this.widePreviewHeader,
     this.narrowFooter,
+    this.independentWideScroll = false,
   });
 
   final Widget controls;
@@ -85,6 +86,7 @@ class ResponsiveTableManagerLayout extends StatelessWidget {
   final Key? previewKey;
   final Widget? widePreviewHeader;
   final Widget? narrowFooter;
+  final bool independentWideScroll;
 
   @override
   Widget build(BuildContext context) {
@@ -101,6 +103,56 @@ class ResponsiveTableManagerLayout extends StatelessWidget {
         builder: (context, constraints) {
           final isWide =
               constraints.maxWidth >= TableWorkspaceDimensions.wideBreakpoint;
+          if (isWide && independentWideScroll) {
+            return Padding(
+              padding: const EdgeInsets.all(16),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    maxWidth: TableWorkspaceDimensions.maxContentWidth,
+                  ),
+                  child: SizedBox(
+                    height: constraints.maxHeight - 32,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          flex: TableWorkspaceDimensions.controlsFlex.round(),
+                          child: SingleChildScrollView(
+                            key: const ValueKey('controls-column-scroll'),
+                            primary: false,
+                            child: KeyedSubtree(
+                              key: controlsKey,
+                              child: controls,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 20),
+                        Expanded(
+                          flex: TableWorkspaceDimensions.previewFlex.round(),
+                          child: SingleChildScrollView(
+                            key: const ValueKey('preview-column-scroll'),
+                            primary: false,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                if (widePreviewHeader != null) ...[
+                                  widePreviewHeader!,
+                                  const SizedBox(height: 20),
+                                ],
+                                KeyedSubtree(key: previewKey, child: preview),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }
+
           final content = isWide
               ? Row(
                   crossAxisAlignment: CrossAxisAlignment.start,

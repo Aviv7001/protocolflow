@@ -8,6 +8,16 @@ import 'package:protocolflow/services/pdf_service.dart';
 
 void main() {
   test('builds one-column content with a full-width table appendix', () async {
+    const pixelPng =
+        'data:image/png;base64,'
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+    final figurePaths = List.generate(
+      9,
+      (index) => pixelPng.replaceFirst(
+        'data:image/png;',
+        'data:image/png;figure=$index;',
+      ),
+    );
     final materialTable = ProtocolTable(
       id: 'materials',
       title: 'Material List',
@@ -62,6 +72,8 @@ void main() {
         status: ProtocolPublicationStatus.published,
       ),
       samples: const ['Control sample', 'Treatment sample', 'Blank sample'],
+      files: figurePaths,
+      imageNames: List.generate(9, (index) => 'Microscopy ${index + 1}'),
       tables: [materialTable, resultsTable],
       steps: List.generate(
         12,

@@ -1,4 +1,5 @@
 import 'serial_dilution_row.dart';
+import '../../lab_math/lab_calculation.dart';
 
 class SerialDilutionResult {
   final bool success;
@@ -11,6 +12,8 @@ class SerialDilutionResult {
   final List<String> warnings;
   final double selectedExtraVolumePercent;
   final String? autoExtraVolumeReason;
+  final IntermediateDilutionSuggestion? d0IntermediateSuggestion;
+  final bool includesD0IntermediateDilution;
 
   SerialDilutionResult({
     required this.success,
@@ -23,5 +26,7 @@ class SerialDilutionResult {
     this.warnings = const [],
     this.selectedExtraVolumePercent = 0,
     this.autoExtraVolumeReason,
+    this.d0IntermediateSuggestion,
+    this.includesD0IntermediateDilution = false,
   });
 }

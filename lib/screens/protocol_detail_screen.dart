@@ -31,6 +31,7 @@ import '../widgets/protocol_publication_widgets.dart';
 import '../widgets/publication_status_chip.dart';
 import '../widgets/responsive_layout.dart';
 import '../utils/date_time_format.dart';
+import '../utils/protocol_id.dart';
 import 'run_protocol_screen.dart';
 import 'create_protocol_screen.dart';
 import 'completed_protocol_detail_screen.dart';
@@ -88,6 +89,7 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
   ActiveProtocol? activeState;
   List<Project> _projects = [];
   bool _publicationBusy = false;
+  bool _duplicateBusy = false;
 
   @override
   void initState() {
@@ -354,7 +356,7 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  void _editProtocol(
+  Future<void> _editProtocol(
     BuildContext context, {
     String? targetPhase,
     bool isAddingPhase = false,
@@ -385,6 +387,99 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
           }
         }
       });
+    }
+  }
+
+  Future<void> _editCopy() async {
+    if (_duplicateBusy) return;
+
+    final shouldDuplicate = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Duplicate Protocol?'),
+        content: Text(
+          'This will create a separate copy named "${protocol.title} (copy)". '
+          'The original protocol will not be changed, and the copy will open '
+          'in Protocol Detail.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Duplicate'),
+          ),
+        ],
+      ),
+    );
+    if (shouldDuplicate != true || !mounted) return;
+
+    setState(() => _duplicateBusy = true);
+
+    try {
+      final now = DateTime.now();
+      final signedInUser = AuthService.instance.currentUser;
+      final storageService = StorageService();
+      final protocols = await storageService.loadProtocols();
+
+      var copyId = generateProtocolId(
+        date: now,
+        initials: signedInUser?.initials,
+      );
+      while (protocols.any((saved) => saved.id == copyId)) {
+        copyId = generateProtocolId(
+          date: now,
+          initials: signedInUser?.initials,
+        );
+      }
+
+      final copy = Protocol(
+        id: copyId,
+        title: '${protocol.title} (copy)',
+        objective: protocol.objective,
+        description: protocol.description,
+        ownerId: signedInUser?.googleUserId ?? protocol.ownerId,
+        projectId: protocol.projectId,
+        createdByName:
+            signedInUser?.displayName ??
+            signedInUser?.email ??
+            protocol.createdByName,
+        createdAt: now,
+        updatedAt: now,
+        schemaVersion: Protocol.currentSchemaVersion,
+        syncStatus: signedInUser == null
+            ? ProtocolSyncStatus.localOnly
+            : ProtocolSyncStatus.modified,
+        materials: protocol.materials.map((item) => item.copyWith()).toList(),
+        materialListTableId: protocol.materialListTableId,
+        samples: List<String>.from(protocol.samples),
+        files: List<String>.from(protocol.files),
+        imageNames: List<String>.from(protocol.imageNames),
+        steps: protocol.steps.map((step) => step.deepCopy()).toList(),
+        tables: protocol.tables.map((table) => table.deepCopy()).toList(),
+        additionalData: protocol.additionalData
+            .map((data) => data.deepCopy())
+            .toList(),
+        isTemplate: false,
+      );
+
+      protocols.add(copy);
+      await storageService.saveProtocols(protocols);
+      if (!mounted) return;
+
+      setState(() {
+        protocol = copy;
+        activeState = null;
+        _duplicateBusy = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _duplicateBusy = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not create protocol copy: $error')),
+      );
     }
   }
 
@@ -512,6 +607,11 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
               onPressed: () => _editProtocol(context),
               tooltip: 'Edit',
             ),
+          IconButton(
+            icon: const Icon(Icons.copy_outlined),
+            onPressed: _duplicateBusy ? null : _editCopy,
+            tooltip: 'Duplicate protocol',
+          ),
           if (!protocol.isTemplate)
             IconButton(
               icon: const Icon(Icons.public_outlined),
@@ -566,18 +666,27 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final desktop = constraints.maxWidth >= ProtocolFlowBreakpoints.desktop;
+        if (desktop) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
+            child: SizedBox(
+              height: constraints.maxHeight - 48,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1180),
+                  child: _buildDetailWorkspace(desktop: true),
+                ),
+              ),
+            ),
+          );
+        }
         return SingleChildScrollView(
-          padding: EdgeInsets.fromLTRB(
-            desktop ? 24 : 12,
-            desktop ? 24 : 16,
-            desktop ? 24 : 12,
-            96,
-          ),
+          padding: EdgeInsets.fromLTRB(12, 16, 12, 96),
           child: Align(
             alignment: Alignment.topCenter,
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 1180),
-              child: _buildDetailWorkspace(desktop: desktop),
+              child: _buildDetailWorkspace(desktop: false),
             ),
           ),
         );
@@ -586,19 +695,22 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
   }
 
   Widget _buildDetailWorkspace({required bool desktop}) {
-    final regularTables = protocol.tables
-        .where((table) => table.type != TableType.materialList)
-        .toList();
-    final hasAdditionalData =
-        protocol.files.isNotEmpty || protocol.additionalData.isNotEmpty;
+    final protocolTables = <ProtocolTable>[
+      if (protocol.materialListTable != null) protocol.materialListTable!,
+      if (protocol.sampleListTable != null) protocol.sampleListTable!,
+      ...protocol.tables.where(
+        (table) =>
+            table.type != TableType.materialList && !isSampleListTable(table),
+      ),
+    ];
+    final hasAdditionalData = protocol.additionalData.isNotEmpty;
 
     final information = _buildProtocolInformationSection();
-    final samples = protocol.samples.isEmpty ? null : _buildSamplesSection();
-    final materials = _buildMaterialListSection();
     final steps = _buildStepsSurface();
-    final tables = regularTables.isEmpty
+    final tables = protocolTables.isEmpty
         ? null
-        : _buildTablesSurface(regularTables);
+        : _buildTablesSurface(protocolTables);
+    final images = protocol.files.isEmpty ? null : _buildImagesSurface();
     final additionalData = hasAdditionalData
         ? _buildAdditionalDataSurface()
         : null;
@@ -637,12 +749,10 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
             const SizedBox(height: 24),
           ],
           information,
-          if (samples != null) ...[const SizedBox(height: 24), samples],
           const SizedBox(height: 24),
-          materials,
-          const SizedBox(height: 24),
+          if (tables != null) ...[tables, const SizedBox(height: 24)],
+          if (images != null) ...[images, const SizedBox(height: 24)],
           steps,
-          if (tables != null) ...[const SizedBox(height: 24), tables],
           if (additionalData != null) ...[
             const SizedBox(height: 24),
             additionalData,
@@ -660,50 +770,59 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
       children: [
         Expanded(
           flex: 5,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              information,
-              if (tables != null) ...[const SizedBox(height: 24), tables],
-              if (additionalData != null) ...[
-                const SizedBox(height: 24),
-                additionalData,
+          child: SingleChildScrollView(
+            key: const Key('detail-left-scroll'),
+            primary: false,
+            padding: const EdgeInsets.only(right: 8, bottom: 72),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (currentRun != null) ...[
+                  currentRun,
+                  const SizedBox(height: 24),
+                ],
+                if (publication != null) ...[
+                  publication,
+                  const SizedBox(height: 24),
+                ],
+                if (phaseProgress != null) ...[
+                  phaseProgress,
+                  const SizedBox(height: 24),
+                ],
+                information,
+                if (tables != null) ...[const SizedBox(height: 24), tables],
+                if (images != null) ...[const SizedBox(height: 24), images],
+                if (additionalData != null) ...[
+                  const SizedBox(height: 24),
+                  additionalData,
+                ],
               ],
-            ],
+            ),
           ),
         ),
         const SizedBox(width: 32),
         Expanded(
           flex: 7,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (samples != null) ...[samples, const SizedBox(height: 24)],
-              materials,
-              const SizedBox(height: 24),
-              steps,
-            ],
+          child: SingleChildScrollView(
+            key: const Key('detail-right-scroll'),
+            primary: false,
+            padding: const EdgeInsets.only(left: 8, bottom: 72),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                steps,
+                if (previousRunsSection != null) ...[
+                  const SizedBox(height: 24),
+                  previousRunsSection,
+                ],
+              ],
+            ),
           ),
         ),
       ],
     );
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (currentRun != null) ...[currentRun, const SizedBox(height: 24)],
-        if (publication != null) ...[publication, const SizedBox(height: 24)],
-        if (phaseProgress != null) ...[
-          phaseProgress,
-          const SizedBox(height: 24),
-        ],
-        desktopColumns,
-        if (previousRunsSection != null) ...[
-          const SizedBox(height: 24),
-          previousRunsSection,
-        ],
-      ],
-    );
+    return desktopColumns;
   }
 
   Widget _buildCurrentRunSection() {
@@ -1022,52 +1141,6 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
     );
   }
 
-  Widget _buildSamplesSection() {
-    return _buildSectionSurface(
-      key: const Key('detail-samples'),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _buildSectionHeader('Samples'),
-          const SizedBox(height: 12),
-          ...protocol.samples.map(
-            (sample) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.biotech_outlined,
-                    size: 18,
-                    color: AppColors.primary,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(child: Text(sample)),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMaterialListSection() {
-    return _buildSectionSurface(
-      key: const Key('detail-materials'),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _buildSectionHeader('Material List'),
-          const SizedBox(height: 10),
-          if (protocol.materialListTable != null)
-            LinkedProtocolTablesSection(tables: [protocol.materialListTable!])
-          else
-            _buildEmptyState('No material list table linked.'),
-        ],
-      ),
-    );
-  }
-
   Widget _buildStepsSurface() {
     return _buildSectionSurface(
       key: const Key('detail-steps'),
@@ -1106,19 +1179,24 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildSectionHeader('Additional Data'),
-          if (protocol.files.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            const Text(
-              'Attached Files',
-              style: TextStyle(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 8),
-            _buildFileGrid(protocol.files),
-          ],
           if (protocol.additionalData.isNotEmpty) ...[
             const SizedBox(height: 12),
             ...protocol.additionalData.map(_buildAdditionalDataCard),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildImagesSurface() {
+    return _buildSectionSurface(
+      key: const Key('detail-images'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildSectionHeader('Images / Figures'),
+          const SizedBox(height: 12),
+          _buildProtocolImageGrid(protocol.files),
         ],
       ),
     );
@@ -1503,6 +1581,28 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
                         tables: _linkedTablesForStep(step),
                       ),
                     ],
+                    if (_linkedImagesForStep(step).isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      const Row(
+                        children: [
+                          Icon(
+                            Icons.image_outlined,
+                            size: 18,
+                            color: AppColors.primary,
+                          ),
+                          SizedBox(width: 6),
+                          Text(
+                            'Linked images',
+                            style: TextStyle(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      _buildProtocolImageGrid(_linkedImagesForStep(step)),
+                    ],
                   ],
                 ),
               ),
@@ -1524,6 +1624,127 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
       }
     }
     return linkedTables;
+  }
+
+  List<String> _linkedImagesForStep(ProtocolStep step) {
+    return step.attachedFiles.where(protocol.files.contains).toList();
+  }
+
+  String _protocolImageName(String path) {
+    final index = protocol.files.indexOf(path);
+    return index >= 0 &&
+            index < protocol.imageNames.length &&
+            protocol.imageNames[index].trim().isNotEmpty
+        ? protocol.imageNames[index].trim()
+        : index == -1
+        ? 'Image'
+        : 'Image ${index + 1}';
+  }
+
+  Future<void> _showProtocolImagePreview(String path) async {
+    final index = protocol.files.indexOf(path);
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 620, maxHeight: 820),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${index + 1}. ${_protocolImageName(path)}',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Close preview',
+                      onPressed: () => Navigator.pop(dialogContext),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Flexible(
+                  child: Center(
+                    child: AspectRatio(
+                      aspectRatio: 3 / 4,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: ColoredBox(
+                          color: Colors.white,
+                          child: InteractiveViewer(
+                            minScale: 1,
+                            maxScale: 5,
+                            child: buildLocalImage(path, fit: BoxFit.contain),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProtocolImageGrid(List<String> paths) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const itemWidth = 112.0;
+        return Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: paths.map((path) {
+            final index = protocol.files.indexOf(path);
+            return SizedBox(
+              width: itemWidth,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  AspectRatio(
+                    aspectRatio: 1,
+                    child: Card(
+                      margin: EdgeInsets.zero,
+                      clipBehavior: Clip.antiAlias,
+                      child: InkWell(
+                        key: Key('preview-protocol-image-${index + 1}'),
+                        onTap: () => _showProtocolImagePreview(path),
+                        child: ColoredBox(
+                          color: Colors.white,
+                          child: buildLocalImage(path, fit: BoxFit.cover),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '${index + 1}. ${_protocolImageName(path)}',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        );
+      },
+    );
   }
 
   Widget _buildAdditionalDataCard(ProtocolAdditionalData data) {
@@ -1590,44 +1811,6 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
         borderRadius: BorderRadius.circular(4),
         child: buildLocalImage(photoPaths[index]),
       ),
-    );
-  }
-
-  Widget _buildFileGrid(List<String> files) {
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: files.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        mainAxisSpacing: 8,
-        crossAxisSpacing: 8,
-        childAspectRatio: 0.85,
-      ),
-      itemBuilder: (context, index) {
-        final fileName = files[index];
-        return Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            border: Border.all(color: Colors.grey.shade300),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.insert_drive_file_outlined, size: 32),
-              const SizedBox(height: 8),
-              Text(
-                fileName,
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 12),
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 }

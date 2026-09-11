@@ -76,7 +76,7 @@ class ProtocolTablePreview extends StatelessWidget {
                                 horizontal: 12,
                               ),
                               child: Icon(
-                                _typeIcon(table.type),
+                                _typeIcon(table),
                                 size: 20,
                                 color: AppColors.primary,
                               ),
@@ -94,7 +94,7 @@ class ProtocolTablePreview extends StatelessWidget {
                                     ),
                                   ),
                                   Text(
-                                    _typeLabel(table.type),
+                                    _typeLabel(table),
                                     style: const TextStyle(
                                       fontSize: 12,
                                       color: AppColors.textSecondary,
@@ -231,8 +231,9 @@ class ProtocolTablePreview extends StatelessWidget {
     }
   }
 
-  IconData _typeIcon(TableType type) {
-    switch (type) {
+  IconData _typeIcon(ProtocolTable table) {
+    if (isSampleListTable(table)) return Icons.biotech_outlined;
+    switch (table.type) {
       case TableType.plateLayout:
         return Icons.grid_on;
       case TableType.masterMix:
@@ -250,8 +251,9 @@ class ProtocolTablePreview extends StatelessWidget {
     }
   }
 
-  String _typeLabel(TableType type) {
-    switch (type) {
+  String _typeLabel(ProtocolTable table) {
+    if (isSampleListTable(table)) return 'Sample list';
+    switch (table.type) {
       case TableType.masterMix:
         return 'Master mix';
       case TableType.staining:
@@ -281,6 +283,7 @@ class LinkedProtocolTablesSection extends StatefulWidget {
     this.onMoveDown,
     this.onUnlink,
     this.onDelete,
+    this.canDelete,
     this.initiallyCollapsed = false,
   });
 
@@ -292,6 +295,7 @@ class LinkedProtocolTablesSection extends StatefulWidget {
   final void Function(int index)? onMoveDown;
   final void Function(ProtocolTable table)? onUnlink;
   final void Function(ProtocolTable table)? onDelete;
+  final bool Function(ProtocolTable table)? canDelete;
   final bool initiallyCollapsed;
 
   @override
@@ -651,7 +655,9 @@ class _LinkedProtocolTablesSectionState
             onUnlink: widget.onUnlink == null
                 ? null
                 : () => widget.onUnlink!(table),
-            onDelete: widget.onDelete == null
+            onDelete:
+                widget.onDelete == null ||
+                    (widget.canDelete != null && !widget.canDelete!(table))
                 ? null
                 : () => widget.onDelete!(table),
             isCollapsed: _collapsedTableIds.contains(table.id),
@@ -697,10 +703,13 @@ class _InlineTableData extends StatelessWidget {
         ),
         columns: [
           if (hasRowHeaders)
-            const DataColumn(
+            DataColumn(
               label: Text(
-                '#',
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                table.metadata['rowHeaderLabel'] ?? '#',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           for (var i = 0; i < maxColumns; i++)

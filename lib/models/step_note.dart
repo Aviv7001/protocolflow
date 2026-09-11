@@ -3,6 +3,7 @@ class StepNote {
   final String stepId;
   final String note;
   final List<String> photoPaths;
+  final List<String> photoNames;
   final DateTime createdAt;
 
   StepNote({
@@ -10,6 +11,7 @@ class StepNote {
     required this.stepId,
     required this.note,
     this.photoPaths = const [],
+    this.photoNames = const [],
     required this.createdAt,
   });
 
@@ -18,6 +20,7 @@ class StepNote {
     String? stepId,
     String? note,
     List<String>? photoPaths,
+    List<String>? photoNames,
     DateTime? createdAt,
   }) {
     return StepNote(
@@ -25,6 +28,7 @@ class StepNote {
       stepId: stepId ?? this.stepId,
       note: note ?? this.note,
       photoPaths: List<String>.from(photoPaths ?? this.photoPaths),
+      photoNames: List<String>.from(photoNames ?? this.photoNames),
       createdAt: createdAt ?? this.createdAt,
     );
   }
@@ -39,6 +43,7 @@ class StepNote {
       'stepId': stepId,
       'note': note,
       'photoPaths': photoPaths,
+      'photoNames': photoNames,
       'createdAt': createdAt.toIso8601String(),
     };
   }
@@ -52,6 +57,7 @@ class StepNote {
         json['photoPaths'] ??
             (json['photoPath'] != null ? [json['photoPath']] : []),
       ),
+      photoNames: List<String>.from(json['photoNames'] ?? const []),
       createdAt: DateTime.parse(
         json['createdAt'] ?? DateTime.now().toIso8601String(),
       ),

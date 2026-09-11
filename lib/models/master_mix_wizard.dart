@@ -129,12 +129,22 @@ class MasterMixWizard {
     ];
 
     final data = <List<dynamic>>[];
+    final cellColors = <List<String>>[];
 
-    for (final mix in mixes) {
+    void addRow(List<dynamic> row, {required bool shaded}) {
+      data.add(row);
+      cellColors.add(
+        List.generate(headers.length, (_) => shaded ? 'EEF4F5' : ''),
+      );
+    }
+
+    for (final entry in mixes.asMap().entries) {
+      final mix = entry.value;
+      final shaded = entry.key.isOdd;
       final result = service.calculateMasterMix(mix.toInput());
 
       if (!result.success) {
-        data.add([
+        addRow([
           mix.mixName,
           'Error',
           result.errorMessage ?? 'Calculation failed',
@@ -143,12 +153,12 @@ class MasterMixWizard {
           '-',
           '-',
           '',
-        ]);
+        ], shaded: shaded);
         continue;
       }
 
       for (final reagent in result.reagentResults) {
-        data.add([
+        addRow([
           mix.mixName,
           reagent.reagentName,
           reagent.formattedStockConcentration,
@@ -163,9 +173,9 @@ class MasterMixWizard {
             reagent.suggestions.isNotEmpty,
             statusText: reagent.massEvaluation?.status.label,
           ),
-        ]);
+        ], shaded: shaded);
       }
-      data.add([
+      addRow([
         mix.mixName,
         mix.baseSolventName,
         '-',
@@ -174,8 +184,8 @@ class MasterMixWizard {
         _transferLabel(result.solventTransferEvaluation),
         _toolLabel(result.solventTransferEvaluation),
         '',
-      ]);
-      data.add([
+      ], shaded: shaded);
+      addRow([
         mix.mixName,
         'Total',
         '-',
@@ -184,7 +194,7 @@ class MasterMixWizard {
         '-',
         '-',
         '',
-      ]);
+      ], shaded: shaded);
     }
 
     return ProtocolTable(
@@ -194,10 +204,7 @@ class MasterMixWizard {
       columnHeaders: headers,
       rowHeaders: List.generate(data.length, (i) => (i + 1).toString()),
       data: data,
-      cellColors: List.generate(
-        data.length,
-        (_) => List.generate(headers.length, (_) => ''),
-      ),
+      cellColors: cellColors,
       metadata: {'wizard_state': jsonEncode(toJson())},
     );
   }

@@ -7,6 +7,7 @@ import '../models/project.dart';
 import '../models/protocol.dart';
 import '../models/protocol_table.dart';
 import '../models/protocol_run.dart';
+import 'data_validation_service.dart';
 
 enum SavedTablesSyncState { synced, pending, error }
 
@@ -70,6 +71,7 @@ class StorageService {
   }
 
   Future<void> saveProtocols(List<Protocol> protocols) async {
+    DataValidationService.validateProtocols(protocols);
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String jsonString = jsonEncode(
       protocols.map((p) => p.toJson()).toList(),
@@ -82,6 +84,7 @@ class StorageService {
     bool markUpdated = true,
     bool markPending = true,
   }) async {
+    DataValidationService.validateProjects(projects);
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final sorted = List<Project>.from(projects)
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
@@ -126,6 +129,7 @@ class StorageService {
   }
 
   Future<Project> upsertProject(Project project) async {
+    DataValidationService.validateProject(project);
     final projects = await loadProjects();
     final index = projects.indexWhere((existing) => existing.id == project.id);
     if (index == -1) {
@@ -244,6 +248,7 @@ class StorageService {
   }
 
   Future<void> upsertProtocol(Protocol protocol) async {
+    DataValidationService.validateProtocol(protocol);
     final protocols = await loadProtocols();
     final index = protocols.indexWhere(
       (existing) => existing.id == protocol.id,
@@ -279,6 +284,7 @@ class StorageService {
   Future<void> saveDeletedProtocolRecords(
     List<DeletedProtocolRecord> records,
   ) async {
+    DataValidationService.validateDeletedProtocolRecords(records);
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.setString(
       _deletedProtocolsKey,
@@ -309,6 +315,7 @@ class StorageService {
     List<CompletedProtocol> protocols, {
     bool markPending = true,
   }) async {
+    DataValidationService.validateCompletedProtocols(protocols);
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String jsonString = jsonEncode(
       protocols.map((p) => p.toJson()).toList(),
@@ -339,6 +346,9 @@ class StorageService {
   }
 
   Future<void> saveActiveProtocol(ActiveProtocol? protocol) async {
+    if (protocol != null) {
+      DataValidationService.validateActiveProtocol(protocol);
+    }
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     if (protocol == null) {
       await prefs.remove(_activeKey);
@@ -365,6 +375,7 @@ class StorageService {
   }
 
   Future<void> saveRunningProtocols(List<ActiveProtocol> protocols) async {
+    DataValidationService.validateActiveProtocols(protocols);
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String jsonString = jsonEncode(
       protocols.map((p) => p.toJson()).toList(),
@@ -394,6 +405,7 @@ class StorageService {
   }
 
   Future<void> saveProtocolRuns(List<ProtocolRun> runs) async {
+    DataValidationService.validateProtocolRuns(runs);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
       _protocolRunsKey,
@@ -508,6 +520,7 @@ class StorageService {
     List<ProtocolTable> tables, {
     bool markPending = true,
   }) async {
+    DataValidationService.validateProtocolTables(tables);
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String jsonString = jsonEncode(
       tables.map((table) => table.toJson()).toList(),
@@ -619,6 +632,7 @@ class StorageService {
   }
 
   Future<void> saveDeletedSavedTableIds(List<String> tableIds) async {
+    DataValidationService.validateDeletedSavedTableIds(tableIds);
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.setString(_deletedSavedTablesKey, jsonEncode(tableIds));
   }

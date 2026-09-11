@@ -384,7 +384,9 @@ class _TasksScreenState extends State<TasksScreen>
     final descriptionController = TextEditingController(
       text: task?.description ?? '',
     );
-    var selectedProject = task?.projectId ?? _unassignedProject;
+    var selectedProject =
+        task?.projectId ??
+        (_projectFilter != null ? _projectFilter! : _unassignedProject);
     var selectedStatus = task?.status ?? TaskStatus.notStarted;
     final saved = await showDialog<bool>(
       context: context,

@@ -168,4 +168,25 @@ void main() {
     expect(find.text('Prepare standards'), findsOneWidget);
     expect(find.text('Run PCR'), findsNothing);
   });
+
+  testWidgets('new tasks inherit the active project filter', (tester) async {
+    await pumpTasks(tester, initialProjectId: 'project-a');
+
+    await tester.tap(find.byKey(const Key('tasks-create-button')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('task-title-field')),
+      'Filtered task',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.pumpAndSettle();
+
+    final preferences = await SharedPreferences.getInstance();
+    final tasks =
+        jsonDecode(preferences.getString('today_tasks_json')!) as List;
+    final created = tasks.cast<Map>().singleWhere(
+      (task) => task['title'] == 'Filtered task',
+    );
+    expect(created['projectId'], 'project-a');
+  });
 }

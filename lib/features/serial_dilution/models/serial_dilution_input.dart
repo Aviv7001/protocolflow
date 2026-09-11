@@ -32,6 +32,7 @@ class SerialDilutionInput {
   final double? targetLowestConcentration;
   final ConcentrationUnit? targetLowestConcentrationUnit;
   final bool includeZeroConcentrationRow;
+  final bool includeD0IntermediateDilution;
 
   SerialDilutionInput({
     this.title = 'Serial Dilution Table',
@@ -54,6 +55,7 @@ class SerialDilutionInput {
     this.targetLowestConcentration,
     this.targetLowestConcentrationUnit,
     this.includeZeroConcentrationRow = false,
+    this.includeD0IntermediateDilution = false,
   });
 
   Map<String, dynamic> toJson() {
@@ -79,6 +81,7 @@ class SerialDilutionInput {
       'targetLowestConcentration': targetLowestConcentration,
       'targetLowestConcentrationUnit': targetLowestConcentrationUnit?.name,
       'includeZeroConcentrationRow': includeZeroConcentrationRow,
+      'includeD0IntermediateDilution': includeD0IntermediateDilution,
     };
   }
 
@@ -133,6 +136,8 @@ class SerialDilutionInput {
               orElse: () => ConcentrationUnit.ngML,
             ),
       includeZeroConcentrationRow: json['includeZeroConcentrationRow'] ?? false,
+      includeD0IntermediateDilution:
+          json['includeD0IntermediateDilution'] ?? false,
     );
   }
 
@@ -158,6 +163,7 @@ class SerialDilutionInput {
     double? targetLowestConcentration,
     ConcentrationUnit? targetLowestConcentrationUnit,
     bool? includeZeroConcentrationRow,
+    bool? includeD0IntermediateDilution,
   }) {
     return SerialDilutionInput(
       title: title ?? this.title,
@@ -189,6 +195,8 @@ class SerialDilutionInput {
           targetLowestConcentrationUnit ?? this.targetLowestConcentrationUnit,
       includeZeroConcentrationRow:
           includeZeroConcentrationRow ?? this.includeZeroConcentrationRow,
+      includeD0IntermediateDilution:
+          includeD0IntermediateDilution ?? this.includeD0IntermediateDilution,
     );
   }
 

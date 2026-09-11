@@ -28,8 +28,12 @@ class MasterMixResultTable extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final results = [
-      for (final mix in wizard.mixes)
-        _MixCalculation(mix, calculator.calculateMasterMix(mix.toInput())),
+      for (final entry in wizard.mixes.asMap().entries)
+        _MixCalculation(
+          entry.value,
+          calculator.calculateMasterMix(entry.value.toInput()),
+          shaded: entry.key.isOdd,
+        ),
     ];
 
     final content = Column(
@@ -101,10 +105,14 @@ class MasterMixResultTable extends StatelessWidget {
   List<DataRow> _rowsForMix(_MixCalculation item) {
     final mix = item.mix;
     final res = item.result;
+    final rowColor = item.shaded
+        ? const WidgetStatePropertyAll(AppColors.surfaceContainer)
+        : null;
 
     if (!res.success) {
       return [
         DataRow(
+          color: rowColor,
           cells: [
             DataCell(_CellText(mix.mixName)),
             const DataCell(_ErrorCell('Error')),
@@ -121,39 +129,41 @@ class MasterMixResultTable extends StatelessWidget {
 
     return [
       ...res.reagentResults.map(
-        (r) => DataRow(
+        (reagent) => DataRow(
+          color: rowColor,
           cells: [
             DataCell(_CellText(mix.mixName)),
-            DataCell(_CellText(r.reagentName)),
-            DataCell(_CellText(r.formattedStockConcentration)),
-            DataCell(_CellText(r.formattedFinalConcentration)),
+            DataCell(_CellText(reagent.reagentName)),
+            DataCell(_CellText(reagent.formattedStockConcentration)),
+            DataCell(_CellText(reagent.formattedFinalConcentration)),
             DataCell(
               _CellText(
-                r.formattedReagentVolume,
+                reagent.formattedReagentVolume,
                 color: AppColors.primary,
                 bold: true,
               ),
             ),
-            DataCell(_CellText(_transferLabel(r.transferEvaluation))),
+            DataCell(_CellText(_transferLabel(reagent.transferEvaluation))),
             DataCell(
               _CellText(
-                r.massEvaluation?.recommendedToolName ??
-                    r.transferEvaluation?.recommendedToolName ??
+                reagent.massEvaluation?.recommendedToolName ??
+                    reagent.transferEvaluation?.recommendedToolName ??
                     '-',
               ),
             ),
             DataCell(
               TransferStatusIcons(
-                warnings: r.warnings,
-                suggestions: r.suggestions,
-                evaluation: r.transferEvaluation,
-                statusText: r.massEvaluation?.status.label,
+                warnings: reagent.warnings,
+                suggestions: reagent.suggestions,
+                evaluation: reagent.transferEvaluation,
+                statusText: reagent.massEvaluation?.status.label,
               ),
             ),
           ],
         ),
       ),
       DataRow(
+        color: rowColor,
         cells: [
           DataCell(_CellText(mix.mixName)),
           DataCell(_CellText(mix.baseSolventName)),
@@ -170,7 +180,7 @@ class MasterMixResultTable extends StatelessWidget {
         ],
       ),
       DataRow(
-        color: const WidgetStatePropertyAll(AppColors.primaryContainer),
+        color: rowColor,
         cells: [
           DataCell(_CellText(mix.mixName, bold: true)),
           const DataCell(_CellText('TOTAL', bold: true)),
@@ -236,8 +246,9 @@ class MasterMixResultTable extends StatelessWidget {
 class _MixCalculation {
   final MasterMixItem mix;
   final MasterMixResult result;
+  final bool shaded;
 
-  const _MixCalculation(this.mix, this.result);
+  const _MixCalculation(this.mix, this.result, {required this.shaded});
 }
 
 class _HeaderCell extends StatelessWidget {

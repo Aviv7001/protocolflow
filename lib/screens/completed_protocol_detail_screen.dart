@@ -147,13 +147,26 @@ class _CompletedProtocolDetailScreenState
     return LayoutBuilder(
       builder: (context, constraints) {
         final desktop = constraints.maxWidth >= ProtocolFlowBreakpoints.desktop;
+        if (desktop) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
+            child: SizedBox(
+              height: constraints.maxHeight - 48,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1180),
+                  child: _buildDetailWorkspace(
+                    context,
+                    completedDate: completedDate,
+                    desktop: true,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
         return SingleChildScrollView(
-          padding: EdgeInsets.fromLTRB(
-            desktop ? 24 : 12,
-            desktop ? 24 : 16,
-            desktop ? 24 : 12,
-            48,
-          ),
+          padding: EdgeInsets.fromLTRB(12, 16, 12, 48),
           child: Align(
             alignment: Alignment.topCenter,
             child: ConstrainedBox(
@@ -161,7 +174,7 @@ class _CompletedProtocolDetailScreenState
               child: _buildDetailWorkspace(
                 context,
                 completedDate: completedDate,
-                desktop: desktop,
+                desktop: false,
               ),
             ),
           ),
@@ -176,14 +189,18 @@ class _CompletedProtocolDetailScreenState
     required bool desktop,
   }) {
     final protocol = completedProtocol.protocol;
-    final regularTables = protocol.tables
-        .where((table) => table.type != TableType.materialList)
-        .toList();
+    final protocolTables = <ProtocolTable>[
+      if (protocol.materialListTable != null) protocol.materialListTable!,
+      if (protocol.sampleListTable != null) protocol.sampleListTable!,
+      ...protocol.tables.where(
+        (table) =>
+            table.type != TableType.materialList && !isSampleListTable(table),
+      ),
+    ];
     final overviewNotes = completedProtocol.notes
         .where((note) => note.stepId == 'overview')
         .toList();
-    final hasAdditionalData =
-        protocol.files.isNotEmpty || protocol.additionalData.isNotEmpty;
+    final hasAdditionalData = protocol.additionalData.isNotEmpty;
 
     final information = _buildProtocolInformationSection(
       context,
@@ -192,17 +209,14 @@ class _CompletedProtocolDetailScreenState
     final publication = protocol.publication == null
         ? null
         : _buildPublicationSection(context);
-    final samples = protocol.samples.isEmpty
-        ? null
-        : _buildSamplesSection(context);
-    final materials = _buildMaterialListSection(context);
     final steps = _buildStepsSurface(context);
     final generalNotes = overviewNotes.isEmpty
         ? null
         : _buildGeneralNotesSurface(context, overviewNotes);
-    final tables = regularTables.isEmpty
+    final tables = protocolTables.isEmpty
         ? null
-        : _buildTablesSurface(context, regularTables);
+        : _buildTablesSurface(context, protocolTables);
+    final images = protocol.files.isEmpty ? null : _buildImagesSurface(context);
     final additionalData = hasAdditionalData
         ? _buildAdditionalDataSurface(context)
         : null;
@@ -213,16 +227,14 @@ class _CompletedProtocolDetailScreenState
         children: [
           if (publication != null) ...[publication, const SizedBox(height: 24)],
           information,
-          if (samples != null) ...[const SizedBox(height: 24), samples],
           const SizedBox(height: 24),
-          materials,
-          const SizedBox(height: 24),
+          if (tables != null) ...[tables, const SizedBox(height: 24)],
+          if (images != null) ...[images, const SizedBox(height: 24)],
           steps,
           if (generalNotes != null) ...[
             const SizedBox(height: 24),
             generalNotes,
           ],
-          if (tables != null) ...[const SizedBox(height: 24), tables],
           if (additionalData != null) ...[
             const SizedBox(height: 24),
             additionalData,
@@ -236,45 +248,46 @@ class _CompletedProtocolDetailScreenState
       children: [
         Expanded(
           flex: 5,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              information,
-              if (generalNotes != null) ...[
-                const SizedBox(height: 24),
-                generalNotes,
+          child: SingleChildScrollView(
+            key: const Key('completed-detail-left-scroll'),
+            primary: false,
+            padding: const EdgeInsets.only(right: 8, bottom: 48),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (publication != null) ...[
+                  publication,
+                  const SizedBox(height: 24),
+                ],
+                information,
+                if (generalNotes != null) ...[
+                  const SizedBox(height: 24),
+                  generalNotes,
+                ],
+                if (tables != null) ...[const SizedBox(height: 24), tables],
+                if (images != null) ...[const SizedBox(height: 24), images],
+                if (additionalData != null) ...[
+                  const SizedBox(height: 24),
+                  additionalData,
+                ],
               ],
-              if (tables != null) ...[const SizedBox(height: 24), tables],
-              if (additionalData != null) ...[
-                const SizedBox(height: 24),
-                additionalData,
-              ],
-            ],
+            ),
           ),
         ),
         const SizedBox(width: 32),
         Expanded(
           flex: 7,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (samples != null) ...[samples, const SizedBox(height: 24)],
-              materials,
-              const SizedBox(height: 24),
-              steps,
-            ],
+          child: SingleChildScrollView(
+            key: const Key('completed-detail-right-scroll'),
+            primary: false,
+            padding: const EdgeInsets.only(left: 8, bottom: 48),
+            child: steps,
           ),
         ),
       ],
     );
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (publication != null) ...[publication, const SizedBox(height: 24)],
-        desktopColumns,
-      ],
-    );
+    return desktopColumns;
   }
 
   Widget _buildPublicationSection(BuildContext context) {
@@ -489,66 +502,6 @@ class _CompletedProtocolDetailScreenState
     );
   }
 
-  Widget _buildSamplesSection(BuildContext context) {
-    return _buildSectionSurface(
-      context,
-      key: const Key('completed-detail-samples'),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _buildSectionHeader(context, 'Samples'),
-          const SizedBox(height: 12),
-          ...completedProtocol.protocol.samples.map(
-            (sample) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.biotech_outlined,
-                    size: 18,
-                    color: AppColors.primary,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(child: Text(sample)),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMaterialListSection(BuildContext context) {
-    final protocol = completedProtocol.protocol;
-    final materialNotes = completedProtocol.notes
-        .where((note) => note.stepId == 'materials')
-        .toList();
-    return _buildSectionSurface(
-      context,
-      key: const Key('completed-detail-materials'),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _buildSectionHeader(context, 'Material List'),
-          const SizedBox(height: 10),
-          if (protocol.materialListTable != null)
-            LinkedProtocolTablesSection(tables: [protocol.materialListTable!])
-          else
-            _buildEmptyState('No material list table linked.'),
-          if (materialNotes.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            const Text(
-              'Recorded notes',
-              style: TextStyle(fontWeight: FontWeight.w700),
-            ),
-            ..._buildNotesSection(materialNotes),
-          ],
-        ],
-      ),
-    );
-  }
-
   Widget _buildStepsSurface(BuildContext context) {
     return _buildSectionSurface(
       context,
@@ -583,6 +536,9 @@ class _CompletedProtocolDetailScreenState
   }
 
   Widget _buildTablesSurface(BuildContext context, List<ProtocolTable> tables) {
+    final materialNotes = completedProtocol.notes
+        .where((note) => note.stepId == 'materials')
+        .toList();
     return _buildSectionSurface(
       context,
       key: const Key('completed-detail-tables'),
@@ -592,6 +548,15 @@ class _CompletedProtocolDetailScreenState
           _buildSectionHeader(context, 'Tables'),
           const SizedBox(height: 10),
           LinkedProtocolTablesSection(tables: tables, initiallyCollapsed: true),
+          if (materialNotes.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Text(
+              'Material Notes',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            ..._buildNotesSection(materialNotes),
+          ],
         ],
       ),
     );
@@ -606,27 +571,27 @@ class _CompletedProtocolDetailScreenState
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildSectionHeader(context, 'Additional Data'),
-          if (protocol.files.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            const Text(
-              'Attached Files',
-              style: TextStyle(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 8),
-            ...protocol.files.map(
-              (file) => ListTile(
-                leading: const Icon(Icons.insert_drive_file_outlined),
-                title: Text(file),
-                contentPadding: EdgeInsets.zero,
-              ),
-            ),
-          ],
           if (protocol.additionalData.isNotEmpty) ...[
             const SizedBox(height: 12),
             ...protocol.additionalData.map(
               (data) => _buildAdditionalDataCard(context, data),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildImagesSurface(BuildContext context) {
+    return _buildSectionSurface(
+      context,
+      key: const Key('completed-detail-images'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildSectionHeader(context, 'Images / Figures'),
+          const SizedBox(height: 12),
+          _buildProtocolImageGrid(completedProtocol.protocol.files),
         ],
       ),
     );
@@ -862,6 +827,28 @@ class _CompletedProtocolDetailScreenState
                         tables: _linkedTablesForStep(step),
                       ),
                     ],
+                    if (_linkedImagesForStep(step).isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      const Row(
+                        children: [
+                          Icon(
+                            Icons.image_outlined,
+                            size: 18,
+                            color: AppColors.primary,
+                          ),
+                          SizedBox(width: 6),
+                          Text(
+                            'Linked images',
+                            style: TextStyle(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      _buildProtocolImageGrid(_linkedImagesForStep(step)),
+                    ],
                     if (stepNotes.isNotEmpty) ...[
                       const Divider(height: 28),
                       const Text(
@@ -953,6 +940,134 @@ class _CompletedProtocolDetailScreenState
     );
   }
 
+  List<String> _linkedImagesForStep(ProtocolStep step) {
+    return step.attachedFiles
+        .where(completedProtocol.protocol.files.contains)
+        .toList();
+  }
+
+  String _protocolImageName(String path) {
+    final protocol = completedProtocol.protocol;
+    final index = protocol.files.indexOf(path);
+    return index >= 0 &&
+            index < protocol.imageNames.length &&
+            protocol.imageNames[index].trim().isNotEmpty
+        ? protocol.imageNames[index].trim()
+        : index == -1
+        ? 'Image'
+        : 'Image ${index + 1}';
+  }
+
+  Future<void> _showProtocolImagePreview(String path) async {
+    final protocol = completedProtocol.protocol;
+    final index = protocol.files.indexOf(path);
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 620, maxHeight: 820),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${index + 1}. ${_protocolImageName(path)}',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Close preview',
+                      onPressed: () => Navigator.pop(dialogContext),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Flexible(
+                  child: Center(
+                    child: AspectRatio(
+                      aspectRatio: 3 / 4,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: ColoredBox(
+                          color: Colors.white,
+                          child: InteractiveViewer(
+                            minScale: 1,
+                            maxScale: 5,
+                            child: buildLocalImage(path, fit: BoxFit.contain),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProtocolImageGrid(List<String> paths) {
+    final protocol = completedProtocol.protocol;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const itemWidth = 112.0;
+        return Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: paths.map((path) {
+            final index = protocol.files.indexOf(path);
+            return SizedBox(
+              width: itemWidth,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  AspectRatio(
+                    aspectRatio: 1,
+                    child: Card(
+                      margin: EdgeInsets.zero,
+                      clipBehavior: Clip.antiAlias,
+                      child: InkWell(
+                        key: Key(
+                          'preview-completed-protocol-image-${index + 1}',
+                        ),
+                        onTap: () => _showProtocolImagePreview(path),
+                        child: ColoredBox(
+                          color: Colors.white,
+                          child: buildLocalImage(path, fit: BoxFit.cover),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '${index + 1}. ${_protocolImageName(path)}',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+
   List<Widget> _buildNotesSection(List<StepNote> notes) {
     if (notes.isEmpty) return [];
 
@@ -967,7 +1082,7 @@ class _CompletedProtocolDetailScreenState
               crossAxisCount: 3,
               crossAxisSpacing: 8,
               mainAxisSpacing: 8,
-              childAspectRatio: 3 / 4,
+              childAspectRatio: 3 / 4.5,
             ),
             itemCount: notes.fold<int>(
               0,
@@ -978,6 +1093,7 @@ class _CompletedProtocolDetailScreenState
               int noteIdx = -1;
               int photoInNoteIdx = -1;
               String? path;
+              String? name;
 
               for (int i = 0; i < notes.length; i++) {
                 final n = notes[i];
@@ -985,6 +1101,11 @@ class _CompletedProtocolDetailScreenState
                   noteIdx = i + 1;
                   photoInNoteIdx = globalIdx - count + 1;
                   path = n.photoPaths[photoInNoteIdx - 1];
+                  name =
+                      photoInNoteIdx - 1 < n.photoNames.length &&
+                          n.photoNames[photoInNoteIdx - 1].trim().isNotEmpty
+                      ? n.photoNames[photoInNoteIdx - 1].trim()
+                      : 'Image $photoInNoteIdx';
                   break;
                 }
                 count += n.photoPaths.length;
@@ -992,34 +1113,54 @@ class _CompletedProtocolDetailScreenState
 
               if (path == null) return const SizedBox.shrink();
 
-              return Stack(
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Positioned.fill(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: buildLocalImage(path),
+                  Expanded(
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: buildLocalImage(path),
+                          ),
+                        ),
+                        Positioned(
+                          top: 4,
+                          left: 4,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.textPrimary.withValues(
+                                alpha: 0.8,
+                              ),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '$noteIdx.$photoInNoteIdx',
+                              style: const TextStyle(
+                                color: AppColors.surface,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  Positioned(
-                    top: 4,
-                    left: 4,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.textPrimary.withValues(alpha: 0.8),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        '$noteIdx.$photoInNoteIdx',
-                        style: const TextStyle(
-                          color: AppColors.surface,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                  const SizedBox(height: 4),
+                  Text(
+                    name ?? 'Image $photoInNoteIdx',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],

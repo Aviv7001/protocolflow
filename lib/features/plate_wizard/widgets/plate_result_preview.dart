@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../models/plate_wizard.dart';
 import '../../../models/protocol_table.dart';
+import '../models/plate_wizard_models.dart';
 import '../../../services/table_export_service.dart';
 import '../../../widgets/table_export_actions.dart';
 import '../../../widgets/horizontal_table_scroll.dart';
@@ -9,8 +10,17 @@ import '../../../widgets/protocolflow_app_bar.dart';
 
 class PlateResultPreview extends StatefulWidget {
   final PlateLayoutWizard wizard;
+  final TestItem? manualFitItem;
+  final Map<String, String> lockedWellOwners;
+  final ValueChanged<PlateWellPosition>? onWellTap;
 
-  const PlateResultPreview({super.key, required this.wizard});
+  const PlateResultPreview({
+    super.key,
+    required this.wizard,
+    this.manualFitItem,
+    this.lockedWellOwners = const {},
+    this.onWellTap,
+  });
 
   @override
   State<PlateResultPreview> createState() => _PlateResultPreviewState();
@@ -21,7 +31,9 @@ class _PlateResultPreviewState extends State<PlateResultPreview> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.wizard.items.isEmpty) return const SizedBox.shrink();
+    if (widget.wizard.items.isEmpty && widget.manualFitItem == null) {
+      return const SizedBox.shrink();
+    }
 
     final tables = widget.wizard.generateTables();
 
@@ -81,14 +93,19 @@ class _PlateResultPreviewState extends State<PlateResultPreview> {
           TableExportActions(
             table: table,
             includeRowHeaders: true,
-            child: _buildFittedPlateBoard(table, rows, cols),
+            child: _buildFittedPlateBoard(table, rows, cols, index),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildFittedPlateBoard(ProtocolTable table, int rows, int cols) {
+  Widget _buildFittedPlateBoard(
+    ProtocolTable table,
+    int rows,
+    int cols,
+    int plateIndex,
+  ) {
     const framePadding = EdgeInsets.fromLTRB(16, 16, 16, 28);
     final boardWidth = _plateBoardWidth(cols + 1);
     final boardHeight = _plateBoardHeight(rows);
@@ -101,7 +118,7 @@ class _PlateResultPreviewState extends State<PlateResultPreview> {
         child: _buildPlateFrame(
           child: Padding(
             padding: framePadding,
-            child: _buildPlateBoard(table, rows, cols),
+            child: _buildPlateBoard(table, rows, cols, plateIndex: plateIndex),
           ),
         ),
       ),
@@ -119,7 +136,12 @@ class _PlateResultPreviewState extends State<PlateResultPreview> {
     );
   }
 
-  Widget _buildPlateBoard(ProtocolTable table, int rows, int cols) {
+  Widget _buildPlateBoard(
+    ProtocolTable table,
+    int rows,
+    int cols, {
+    int? plateIndex,
+  }) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -127,7 +149,8 @@ class _PlateResultPreviewState extends State<PlateResultPreview> {
         const SizedBox(height: 12),
         ...List.generate(
           rows,
-          (rowIndex) => _buildPlateRow(table, rowIndex, cols),
+          (rowIndex) =>
+              _buildPlateRow(table, rowIndex, cols, plateIndex: plateIndex),
         ),
       ],
     );
@@ -190,7 +213,12 @@ class _PlateResultPreviewState extends State<PlateResultPreview> {
     );
   }
 
-  Widget _buildPlateRow(ProtocolTable table, int rowIndex, int cols) {
+  Widget _buildPlateRow(
+    ProtocolTable table,
+    int rowIndex,
+    int cols, {
+    int? plateIndex,
+  }) {
     return Row(
       children: [
         SizedBox(
@@ -206,13 +234,19 @@ class _PlateResultPreviewState extends State<PlateResultPreview> {
         ),
         ...List.generate(
           cols,
-          (colIndex) => _buildWell(table, rowIndex, colIndex),
+          (colIndex) =>
+              _buildWell(table, rowIndex, colIndex, plateIndex: plateIndex),
         ),
       ],
     );
   }
 
-  Widget _buildWell(ProtocolTable table, int rowIndex, int colIndex) {
+  Widget _buildWell(
+    ProtocolTable table,
+    int rowIndex,
+    int colIndex, {
+    int? plateIndex,
+  }) {
     final content = _cellText(table, rowIndex, colIndex);
     final colorHex = _cellColor(table, rowIndex, colIndex);
     var bgColor = Colors.grey.shade50;
@@ -224,62 +258,111 @@ class _PlateResultPreviewState extends State<PlateResultPreview> {
 
     final parts = content.split('\n');
     final name = parts.isNotEmpty ? parts[0] : '';
-    final condition = parts.length > 1 ? parts[1] : '';
-    final dilution = parts.length > 2 ? parts[2] : '';
+    final firstDetail = parts.length > 1 ? parts[1] : '';
+    final secondDetail = parts.length > 2 ? parts[2] : '';
+    final manualItem = widget.manualFitItem;
+    final position = plateIndex == null
+        ? null
+        : PlateWellPosition(
+            plateIndex: plateIndex,
+            row: rowIndex,
+            column: colIndex,
+          );
+    final selected =
+        position != null &&
+        manualItem?.manualWells.any((well) => well.key == position.key) == true;
+    final lockedOwner = position == null
+        ? null
+        : widget.lockedWellOwners[position.key];
 
-    return Container(
-      width: 55,
-      height: 55,
-      margin: const EdgeInsets.all(2),
-      decoration: BoxDecoration(
-        color: bgColor,
-        shape: BoxShape.circle,
-        border: Border.all(
-          color: content.isNotEmpty
-              ? Colors.grey.shade400
-              : Colors.grey.shade200,
-          width: 1.5,
+    final well = InkWell(
+      key: position == null
+          ? null
+          : Key('manual-well-${position.plateIndex}-$rowIndex-$colIndex'),
+      onTap: manualItem == null || position == null || widget.onWellTap == null
+          ? null
+          : () => widget.onWellTap!(position),
+      customBorder: const CircleBorder(),
+      child: Container(
+        width: 55,
+        height: 55,
+        margin: const EdgeInsets.all(2),
+        decoration: BoxDecoration(
+          color: selected
+              ? _colorFromHex(manualItem!.colorHex).withValues(alpha: 0.8)
+              : bgColor,
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: selected
+                ? Colors.black87
+                : content.isNotEmpty
+                ? Colors.grey.shade400
+                : Colors.grey.shade200,
+            width: selected ? 3 : 1.5,
+          ),
+        ),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            if (content.isEmpty && selected) const Icon(Icons.check, size: 18),
+            if (content.isNotEmpty)
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (firstDetail.isNotEmpty)
+                    Text(
+                      firstDetail,
+                      style: TextStyle(
+                        fontSize: 8,
+                        color: Colors.blue.shade900,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                    child: Text(
+                      name,
+                      style: const TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (secondDetail.isNotEmpty)
+                    Text(
+                      secondDetail,
+                      style: TextStyle(
+                        fontSize: 8,
+                        color: Colors.green.shade900,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                ],
+              ),
+            if (lockedOwner != null)
+              const Positioned(
+                right: 3,
+                top: 3,
+                child: Icon(Icons.lock_outline, size: 11),
+              ),
+          ],
         ),
       ),
-      child: content.isEmpty
-          ? null
-          : Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (condition.isNotEmpty)
-                  Text(
-                    condition,
-                    style: TextStyle(
-                      fontSize: 8,
-                      color: Colors.blue.shade900,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                  child: Text(
-                    name,
-                    style: const TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (dilution.isNotEmpty)
-                  Text(
-                    dilution,
-                    style: TextStyle(
-                      fontSize: 8,
-                      color: Colors.green.shade900,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-              ],
-            ),
     );
+    return lockedOwner == null
+        ? well
+        : Tooltip(message: 'Reserved by $lockedOwner', child: well);
+  }
+
+  Color _colorFromHex(String hex) {
+    try {
+      return Color(int.parse(hex.replaceFirst('#', '0xFF')));
+    } catch (_) {
+      return Colors.blue.shade100;
+    }
   }
 
   String _cellText(ProtocolTable table, int rowIndex, int colIndex) {

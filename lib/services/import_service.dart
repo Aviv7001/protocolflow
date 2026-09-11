@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/protocol.dart';
 import '../models/completed_protocol.dart';
 import '../data/completed_protocols_data.dart';
+import 'data_validation_service.dart';
 import 'storage_service.dart';
 import 'drive_sync_service.dart';
 import 'local_backup_media_store.dart';
@@ -91,10 +92,18 @@ class ImportService {
     try {
       if (jsonData is Map<String, dynamic>) {
         if (jsonData['format'] == 'protocolflow-local-backup') {
-          return _restoreLocalBackup(jsonData, confirmRestore, sourceFileName);
+          return await _restoreLocalBackup(
+            jsonData,
+            confirmRestore,
+            sourceFileName,
+          );
         }
         if (jsonData['format'] == 'protocolflow-drive-backup') {
-          return _restoreDriveBackup(jsonData, confirmRestore, sourceFileName);
+          return await _restoreDriveBackup(
+            jsonData,
+            confirmRestore,
+            sourceFileName,
+          );
         }
         // Check if it's a full backup
         if (jsonData.containsKey('templates') ||
@@ -151,6 +160,10 @@ class ImportService {
       decoded[entry.key] = _decodePreference(
         Map<String, dynamic>.from(entry.value as Map),
       );
+      DataValidationService.validateLocalBackupPreference(
+        entry.key,
+        decoded[entry.key]!,
+      );
     }
 
     final preview = _localBackupPreview(data, decoded, sourceFileName);
@@ -186,6 +199,12 @@ class ImportService {
     String sourceFileName,
   ) async {
     final backup = DriveAppDataBackup.fromJson(data);
+    for (final file in backup.files) {
+      DataValidationService.validateDriveAppDataFile(
+        name: file.name,
+        content: file.content,
+      );
+    }
     final preview = BackupRestorePreview(
       target: BackupRestoreTarget.drive,
       sourceFileName: sourceFileName,
@@ -344,6 +363,7 @@ class ImportService {
       final List<Protocol> imported = templatesJson
           .map((j) => Protocol.fromJson(j))
           .toList();
+      DataValidationService.validateProtocols(imported);
       final existing = await _storageService.loadProtocols();
 
       for (var p in imported) {
@@ -360,6 +380,7 @@ class ImportService {
       final List<CompletedProtocol> imported = historyJson
           .map((j) => CompletedProtocol.fromJson(j))
           .toList();
+      DataValidationService.validateCompletedProtocols(imported);
 
       for (var p in imported) {
         if (!completedProtocols.any((e) => e.id == p.id)) {
@@ -379,6 +400,7 @@ class ImportService {
 
   Future<ImportResult> _importSingleTemplate(Map<String, dynamic> json) async {
     final protocol = Protocol.fromJson(json);
+    DataValidationService.validateProtocol(protocol);
     final existing = await _storageService.loadProtocols();
 
     if (existing.any((e) => e.id == protocol.id)) {
@@ -398,6 +420,7 @@ class ImportService {
 
   Future<ImportResult> _importSingleHistory(Map<String, dynamic> json) async {
     final completed = CompletedProtocol.fromJson(json);
+    DataValidationService.validateCompletedProtocol(completed);
 
     if (completedProtocols.any((e) => e.id == completed.id)) {
       return ImportResult(
@@ -418,6 +441,7 @@ class ImportService {
     final List<Protocol> imported = list
         .map((j) => Protocol.fromJson(j))
         .toList();
+    DataValidationService.validateProtocols(imported);
     final existing = await _storageService.loadProtocols();
     int count = 0;
 
@@ -438,6 +462,7 @@ class ImportService {
     final List<CompletedProtocol> imported = list
         .map((j) => CompletedProtocol.fromJson(j))
         .toList();
+    DataValidationService.validateCompletedProtocols(imported);
     int count = 0;
 
     for (var p in imported) {

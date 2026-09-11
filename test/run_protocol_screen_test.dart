@@ -14,11 +14,69 @@ import 'package:protocolflow/widgets/protocolflow_app_bar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  testWidgets('saving a user step note persists it in the active run', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    activeProtocol = null;
+    runningProtocols = [];
+    completedProtocols = [];
+    addTearDown(() {
+      activeProtocol = null;
+      runningProtocols = [];
+      completedProtocols = [];
+    });
+
+    final protocol = Protocol(
+      id: 'note-protocol',
+      title: 'Note Protocol',
+      objective: '',
+      description: '',
+      steps: [
+        ProtocolStep(
+          id: 'note-step',
+          title: 'Record result',
+          instructions: '',
+          actionItems: const [],
+          materials: const [],
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RunProtocolScreen(protocol: protocol, initialStepIndex: 0),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Add note'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byType(TextField),
+      'Observed clear supernatant',
+    );
+    await tester.tap(find.widgetWithText(TextButton, 'Save'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Observed clear supernatant'), findsOneWidget);
+    expect(activeProtocol?.notes, hasLength(1));
+    expect(activeProtocol?.notes.single.stepId, 'note-step');
+    expect(activeProtocol?.notes.single.note, 'Observed clear supernatant');
+
+    await loadPersistentProtocols();
+    expect(activeProtocol?.notes, hasLength(1));
+    expect(activeProtocol?.notes.single.note, 'Observed clear supernatant');
+  });
+
   testWidgets('files action shows unlinked protocol tables', (tester) async {
     SharedPreferences.setMockInitialValues({});
     activeProtocol = null;
     runningProtocols = [];
     completedProtocols = [];
+    const protocolImage =
+        'data:image/png;base64,'
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
 
     final linkedTable = ProtocolTable(
       id: 'linked-table',
@@ -57,11 +115,13 @@ void main() {
           actionItems: [],
           materials: [],
           tableIds: ['linked-table'],
+          attachedFiles: const [protocolImage],
         ),
       ],
       materialListTableId: 'materials',
       tables: [linkedTable, unlinkedTable, materialList],
-      files: const ['safety-notes.pdf'],
+      files: const [protocolImage],
+      imageNames: const ['Safety setup'],
       additionalData: [
         ProtocolAdditionalData(
           id: 'data-1',
@@ -80,6 +140,14 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+
+    expect(find.text('Linked images'), findsOneWidget);
+    expect(find.text('1. Safety setup'), findsOneWidget);
+    expect(find.text(protocolImage), findsNothing);
+    expect(
+      tester.getSize(find.byKey(const Key('preview-run-step-image-1'))),
+      const Size.square(112),
+    );
 
     await tester.tap(find.byTooltip('Files'));
     await tester.pumpAndSettle();
@@ -121,13 +189,26 @@ void main() {
     await tester.drag(resourceList.first, const Offset(0, -600));
     await tester.pumpAndSettle();
     expect(
-      find.descendant(of: sheet, matching: find.text('Attached Files')),
+      find.descendant(of: sheet, matching: find.text('Images / Figures')),
       findsOneWidget,
     );
     expect(
-      find.descendant(of: sheet, matching: find.text('safety-notes.pdf')),
+      find.descendant(of: sheet, matching: find.text('1. Safety setup')),
       findsOneWidget,
     );
+    expect(
+      find.descendant(of: sheet, matching: find.text(protocolImage)),
+      findsNothing,
+    );
+
+    final resourceImage = find.byKey(const Key('preview-run-resource-image-1'));
+    await tester.ensureVisible(resourceImage);
+    await tester.pumpAndSettle();
+    await tester.tap(resourceImage);
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Close preview'), findsOneWidget);
+    await tester.tap(find.byTooltip('Close preview'));
+    await tester.pumpAndSettle();
   });
 
   testWidgets('run protocol uses responsive execution workspace', (

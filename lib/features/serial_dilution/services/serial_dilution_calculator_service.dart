@@ -84,9 +84,7 @@ class SerialDilutionCalculatorService {
       startingUnit,
     );
     final seriesSourceBase = isSolidSource ? startingBase : stockBase;
-    final displayUnit = isSolidSource
-        ? startingUnit
-        : input.stockConcentrationUnit;
+    final displayUnit = startingUnit;
     if (startingBase <= 0) {
       return SerialDilutionResult(
         success: false,
@@ -139,9 +137,9 @@ class SerialDilutionCalculatorService {
                 ? 'Stock'
                 : input.stockSolutionName,
             concentrationBaseUnit: stockBase,
-            formattedConcentration: _formatConcentration(
+            formattedConcentration: _formatAdaptiveConcentration(
               stockBase,
-              input.stockConcentrationUnit,
+              displayUnit,
             ),
             transferFrom: '-',
             transferVolumeUl: 0,
@@ -155,6 +153,7 @@ class SerialDilutionCalculatorService {
       }
       final warnings = <String>[];
       final evaluations = <TransferEvaluationResult>[];
+      IntermediateDilutionSuggestion? d0IntermediateSuggestion;
 
       SerialDilutionRow buildMeasuredRow({
         required String name,
@@ -164,15 +163,18 @@ class SerialDilutionCalculatorService {
         required double solventVolumeUl,
         required double finalVolumeUl,
         bool isZeroConcentrationRow = false,
+        double? sourceConcentrationBase,
+        bool skipVolumeEvaluation = false,
       }) {
         final sourceBase =
-            transferFrom == 'Stock' ||
-                transferFrom == input.stockSolutionName ||
-                transferFrom == '-' ||
-                (isSolidSource && transferFrom == 'D0')
-            ? seriesSourceBase
-            : concentrationBase * input.dilutionFactor;
-        final suggestionMessage = transferVolumeUl > 0
+            sourceConcentrationBase ??
+            (transferFrom == 'Stock' ||
+                    transferFrom == input.stockSolutionName ||
+                    transferFrom == '-' ||
+                    (isSolidSource && transferFrom == 'D0')
+                ? seriesSourceBase
+                : concentrationBase * input.dilutionFactor);
+        final suggestionMessage = transferVolumeUl > 0 && !skipVolumeEvaluation
             ? _optimizer.suggestIntermediateDilution(
                 sourceConcentrationBase: sourceBase,
                 targetConcentrationBase: concentrationBase,
@@ -181,7 +183,7 @@ class SerialDilutionCalculatorService {
               )
             : null;
 
-        final transferEvaluation = transferVolumeUl > 0
+        final transferEvaluation = transferVolumeUl > 0 && !skipVolumeEvaluation
             ? _optimizer.evaluateTransferVolume(
                 transferVolumeUl,
                 tools,
@@ -189,7 +191,7 @@ class SerialDilutionCalculatorService {
                 intermediateSuggestion: suggestionMessage,
               )
             : null;
-        final solventEvaluation = solventVolumeUl > 0
+        final solventEvaluation = solventVolumeUl > 0 && !skipVolumeEvaluation
             ? _optimizer.evaluateTransferVolume(solventVolumeUl, tools)
             : null;
 
@@ -223,7 +225,7 @@ class SerialDilutionCalculatorService {
         return SerialDilutionRow(
           dilutionName: name,
           concentrationBaseUnit: concentrationBase,
-          formattedConcentration: _formatConcentration(
+          formattedConcentration: _formatAdaptiveConcentration(
             concentrationBase,
             displayUnit,
           ),
@@ -266,9 +268,9 @@ class SerialDilutionCalculatorService {
           SerialDilutionRow(
             dilutionName: 'D0',
             concentrationBaseUnit: startingBase,
-            formattedConcentration: _formatConcentration(
+            formattedConcentration: _formatAdaptiveConcentration(
               startingBase,
-              startingUnit,
+              displayUnit,
             ),
             transferFrom: input.stockSolutionName.isEmpty
                 ? 'Solid material'
@@ -291,18 +293,75 @@ class SerialDilutionCalculatorService {
         final d0TransferVolumeUl =
             preparedVolumeUl * (startingBase / stockBase);
         final d0SolventVolumeUl = preparedVolumeUl - d0TransferVolumeUl;
-        rows.add(
-          buildMeasuredRow(
-            name: 'D0',
-            concentrationBase: startingBase,
-            transferFrom: input.stockSolutionName.isEmpty
-                ? 'Stock'
-                : input.stockSolutionName,
-            transferVolumeUl: d0TransferVolumeUl,
-            solventVolumeUl: d0SolventVolumeUl,
-            finalVolumeUl: preparedVolumeUl,
-          ),
+        final stockName = input.stockSolutionName.isEmpty
+            ? 'Stock'
+            : input.stockSolutionName;
+        final d0SuggestionMessage = _optimizer.suggestIntermediateDilution(
+          sourceConcentrationBase: stockBase,
+          targetConcentrationBase: startingBase,
+          totalVolumeUl: preparedVolumeUl,
+          tools: tools,
         );
+        final d0Evaluation = _optimizer.evaluateTransferVolume(
+          d0TransferVolumeUl,
+          tools,
+          componentName: 'D0',
+          intermediateSuggestion: d0SuggestionMessage,
+        );
+        if (d0Evaluation.suggestionMessage != null) {
+          d0IntermediateSuggestion =
+              LabCalculation.intermediateDilutionSuggestion(
+                stockConcentrationBase: stockBase,
+                targetConcentrationBase: startingBase,
+                targetDisplayUnit: displayUnit,
+                totalVolumeUl: preparedVolumeUl,
+              );
+        }
+
+        if (input.includeD0IntermediateDilution &&
+            d0IntermediateSuggestion != null) {
+          final intermediateBase = _convertToBaseConc(
+            d0IntermediateSuggestion.intermediateStockConcentration,
+            d0IntermediateSuggestion.intermediateStockUnit,
+          );
+          final intermediateFinalVolumeUl =
+              d0IntermediateSuggestion.dilutionFactorFromStock;
+          const intermediateTransferVolumeUl = 1.0;
+          rows.add(
+            buildMeasuredRow(
+              name: 'D0 intermediate',
+              concentrationBase: intermediateBase,
+              transferFrom: stockName,
+              transferVolumeUl: intermediateTransferVolumeUl,
+              solventVolumeUl:
+                  intermediateFinalVolumeUl - intermediateTransferVolumeUl,
+              finalVolumeUl: intermediateFinalVolumeUl,
+              skipVolumeEvaluation: true,
+            ),
+          );
+          rows.add(
+            buildMeasuredRow(
+              name: 'D0',
+              concentrationBase: startingBase,
+              transferFrom: 'D0 intermediate',
+              transferVolumeUl: d0IntermediateSuggestion.finalTransferVolumeUl,
+              solventVolumeUl: d0IntermediateSuggestion.finalSolventVolumeUl,
+              finalVolumeUl: preparedVolumeUl,
+              sourceConcentrationBase: intermediateBase,
+            ),
+          );
+        } else {
+          rows.add(
+            buildMeasuredRow(
+              name: 'D0',
+              concentrationBase: startingBase,
+              transferFrom: stockName,
+              transferVolumeUl: d0TransferVolumeUl,
+              solventVolumeUl: d0SolventVolumeUl,
+              finalVolumeUl: preparedVolumeUl,
+            ),
+          );
+        }
       }
 
       for (var i = 1; i <= dilutionCount.count; i++) {
@@ -352,6 +411,10 @@ class SerialDilutionCalculatorService {
         rows: rows,
         warnings: warnings.toSet().toList(),
         summary: _optimizer.evaluateMixVolumes(evaluations),
+        d0IntermediateSuggestion: d0IntermediateSuggestion,
+        includesD0IntermediateDilution:
+            input.includeD0IntermediateDilution &&
+            d0IntermediateSuggestion != null,
       );
     }
 
@@ -390,6 +453,8 @@ class SerialDilutionCalculatorService {
       warnings: selected.warnings,
       selectedExtraVolumePercent: selected.extraPercent,
       autoExtraVolumeReason: selected.autoReason,
+      d0IntermediateSuggestion: selected.d0IntermediateSuggestion,
+      includesD0IntermediateDilution: selected.includesD0IntermediateDilution,
     );
   }
 
@@ -502,6 +567,91 @@ class SerialDilutionCalculatorService {
     return LabCalculation.formatConcentration(baseValue, unit);
   }
 
+  String _formatAdaptiveConcentration(
+    double baseValue,
+    ConcentrationUnit preferredUnit,
+  ) {
+    return _formatConcentration(
+      baseValue,
+      _adaptiveConcentrationUnit(baseValue, preferredUnit),
+    );
+  }
+
+  ConcentrationUnit _adaptiveConcentrationUnit(
+    double baseValue,
+    ConcentrationUnit preferredUnit,
+  ) {
+    const minimumDisplayValue = 0.001;
+    const maximumDisplayValue = 999.999;
+    final units = switch (preferredUnit) {
+      ConcentrationUnit.M ||
+      ConcentrationUnit.mM ||
+      ConcentrationUnit.uM ||
+      ConcentrationUnit.nM ||
+      ConcentrationUnit.pM => const [
+        ConcentrationUnit.M,
+        ConcentrationUnit.mM,
+        ConcentrationUnit.uM,
+        ConcentrationUnit.nM,
+        ConcentrationUnit.pM,
+      ],
+      ConcentrationUnit.gL ||
+      ConcentrationUnit.mgL ||
+      ConcentrationUnit.ugL ||
+      ConcentrationUnit.ngL => const [
+        ConcentrationUnit.gL,
+        ConcentrationUnit.mgL,
+        ConcentrationUnit.ugL,
+        ConcentrationUnit.ngL,
+      ],
+      ConcentrationUnit.gML ||
+      ConcentrationUnit.mgML ||
+      ConcentrationUnit.ugML ||
+      ConcentrationUnit.ngML => const [
+        ConcentrationUnit.gML,
+        ConcentrationUnit.mgML,
+        ConcentrationUnit.ugML,
+        ConcentrationUnit.ngML,
+      ],
+      ConcentrationUnit.gUL ||
+      ConcentrationUnit.mgUL ||
+      ConcentrationUnit.ugUL ||
+      ConcentrationUnit.ngUL => const [
+        ConcentrationUnit.gUL,
+        ConcentrationUnit.mgUL,
+        ConcentrationUnit.ugUL,
+        ConcentrationUnit.ngUL,
+      ],
+      _ => const <ConcentrationUnit>[],
+    };
+    if (units.isEmpty || baseValue == 0) return preferredUnit;
+
+    final preferredValue = _convertFromBaseConc(baseValue, preferredUnit).abs();
+    if (preferredValue >= minimumDisplayValue &&
+        preferredValue <= maximumDisplayValue) {
+      return preferredUnit;
+    }
+
+    final preferredIndex = units.indexOf(preferredUnit);
+    if (preferredValue > maximumDisplayValue) {
+      for (var index = preferredIndex - 1; index >= 0; index--) {
+        final value = _convertFromBaseConc(baseValue, units[index]).abs();
+        if (value >= minimumDisplayValue && value <= maximumDisplayValue) {
+          return units[index];
+        }
+      }
+      return units.first;
+    }
+
+    for (var index = preferredIndex + 1; index < units.length; index++) {
+      final value = _convertFromBaseConc(baseValue, units[index]).abs();
+      if (value >= minimumDisplayValue && value <= maximumDisplayValue) {
+        return units[index];
+      }
+    }
+    return units.last;
+  }
+
   String _formatVolume(double ul) {
     return LabCalculation.formatVolume(ul, unicodeMicro: true);
   }
@@ -519,6 +669,8 @@ class _SerialDilutionCandidate {
   final List<String> warnings;
   final MixEvaluationSummary summary;
   final String? autoReason;
+  final IntermediateDilutionSuggestion? d0IntermediateSuggestion;
+  final bool includesD0IntermediateDilution;
 
   const _SerialDilutionCandidate({
     required this.extraPercent,
@@ -528,6 +680,8 @@ class _SerialDilutionCandidate {
     required this.warnings,
     required this.summary,
     this.autoReason,
+    this.d0IntermediateSuggestion,
+    this.includesD0IntermediateDilution = false,
   });
 
   factory _SerialDilutionCandidate.invalid(double extraPercent) {
@@ -555,6 +709,8 @@ class _SerialDilutionCandidate {
       warnings: warnings,
       summary: summary,
       autoReason: autoReason ?? this.autoReason,
+      d0IntermediateSuggestion: d0IntermediateSuggestion,
+      includesD0IntermediateDilution: includesD0IntermediateDilution,
     );
   }
 }

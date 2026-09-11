@@ -33,15 +33,24 @@ class _StainingTableManagerScreenState
       StainingTableGeneratorService();
   static const double _uniformFontSize = 14.0;
   bool _canActuallyPop = false;
+  final List<Key> _chainReorderKeys = [];
+  final List<Key> _sampleReorderKeys = [];
 
   @override
   void initState() {
     super.initState();
     _wizard = widget.wizard;
+    _chainReorderKeys.addAll(
+      List<Key>.generate(_wizard.panel.length, (_) => UniqueKey()),
+    );
+    _sampleReorderKeys.addAll(
+      List<Key>.generate(_wizard.samples.length, (_) => UniqueKey()),
+    );
   }
 
   void _addChain() {
     setState(() {
+      _chainReorderKeys.add(UniqueKey());
       final newPanel = List<StainChain>.from(_wizard.panel);
       newPanel.add(
         StainChain(
@@ -59,6 +68,7 @@ class _StainingTableManagerScreenState
 
   void _removeChain(int index) {
     setState(() {
+      _chainReorderKeys.removeAt(index);
       final chainId = _wizard.panel[index].id;
       final newPanel = List<StainChain>.from(_wizard.panel)..removeAt(index);
       final newSamples = _wizard.samples.map((s) {
@@ -88,12 +98,15 @@ class _StainingTableManagerScreenState
       final newPanel = List<StainChain>.from(_wizard.panel);
       final chain = newPanel.removeAt(fromIndex);
       newPanel.insert(toIndex, chain);
+      final key = _chainReorderKeys.removeAt(fromIndex);
+      _chainReorderKeys.insert(toIndex, key);
       _wizard = _wizard.copyWith(panel: newPanel);
     });
   }
 
   void _addSample() {
     setState(() {
+      _sampleReorderKeys.add(UniqueKey());
       final newSamples = List<StainingSample>.from(_wizard.samples);
       newSamples.add(
         StainingSample(
@@ -107,6 +120,7 @@ class _StainingTableManagerScreenState
 
   void _removeSample(int index) {
     setState(() {
+      _sampleReorderKeys.removeAt(index);
       final newSamples = List<StainingSample>.from(_wizard.samples)
         ..removeAt(index);
       _wizard = _wizard.copyWith(samples: newSamples);
@@ -127,6 +141,8 @@ class _StainingTableManagerScreenState
       final newSamples = List<StainingSample>.from(_wizard.samples);
       final sample = newSamples.removeAt(fromIndex);
       newSamples.insert(toIndex, sample);
+      final key = _sampleReorderKeys.removeAt(fromIndex);
+      _sampleReorderKeys.insert(toIndex, key);
       _wizard = _wizard.copyWith(samples: newSamples);
     });
   }
@@ -161,8 +177,14 @@ class _StainingTableManagerScreenState
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 12),
-              ..._wizard.panel.asMap().entries.map(
-                (entry) => _buildChainCard(entry.key, entry.value),
+              ListView.builder(
+                key: const Key('stain-chain-list'),
+                primary: false,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _wizard.panel.length,
+                itemBuilder: (context, index) =>
+                    _buildChainCard(index, _wizard.panel[index]),
               ),
               Padding(
                 padding: const EdgeInsets.only(top: 8.0),
@@ -183,8 +205,14 @@ class _StainingTableManagerScreenState
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 12),
-              ..._wizard.samples.asMap().entries.map(
-                (entry) => _buildSampleCard(entry.key, entry.value),
+              ListView.builder(
+                key: const Key('staining-sample-list'),
+                primary: false,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _wizard.samples.length,
+                itemBuilder: (context, index) =>
+                    _buildSampleCard(index, _wizard.samples[index]),
               ),
               Padding(
                 padding: const EdgeInsets.only(top: 8.0),
@@ -297,6 +325,7 @@ class _StainingTableManagerScreenState
 
   Widget _buildChainCard(int index, StainChain chain) {
     return Card(
+      key: _chainReorderKeys[index],
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
         padding: const EdgeInsets.all(12.0),
@@ -553,6 +582,7 @@ class _StainingTableManagerScreenState
 
   Widget _buildSampleCard(int sampleIndex, StainingSample sample) {
     return Card(
+      key: _sampleReorderKeys[sampleIndex],
       margin: const EdgeInsets.only(bottom: 12),
       child: Column(
         children: [

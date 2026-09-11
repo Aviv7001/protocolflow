@@ -10,6 +10,7 @@ class ConcentrationInputRow extends StatefulWidget {
   final ValueChanged<double> onValueChanged;
   final ValueChanged<ConcentrationUnit> onUnitChanged;
   final double fontSize;
+  final bool separateUnitParts;
 
   const ConcentrationInputRow({
     super.key,
@@ -20,6 +21,7 @@ class ConcentrationInputRow extends StatefulWidget {
     required this.onValueChanged,
     required this.onUnitChanged,
     this.fontSize = 14,
+    this.separateUnitParts = false,
   });
 
   @override
@@ -139,7 +141,12 @@ class _ConcentrationInputRowState extends State<ConcentrationInputRow> {
           ],
         );
 
-        if (constraints.maxWidth < 520) {
+        final canKeepSplitUnitsInline =
+            widget.separateUnitParts &&
+            !_isCells &&
+            constraints.maxWidth >= 300;
+
+        if (constraints.maxWidth < 520 && !canKeepSplitUnitsInline) {
           return Column(
             children: [
               valueAndExponent,
@@ -151,9 +158,15 @@ class _ConcentrationInputRowState extends State<ConcentrationInputRow> {
 
         return Row(
           children: [
-            Expanded(flex: _isCells ? 3 : 2, child: valueAndExponent),
+            Expanded(
+              flex: canKeepSplitUnitsInline ? 2 : (_isCells ? 3 : 2),
+              child: valueAndExponent,
+            ),
             const SizedBox(width: 12),
-            Expanded(flex: _isCells ? 2 : 1, child: _buildUnitField()),
+            Expanded(
+              flex: canKeepSplitUnitsInline ? 3 : (_isCells ? 2 : 1),
+              child: _buildUnitField(),
+            ),
           ],
         );
       },
@@ -188,6 +201,7 @@ class _ConcentrationInputRowState extends State<ConcentrationInputRow> {
   }
 
   Widget _buildUnitField() {
+    if (widget.separateUnitParts) return _buildSeparatedUnitFields();
     return DropdownButtonFormField<ConcentrationUnit>(
       key: ValueKey('${widget.label}_${widget.unit.name}'),
       initialValue: widget.unit,
@@ -207,5 +221,122 @@ class _ConcentrationInputRowState extends State<ConcentrationInputRow> {
         if (unit != null) widget.onUnitChanged(unit);
       },
     );
+  }
+
+  Widget _buildSeparatedUnitFields() {
+    final currentParts = _unitParts(widget.unit);
+    final numeratorLabels = <String>[];
+    for (final unit in widget.units) {
+      final numerator = _unitParts(unit).numerator;
+      if (!numeratorLabels.contains(numerator)) numeratorLabels.add(numerator);
+    }
+    final denominatorUnits = widget.units
+        .where(
+          (unit) =>
+              _unitParts(unit).numerator == currentParts.numerator &&
+              _unitParts(unit).denominator != null,
+        )
+        .toList();
+
+    return Row(
+      children: [
+        Expanded(
+          child: DropdownButtonFormField<String>(
+            key: ValueKey(
+              '${widget.label}_numerator_${currentParts.numerator}',
+            ),
+            initialValue: currentParts.numerator,
+            isExpanded: true,
+            decoration: const InputDecoration(labelText: 'Numerator'),
+            items: numeratorLabels
+                .map(
+                  (numerator) => DropdownMenuItem(
+                    value: numerator,
+                    child: Text(
+                      numerator,
+                      style: TextStyle(fontSize: widget.fontSize),
+                    ),
+                  ),
+                )
+                .toList(),
+            onChanged: (numerator) {
+              if (numerator == null) return;
+              final matchingUnits = widget.units
+                  .where((unit) => _unitParts(unit).numerator == numerator)
+                  .toList();
+              final matchingDenominator = matchingUnits.where(
+                (unit) =>
+                    _unitParts(unit).denominator == currentParts.denominator,
+              );
+              widget.onUnitChanged(
+                matchingDenominator.isNotEmpty
+                    ? matchingDenominator.first
+                    : matchingUnits.first,
+              );
+            },
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 8),
+          child: Text('/', style: TextStyle(fontSize: 28)),
+        ),
+        Expanded(
+          child: currentParts.denominator == null
+              ? const InputDecorator(
+                  decoration: InputDecoration(labelText: 'Denominator'),
+                  child: Text('—'),
+                )
+              : DropdownButtonFormField<ConcentrationUnit>(
+                  key: ValueKey(
+                    '${widget.label}_denominator_${widget.unit.name}',
+                  ),
+                  initialValue: widget.unit,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'Denominator'),
+                  items: denominatorUnits
+                      .map(
+                        (unit) => DropdownMenuItem(
+                          value: unit,
+                          child: Text(
+                            _unitParts(unit).denominator!,
+                            style: TextStyle(fontSize: widget.fontSize),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (unit) {
+                    if (unit != null) widget.onUnitChanged(unit);
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  ({String numerator, String? denominator}) _unitParts(ConcentrationUnit unit) {
+    return switch (unit) {
+      ConcentrationUnit.M => (numerator: 'mol', denominator: 'L'),
+      ConcentrationUnit.mM => (numerator: 'mmol', denominator: 'L'),
+      ConcentrationUnit.uM => (numerator: 'µmol', denominator: 'L'),
+      ConcentrationUnit.nM => (numerator: 'nmol', denominator: 'L'),
+      ConcentrationUnit.pM => (numerator: 'pmol', denominator: 'L'),
+      ConcentrationUnit.gL => (numerator: 'g', denominator: 'L'),
+      ConcentrationUnit.gML => (numerator: 'g', denominator: 'mL'),
+      ConcentrationUnit.gUL => (numerator: 'g', denominator: 'µL'),
+      ConcentrationUnit.mgL => (numerator: 'mg', denominator: 'L'),
+      ConcentrationUnit.mgML => (numerator: 'mg', denominator: 'mL'),
+      ConcentrationUnit.mgUL => (numerator: 'mg', denominator: 'µL'),
+      ConcentrationUnit.ugL => (numerator: 'µg', denominator: 'L'),
+      ConcentrationUnit.ugML => (numerator: 'µg', denominator: 'mL'),
+      ConcentrationUnit.ugUL => (numerator: 'µg', denominator: 'µL'),
+      ConcentrationUnit.ngL => (numerator: 'ng', denominator: 'L'),
+      ConcentrationUnit.ngML => (numerator: 'ng', denominator: 'mL'),
+      ConcentrationUnit.ngUL => (numerator: 'ng', denominator: 'µL'),
+      ConcentrationUnit.percent => (numerator: '%', denominator: null),
+      ConcentrationUnit.X => (numerator: 'X', denominator: null),
+      ConcentrationUnit.ratio => (numerator: 'Ratio', denominator: null),
+      ConcentrationUnit.cellsML => (numerator: 'cells', denominator: 'mL'),
+      ConcentrationUnit.gMol => (numerator: 'g', denominator: 'mol'),
+    };
   }
 }

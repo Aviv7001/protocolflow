@@ -326,16 +326,15 @@ class MasterMixCalculatorService {
             formattedReagentVolume: formattedAmount,
             formattedStockConcentration:
                 param.input.sourceType == ReagentSourceType.solidMaterial
-                ? 'Solid material'
+                ? param.input.molecularWeight != null &&
+                          param.input.molecularWeight! > 0
+                      ? '${_formatMolecularWeight(param.input.molecularWeight!)} g/mol'
+                      : 'Solid material'
                 : LabCalculation.formatInputConcentration(
                     param.input.stockConcentration,
                     param.input.stockConcentrationUnit,
                   ),
-            formattedFinalConcentration:
-                LabCalculation.formatInputConcentration(
-                  param.input.finalConcentration,
-                  param.input.finalConcentrationUnit,
-                ),
+            formattedFinalConcentration: _formatFinalConcentration(param.input),
             warnings: reagentWarnings,
             suggestions: reagentSuggestions,
             massEvaluation: massEvaluation,
@@ -434,6 +433,19 @@ class MasterMixCalculatorService {
       return 0;
     }
 
+    if (stockFamily != finalFamily &&
+        finalFamily == ConcentrationFamily.percentage) {
+      return reagent.finalConcentration / 100;
+    }
+
+    if (stockFamily != finalFamily &&
+        finalFamily == ConcentrationFamily.ratio) {
+      return LabCalculation.concentrationToBase(
+        reagent.finalConcentration,
+        reagent.finalConcentrationUnit,
+      );
+    }
+
     if (stockFamily == finalFamily) {
       final stockBase = LabCalculation.concentrationToBase(
         reagent.stockConcentration,
@@ -527,6 +539,12 @@ class MasterMixCalculatorService {
         (stockFamily == ConcentrationFamily.massVolume &&
             finalFamily == ConcentrationFamily.molar);
 
+    if (stockFamily != finalFamily &&
+        (finalFamily == ConcentrationFamily.percentage ||
+            finalFamily == ConcentrationFamily.ratio)) {
+      return _stockBase(reagent) * _calculateConcentrationRatio(reagent);
+    }
+
     if (isMolarMassPair) {
       if (mw == null || mw <= 0) {
         return 0;
@@ -548,6 +566,38 @@ class MasterMixCalculatorService {
       reagent.finalConcentrationUnit,
       molecularWeight: mw,
     );
+  }
+
+  String _formatFinalConcentration(MasterMixReagentInput reagent) {
+    final stockFamily = LabCalculation.familyOf(reagent.stockConcentrationUnit);
+    final finalFamily = LabCalculation.familyOf(reagent.finalConcentrationUnit);
+    if (stockFamily != finalFamily &&
+        (finalFamily == ConcentrationFamily.percentage ||
+            finalFamily == ConcentrationFamily.ratio)) {
+      final derivedFinalBase =
+          _stockBase(reagent) * _calculateConcentrationRatio(reagent);
+      final derivedFinal = LabCalculation.formatConcentration(
+        derivedFinalBase,
+        reagent.stockConcentrationUnit,
+      );
+      final relativeInput = LabCalculation.formatInputConcentration(
+        reagent.finalConcentration,
+        reagent.finalConcentrationUnit,
+      );
+      return '$derivedFinal ($relativeInput of C1)';
+    }
+
+    return LabCalculation.formatInputConcentration(
+      reagent.finalConcentration,
+      reagent.finalConcentrationUnit,
+    );
+  }
+
+  String _formatMolecularWeight(double value) {
+    return value
+        .toStringAsFixed(4)
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
   }
 
   double? _calculateMassGrams(

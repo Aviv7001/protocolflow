@@ -175,10 +175,7 @@ class PlateWizardService {
 
           grid[startR + relR][startC + relC] = WellContent(
             sampleName: sample.name,
-            conditionIndex: cIdx,
-            conditionName: sample.conditions[cIdx],
-            dilutionIndex: dIdx,
-            dilutionName: sample.dilutions[dIdx],
+            variableValues: [sample.conditions[cIdx], sample.dilutions[dIdx]],
             duplicateIndex: rIdx,
           );
         }

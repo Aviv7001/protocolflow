@@ -75,7 +75,7 @@ void main() {
     expect(find.byKey(const Key('save-table-dialog')), findsNothing);
   });
 
-  testWidgets('wide plate manager puts layout directions above the plate', (
+  testWidgets('wide plate manager uses independent columns and auto-fit', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1400, 1000));
@@ -91,14 +91,20 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final directionsTop = tester.getTopLeft(find.text('Layout Directions')).dy;
-    final directionsLeft = tester.getTopLeft(find.text('Layout Directions')).dx;
+    final autoFitTop = tester.getTopLeft(find.text('Auto-fit all')).dy;
+    final autoFitLeft = tester.getTopLeft(find.text('Auto-fit all')).dx;
     final configurationLeft = tester
         .getTopLeft(find.text('Plate Configuration'))
         .dx;
     final plateTop = tester.getTopLeft(find.text('Plate Layout').last).dy;
-    expect(directionsTop, lessThan(plateTop));
-    expect(directionsLeft, greaterThan(configurationLeft));
+    expect(autoFitTop, lessThan(plateTop));
+    expect(autoFitLeft, greaterThan(configurationLeft));
+    expect(find.text('Layout Directions'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('controls-column-scroll')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('preview-column-scroll')), findsOneWidget);
   });
 
   testWidgets('imported plate samples remain editable with plate settings', (

@@ -42,6 +42,7 @@ class Protocol {
   final String? materialListTableId;
   final List<String> samples;
   final List<String> files;
+  final List<String> imageNames;
   final List<ProtocolStep> steps;
   final List<ProtocolTable> tables;
   final List<ProtocolAdditionalData> additionalData;
@@ -67,6 +68,7 @@ class Protocol {
     this.materialListTableId,
     this.samples = const [],
     this.files = const [],
+    this.imageNames = const [],
     required this.steps,
     this.tables = const [],
     this.additionalData = const [],
@@ -107,6 +109,17 @@ class Protocol {
     );
   }
 
+  ProtocolTable? get sampleListTable {
+    for (final table in tables) {
+      if (isSampleListTable(table)) return table;
+    }
+    if (samples.isEmpty) return null;
+    return createSampleListTable(
+      id: 'sample_list_$id',
+      data: samples.map<List<dynamic>>((sample) => [sample, '']).toList(),
+    );
+  }
+
   Protocol copyWith({
     String? id,
     String? title,
@@ -125,6 +138,7 @@ class Protocol {
     String? materialListTableId,
     List<String>? samples,
     List<String>? files,
+    List<String>? imageNames,
     List<ProtocolStep>? steps,
     List<ProtocolTable>? tables,
     List<ProtocolAdditionalData>? additionalData,
@@ -154,6 +168,7 @@ class Protocol {
       materialListTableId: materialListTableId ?? this.materialListTableId,
       samples: List<String>.from(samples ?? this.samples),
       files: List<String>.from(files ?? this.files),
+      imageNames: List<String>.from(imageNames ?? this.imageNames),
       steps: (steps ?? this.steps).map((s) => s.deepCopy()).toList(),
       tables: (tables ?? this.tables).map((t) => t.deepCopy()).toList(),
       additionalData: (additionalData ?? this.additionalData)
@@ -193,6 +208,7 @@ class Protocol {
       'materialListTableId': materialListTableId,
       'samples': samples,
       'files': files,
+      'imageNames': imageNames,
       'steps': steps.map((s) => s.toJson()).toList(),
       'tables': tables.map((t) => t.toJson()).toList(),
       'additionalData': additionalData.map((d) => d.toJson()).toList(),
@@ -236,6 +252,7 @@ class Protocol {
       materialListTableId: materialListTableId,
       samples: List<String>.from(json['samples'] ?? []),
       files: List<String>.from(json['files'] ?? []),
+      imageNames: _parseImageNames(json['imageNames'], json['files']),
       steps: (json['steps'] as List? ?? [])
           .map((s) => ProtocolStep.fromJson(s))
           .toList(),
@@ -255,6 +272,15 @@ class Protocol {
             )
           : null,
     );
+  }
+
+  static List<String> _parseImageNames(dynamic rawNames, dynamic rawFiles) {
+    if (rawNames is List) return rawNames.map((name) => '$name').toList();
+    if (rawNames is Map) {
+      final files = List<String>.from(rawFiles ?? const []);
+      return files.map((path) => '${rawNames[path] ?? ''}').toList();
+    }
+    return const [];
   }
 
   static DateTime? _parseDate(dynamic value) {

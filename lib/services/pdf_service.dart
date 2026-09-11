@@ -11,6 +11,7 @@ import 'package:protocolflow/models/protocol_step.dart';
 import 'package:protocolflow/models/protocol.dart';
 import 'package:protocolflow/models/plate_wizard.dart';
 import 'package:protocolflow/services/protocol_export_filename.dart';
+import 'package:protocolflow/services/protocol_image_store.dart';
 import 'package:protocolflow/services/pdf_platform_stub.dart'
     if (dart.library.ui) 'package:protocolflow/services/pdf_platform_flutter.dart'
     as pdf_platform;
@@ -77,6 +78,16 @@ class PdfService {
     final resolvedTheme = theme ?? await pdf_platform.loadPdfTheme();
     final availableWidth = PdfPageFormat.a4.width - (26 * 2);
     final tables = _orderedTables(protocol);
+    final protocolImages = <String, pw.MemoryImage>{};
+    for (final source in protocol.files) {
+      final bytes = await ProtocolImageStore.loadBytes(source);
+      if (bytes == null || bytes.isEmpty) continue;
+      try {
+        protocolImages[source] = pw.MemoryImage(bytes);
+      } catch (_) {
+        // Keep exporting even when a legacy attachment is not an image.
+      }
+    }
 
     pdf.addPage(
       pw.MultiPage(
@@ -113,6 +124,32 @@ class PdfService {
           footer: _buildPageFooter,
         ),
       );
+    }
+
+    if (protocolImages.isNotEmpty) {
+      final sources = protocol.files.where(protocolImages.containsKey).toList();
+      for (var start = 0; start < sources.length; start += 9) {
+        final end = (start + 9).clamp(0, sources.length);
+        final pageSources = sources.sublist(start, end);
+        pdf.addPage(
+          pw.MultiPage(
+            theme: resolvedTheme,
+            pageFormat: PdfPageFormat.a4,
+            margin: const pw.EdgeInsets.all(26),
+            build: (context) => [
+              _buildImagesHeader(),
+              pw.SizedBox(height: 10),
+              _buildProtocolImageGrid(
+                protocol,
+                pageSources,
+                protocolImages,
+                availableWidth,
+              ),
+            ],
+            footer: _buildPageFooter,
+          ),
+        );
+      }
     }
 
     return pdf.save();
@@ -200,7 +237,7 @@ class PdfService {
   ) {
     final items = <pw.Widget>[
       _pwSectionCard('Protocol Information', [
-        _pwMetaLine(completedAt == null ? 'Type: Template' : 'Type: Completed'),
+        _pwMetaLine('Type: ${_protocolTypeLabel(protocol, completedAt)}'),
         _pwMetaLine(
           'Created on: ${protocol.createdAt.toString().split(' ').first}',
         ),
@@ -211,18 +248,6 @@ class PdfService {
         _pwField('Objective', protocol.objective),
         pw.SizedBox(height: 8),
         _pwField('Description', protocol.description),
-        if (protocol.samples.isNotEmpty) ...[
-          pw.SizedBox(height: 8),
-          pw.Text(
-            'Samples',
-            style: pw.TextStyle(
-              fontSize: _bodyFontSize,
-              fontWeight: pw.FontWeight.bold,
-            ),
-          ),
-          pw.SizedBox(height: 3),
-          ...protocol.samples.map((sample) => _rtlBullet(sample)),
-        ],
         if (notes.any((note) => note.stepId == 'materials')) ...[
           pw.SizedBox(height: 8),
           pw.Text(
@@ -244,6 +269,11 @@ class PdfService {
     return items
         .map((item) => pw.SizedBox(width: contentWidth, child: item))
         .toList();
+  }
+
+  static String _protocolTypeLabel(Protocol protocol, DateTime? completedAt) {
+    if (completedAt != null) return 'Completed';
+    return protocol.isTemplate ? 'Template' : 'Protocol';
   }
 
   static pw.Widget _rtlBullet(
@@ -445,6 +475,7 @@ class PdfService {
       }
     }
     if (step.tableIds.isNotEmpty) height += 22;
+    if (step.attachedFiles.isNotEmpty) height += 22;
 
     final userNotes = notes.where((note) => note.stepId == step.id).toList();
     if (userNotes.isNotEmpty) {
@@ -667,6 +698,17 @@ class PdfService {
           pw.SizedBox(height: 8),
           _pwTableMention(_tablesForIds(protocol, step.tableIds)),
         ],
+        if (_imageLabelsForStep(protocol, step).isNotEmpty) ...<pw.Widget>[
+          pw.SizedBox(height: 5),
+          pw.Text(
+            'Images: ${_imageLabelsForStep(protocol, step).join(', ')}',
+            style: pw.TextStyle(
+              fontSize: _bodyFontSize,
+              fontWeight: pw.FontWeight.bold,
+              color: _primaryColor,
+            ),
+          ),
+        ],
         if (stepNotes.isNotEmpty) ...<pw.Widget>[
           pw.SizedBox(height: 5),
           pw.Text(
@@ -818,41 +860,58 @@ class PdfService {
     for (int i = 0; i < notes.length; i++) {
       final note = notes[i];
       for (int j = 0; j < note.photoPaths.length; j++) {
-        if (pdf_platform.isWeb) continue;
         final path = note.photoPaths[j];
-        final file = File(path);
-        if (file.existsSync()) {
+        final bytes = _notePhotoBytes(path);
+        if (bytes != null && bytes.isNotEmpty) {
           try {
-            final image = pw.MemoryImage(file.readAsBytesSync());
+            final image = pw.MemoryImage(bytes);
+            final name =
+                j < note.photoNames.length &&
+                    note.photoNames[j].trim().isNotEmpty
+                ? note.photoNames[j].trim()
+                : 'Image ${j + 1}';
             photoWidgets.add(
-              pw.Stack(
+              pw.Column(
                 children: <pw.Widget>[
-                  pw.Container(
-                    width: 120,
-                    height: 120,
-                    child: pw.Image(image, fit: pw.BoxFit.cover),
+                  pw.Stack(
+                    children: <pw.Widget>[
+                      pw.Container(
+                        width: 90,
+                        height: 120,
+                        child: pw.Image(image, fit: pw.BoxFit.cover),
+                      ),
+                      pw.Positioned(
+                        top: 4,
+                        left: 4,
+                        child: pw.Container(
+                          padding: const pw.EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 1,
+                          ),
+                          decoration: const pw.BoxDecoration(
+                            color: _primaryColor,
+                            borderRadius: pw.BorderRadius.all(
+                              pw.Radius.circular(4),
+                            ),
+                          ),
+                          child: pw.Text(
+                            '${i + 1}.${j + 1}',
+                            style: const pw.TextStyle(
+                              color: PdfColors.white,
+                              fontSize: _bodyFontSize,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  pw.Positioned(
-                    top: 4,
-                    left: 4,
-                    child: pw.Container(
-                      padding: const pw.EdgeInsets.symmetric(
-                        horizontal: 4,
-                        vertical: 1,
-                      ),
-                      decoration: const pw.BoxDecoration(
-                        color: _primaryColor,
-                        borderRadius: pw.BorderRadius.all(
-                          pw.Radius.circular(4),
-                        ),
-                      ),
-                      child: pw.Text(
-                        '${i + 1}.${j + 1}',
-                        style: const pw.TextStyle(
-                          color: PdfColors.white,
-                          fontSize: _bodyFontSize,
-                        ),
-                      ),
+                  pw.SizedBox(height: 3),
+                  pw.SizedBox(
+                    width: 90,
+                    child: pw.Text(
+                      name,
+                      textAlign: pw.TextAlign.center,
+                      style: const pw.TextStyle(fontSize: _tableBodyFontSize),
                     ),
                   ),
                 ],
@@ -921,6 +980,21 @@ class PdfService {
     return widgets;
   }
 
+  static Uint8List? _notePhotoBytes(String source) {
+    if (source.startsWith('data:image/')) {
+      final comma = source.indexOf(',');
+      if (comma == -1) return null;
+      try {
+        return base64Decode(source.substring(comma + 1));
+      } catch (_) {
+        return null;
+      }
+    }
+    if (pdf_platform.isWeb) return null;
+    final file = File(source);
+    return file.existsSync() ? file.readAsBytesSync() : null;
+  }
+
   static pw.Widget _pwTableMention(List<ProtocolTable> tables) {
     if (tables.isEmpty) {
       return _pwEmptyState('Referenced table not found.');
@@ -947,6 +1021,21 @@ class PdfService {
     ];
   }
 
+  static List<String> _imageLabelsForStep(
+    Protocol protocol,
+    ProtocolStep step,
+  ) {
+    return step.attachedFiles.where(protocol.files.contains).map((source) {
+      final index = protocol.files.indexOf(source);
+      final name =
+          index < protocol.imageNames.length &&
+              protocol.imageNames[index].trim().isNotEmpty
+          ? protocol.imageNames[index].trim()
+          : 'Image ${index + 1}';
+      return '${index + 1}. $name';
+    }).toList();
+  }
+
   static List<ProtocolTable> _orderedTables(Protocol protocol) {
     final ordered = <ProtocolTable>[];
     final addedIds = <String>{};
@@ -956,6 +1045,7 @@ class PdfService {
     }
 
     addTable(protocol.materialListTable);
+    addTable(protocol.sampleListTable);
     final sortedSteps = _sortedProtocolSteps(protocol);
     for (final step in sortedSteps) {
       for (final table in _tablesForIds(protocol, step.tableIds)) {
@@ -990,6 +1080,67 @@ class PdfService {
         ),
         pw.Divider(thickness: 0.5, color: _outlineVariantColor),
       ],
+    );
+  }
+
+  static pw.Widget _buildImagesHeader() {
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(
+          'Images / Figures',
+          style: pw.TextStyle(
+            fontSize: _titleFontSize,
+            fontWeight: pw.FontWeight.bold,
+          ),
+        ),
+        pw.Divider(thickness: 0.5, color: _outlineVariantColor),
+      ],
+    );
+  }
+
+  static pw.Widget _buildProtocolImageGrid(
+    Protocol protocol,
+    List<String> sources,
+    Map<String, pw.MemoryImage> images,
+    double availableWidth,
+  ) {
+    final cellWidth = (availableWidth - 16) / 3;
+    final imageWidth = cellWidth * 0.88;
+    return pw.Wrap(
+      spacing: 8,
+      runSpacing: 10,
+      children: sources.map((source) {
+        final index = protocol.files.indexOf(source);
+        final name =
+            index < protocol.imageNames.length &&
+                protocol.imageNames[index].trim().isNotEmpty
+            ? protocol.imageNames[index].trim()
+            : 'Image ${index + 1}';
+        return pw.SizedBox(
+          width: cellWidth,
+          child: pw.Column(
+            children: [
+              pw.Container(
+                width: imageWidth,
+                height: imageWidth * 4 / 3,
+                decoration: pw.BoxDecoration(
+                  color: PdfColors.white,
+                  border: pw.Border.all(color: _outlineVariantColor),
+                ),
+                child: pw.Image(images[source]!, fit: pw.BoxFit.contain),
+              ),
+              pw.SizedBox(height: 4),
+              pw.Text(
+                '${index + 1}. $name',
+                textAlign: pw.TextAlign.center,
+                style: const pw.TextStyle(fontSize: 8),
+                maxLines: 2,
+              ),
+            ],
+          ),
+        );
+      }).toList(),
     );
   }
 
@@ -1076,7 +1227,7 @@ class PdfService {
                     pw.Padding(
                       padding: const pw.EdgeInsets.all(3),
                       child: pw.Text(
-                        '',
+                        table.metadata['rowHeaderLabel'] ?? '',
                         style: pw.TextStyle(
                           fontWeight: pw.FontWeight.bold,
                           fontSize: _tableHeaderFontSize,
@@ -1103,7 +1254,27 @@ class PdfService {
                 final rowColors = rowIndex < table.cellColors.length
                     ? table.cellColors[rowIndex]
                     : <String>[];
+                PdfColor? rowBackgroundColor;
+                if (rowColors.length >= columnCount &&
+                    rowColors
+                        .take(columnCount)
+                        .every(
+                          (color) =>
+                              color.isNotEmpty &&
+                              color.toUpperCase() ==
+                                  rowColors.first.toUpperCase(),
+                        )) {
+                  try {
+                    final hex = rowColors.first.replaceFirst('#', '');
+                    rowBackgroundColor = PdfColor.fromInt(
+                      int.parse('FF$hex', radix: 16),
+                    );
+                  } catch (_) {}
+                }
                 return pw.TableRow(
+                  decoration: rowBackgroundColor == null
+                      ? null
+                      : pw.BoxDecoration(color: rowBackgroundColor),
                   children: <pw.Widget>[
                     if (hasRowHeaders)
                       pw.Padding(
@@ -1333,38 +1504,14 @@ class PdfService {
   }
 
   static List<pw.Widget> _pwSupplementarySections(Protocol protocol) {
-    if (protocol.files.isEmpty && protocol.additionalData.isEmpty) {
+    if (protocol.additionalData.isEmpty) {
       return <pw.Widget>[];
     }
 
     return <pw.Widget>[
-      if (protocol.files.isNotEmpty || protocol.additionalData.isNotEmpty)
-        _pwSectionCard('Additional Data', [
-          if (protocol.files.isNotEmpty) ...[
-            pw.Text(
-              'Attached Files',
-              style: pw.TextStyle(
-                fontSize: _bodyFontSize,
-                fontWeight: pw.FontWeight.bold,
-              ),
-            ),
-            pw.SizedBox(height: 4),
-            ...protocol.files.map(
-              (file) => pw.Padding(
-                padding: const pw.EdgeInsets.only(bottom: 3),
-                child: pw.Text(
-                  '- $file',
-                  style: const pw.TextStyle(fontSize: _bodyFontSize),
-                  softWrap: true,
-                ),
-              ),
-            ),
-          ],
-          if (protocol.additionalData.isNotEmpty) ...[
-            if (protocol.files.isNotEmpty) pw.SizedBox(height: 8),
-            ...protocol.additionalData.map(_pwAdditionalData),
-          ],
-        ]),
+      _pwSectionCard('Additional Data', [
+        ...protocol.additionalData.map(_pwAdditionalData),
+      ]),
     ];
   }
 

@@ -96,4 +96,62 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('g/mol'), findsNothing);
   });
+
+  testWidgets('serial dilution can toggle the suggested D0 intermediate', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 1100));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SerialDilutionManagerScreen(
+          input: SerialDilutionInput(
+            stockConcentration: 100000,
+            stockConcentrationUnit: ConcentrationUnit.ugML,
+            startingDilutionConcentration: 1,
+            startingDilutionConcentrationUnit: ConcentrationUnit.ugML,
+            dilutionFactor: 10,
+            finalVolume: 1000,
+            finalVolumeUnit: VolumeUnit.uL,
+            extraVolumePercent: 0,
+            dilutionMode: DilutionMode.independent,
+            numberOfDilutions: 1,
+          ),
+          onUpdate: (_) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Numerator'), findsNWidgets(2));
+    expect(find.text('Denominator'), findsNWidgets(2));
+    expect(
+      find.byKey(const ValueKey('toggle-d0-intermediate-dilution')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('toggle-d0-intermediate-dilution')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('D0 intermediate'), findsNWidgets(2));
+    expect(
+      find.byKey(const ValueKey('toggle-d0-intermediate-dilution')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('toggle-d0-intermediate-dilution')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('D0 intermediate'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('toggle-d0-intermediate-dilution')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
 }

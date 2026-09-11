@@ -15,6 +15,7 @@ import '../features/today_tasks/services/task_service.dart';
 import '../features/measuring_tools/services/measuring_tool_service.dart';
 import '../utils/protocol_id.dart';
 import 'auth_service.dart';
+import 'data_validation_service.dart';
 import 'storage_service.dart';
 import 'protocol_run_service.dart';
 import 'sync_journal.dart';
@@ -311,6 +312,13 @@ class DriveSyncService {
     DriveAppDataBackup backup, {
     bool promptIfNecessary = true,
   }) async {
+    for (final file in backup.files) {
+      DataValidationService.validateDriveAppDataFile(
+        name: file.name,
+        content: file.content,
+      );
+    }
+
     final headers = await _authHeaders(promptIfNecessary: promptIfNecessary);
     if (headers == null) {
       throw StateError(
@@ -1140,39 +1148,46 @@ class DriveSyncService {
       switch (record.entityType) {
         case _protocolType:
           final protocol = Protocol.fromJson(data);
+          DataValidationService.validateProtocol(protocol);
           if (!_isValidProtocol(protocol) || protocol.id != record.entityId) {
             return 'The cloud protocol is incomplete or has a mismatched ID.';
           }
         case _projectType:
           final project = Project.fromJson(data);
+          DataValidationService.validateProject(project);
           if (project.id != record.entityId || project.name.trim().isEmpty) {
             return 'The cloud project is incomplete or has a mismatched ID.';
           }
         case _completedProtocolType:
           final completed = CompletedProtocol.fromJson(data);
+          DataValidationService.validateCompletedProtocol(completed);
           if (completed.id != record.entityId ||
               !_isValidProtocol(completed.protocol)) {
             return 'The completed protocol is incomplete or has a mismatched ID.';
           }
         case _runningProtocolType:
           final running = ActiveProtocol.fromJson(data);
+          DataValidationService.validateActiveProtocol(running);
           if (running.protocol.id != record.entityId ||
               !_isValidProtocol(running.protocol)) {
             return 'The running protocol is incomplete or has a mismatched ID.';
           }
         case _savedTableType:
           final table = ProtocolTable.fromJson(data);
+          DataValidationService.validateProtocolTable(table);
           if (table.id != record.entityId || table.title.trim().isEmpty) {
             return 'The saved table is incomplete or has a mismatched ID.';
           }
         case _todayTaskType:
         case _historyTaskType:
           final task = Task.fromJson(data);
+          DataValidationService.validateTask(task);
           if (task.id != record.entityId) {
             return 'The task has a mismatched ID.';
           }
         case _measuringToolType:
           final tool = MeasuringTool.fromJson(data);
+          DataValidationService.validateMeasuringTool(tool);
           if (tool.id != record.entityId || tool.id.trim().isEmpty) {
             return 'The measuring tool has a mismatched ID.';
           }
@@ -2330,6 +2345,7 @@ class DriveSyncService {
       materials: protocol.materials.map((m) => m.copyWith()).toList(),
       samples: List<String>.from(protocol.samples),
       files: List<String>.from(protocol.files),
+      imageNames: List<String>.from(protocol.imageNames),
       steps: protocol.steps.map((s) => s.deepCopy()).toList(),
       tables: protocol.tables.map((t) => t.deepCopy()).toList(),
       additionalData: protocol.additionalData.map((d) => d.deepCopy()).toList(),

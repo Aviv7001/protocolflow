@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocolflow/models/protocol.dart';
+import 'package:protocolflow/models/protocol_additional_data.dart';
 import 'package:protocolflow/models/protocol_step.dart';
 import 'package:protocolflow/models/protocol_table.dart';
 import 'package:protocolflow/screens/create_protocol_screen.dart';
@@ -26,10 +27,9 @@ void main() {
 
     final sections = [
       const Key('builder-protocol-information'),
-      const Key('builder-samples'),
-      const Key('builder-materials'),
-      const Key('builder-steps'),
       const Key('builder-tables'),
+      const Key('builder-images'),
+      const Key('builder-steps'),
       const Key('builder-additional-data'),
     ];
     final topPositions = sections
@@ -39,12 +39,15 @@ void main() {
       expect(topPositions[index], greaterThan(topPositions[index - 1]));
     }
     for (final key in const [
-      Key('builder-materials'),
       Key('builder-tables'),
+      Key('builder-images'),
       Key('builder-additional-data'),
     ]) {
       expect(tester.widget(find.byKey(key)), isA<Card>());
     }
+    expect(find.text('Material List'), findsOneWidget);
+    expect(find.text('Samples'), findsOneWidget);
+    expect(find.byTooltip('Expand table'), findsNWidgets(2));
     expect(tester.takeException(), isNull);
   });
 
@@ -64,21 +67,16 @@ void main() {
     final additional = tester.getTopLeft(
       find.byKey(const Key('builder-additional-data')),
     );
-    final samples = tester.getTopLeft(find.byKey(const Key('builder-samples')));
-    final materials = tester.getTopLeft(
-      find.byKey(const Key('builder-materials')),
-    );
+    final images = tester.getTopLeft(find.byKey(const Key('builder-images')));
     final steps = tester.getTopLeft(find.byKey(const Key('builder-steps')));
 
     expect(tables.dx, information.dx);
+    expect(images.dx, information.dx);
     expect(additional.dx, information.dx);
-    expect(samples.dx, greaterThan(information.dx));
-    expect(materials.dx, samples.dx);
-    expect(steps.dx, samples.dx);
+    expect(steps.dx, greaterThan(information.dx));
     expect(tables.dy, greaterThan(information.dy));
-    expect(additional.dy, greaterThan(tables.dy));
-    expect(materials.dy, greaterThan(samples.dy));
-    expect(steps.dy, greaterThan(materials.dy));
+    expect(images.dy, greaterThan(tables.dy));
+    expect(additional.dy, greaterThan(images.dy));
     expect(tester.takeException(), isNull);
   });
 
@@ -236,6 +234,232 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Add table'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('protocol figures can be linked and unlinked from a step', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(700, 1400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    const imagePath =
+        'data:image/png;base64,'
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+    final protocol = Protocol(
+      id: 'protocol-images',
+      title: 'Image workflow',
+      objective: '',
+      description: '',
+      files: const [imagePath],
+      steps: [
+        ProtocolStep(
+          id: 'step-image',
+          title: 'Inspect image',
+          instructions: '',
+          actionItems: const [],
+          materials: const [],
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(home: CreateProtocolScreen(initialProtocol: protocol)),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Images / Figures'), findsOneWidget);
+    expect(find.byKey(const Key('protocol-image-1')), findsOneWidget);
+
+    final editImage = find.byKey(const Key('edit-protocol-image-1'));
+    await tester.ensureVisible(editImage);
+    expect(tester.getSize(editImage), const Size.square(112));
+    await tester.tap(editImage);
+    await tester.pumpAndSettle();
+    expect(find.text('Crop and rename image'), findsOneWidget);
+    final imageNameField = tester.widget<TextField>(
+      find.byKey(const Key('protocol-image-name-field')),
+    );
+    expect(imageNameField.controller?.text, 'Image 1');
+    expect(find.text('Fit'), findsOneWidget);
+    expect(find.text('Crop'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    final linkButton = find.byTooltip('Link images to step 1');
+    await tester.ensureVisible(linkButton);
+    await tester.tap(linkButton);
+    await tester.pumpAndSettle();
+
+    Finder figureMenuItem() => find.byWidgetPredicate(
+      (widget) => widget is PopupMenuItem<String> && widget.value == imagePath,
+    );
+    expect(figureMenuItem(), findsOneWidget);
+    expect(find.text('Add image'), findsOneWidget);
+
+    await tester.tap(figureMenuItem());
+    await tester.pumpAndSettle();
+    const linkedImageKey = Key('linked-image-step-image-0');
+    expect(find.byKey(linkedImageKey), findsOneWidget);
+
+    await tester.tap(linkButton);
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(of: figureMenuItem(), matching: find.byIcon(Icons.check)),
+      findsOneWidget,
+    );
+    await tester.tap(figureMenuItem());
+    await tester.pumpAndSettle();
+    expect(find.byKey(linkedImageKey), findsNothing);
+
+    await tester.tap(linkButton);
+    await tester.pumpAndSettle();
+    final addImageMenuItem = find.byWidgetPredicate(
+      (widget) =>
+          widget is PopupMenuItem<String> && widget.value == '__add_image__',
+    );
+    await tester.tap(addImageMenuItem);
+    await tester.pumpAndSettle();
+    expect(find.text('Camera'), findsOneWidget);
+    expect(find.text('Gallery'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('additional data links images from the protocol library', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(700, 1400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    const imagePath =
+        'data:image/png;base64,'
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+    final initialProtocol = Protocol(
+      id: 'protocol-additional-data-image',
+      title: 'Linked reference image',
+      objective: '',
+      description: '',
+      files: const [imagePath],
+      imageNames: const ['Reference figure'],
+      steps: const [],
+      additionalData: [
+        ProtocolAdditionalData(id: 'reference-note', title: 'Reference note'),
+      ],
+    );
+    Protocol? savedProtocol;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => ElevatedButton(
+            onPressed: () async {
+              savedProtocol = await Navigator.push<Protocol>(
+                context,
+                MaterialPageRoute(
+                  builder: (context) =>
+                      CreateProtocolScreen(initialProtocol: initialProtocol),
+                ),
+              );
+            },
+            child: const Text('Open protocol builder'),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open protocol builder'));
+    await tester.pumpAndSettle();
+    final editAdditionalData = find.byTooltip('Edit additional data');
+    await tester.ensureVisible(editAdditionalData);
+    await tester.tap(editAdditionalData);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Link image'), findsOneWidget);
+    expect(find.widgetWithText(TextButton, 'Camera'), findsNothing);
+    expect(find.widgetWithText(TextButton, 'Gallery'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('additional-data-image-menu')));
+    await tester.pumpAndSettle();
+    final imageMenuItem = find.byWidgetPredicate(
+      (widget) => widget is PopupMenuItem<String> && widget.value == imagePath,
+    );
+    expect(imageMenuItem, findsOneWidget);
+    expect(find.text('Reference figure'), findsOneWidget);
+    expect(find.text('Add image'), findsOneWidget);
+    await tester.tap(imageMenuItem);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(TextButton, 'Save'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Save protocol'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save Protocol'));
+    await tester.pumpAndSettle();
+
+    expect(savedProtocol, isNotNull);
+    expect(savedProtocol!.additionalData.single.photoPaths, const [imagePath]);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('protocol image names and step links are saved', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(700, 1400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    const imagePath =
+        'data:image/png;base64,'
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+    final initialProtocol = Protocol(
+      id: 'protocol-image-save',
+      title: 'Saved image workflow',
+      objective: '',
+      description: '',
+      files: const [imagePath],
+      imageNames: const ['Microscopy overview'],
+      steps: [
+        ProtocolStep(
+          id: 'step-image-save',
+          title: 'Inspect image',
+          instructions: '',
+          actionItems: const [],
+          materials: const [],
+          attachedFiles: const [imagePath],
+        ),
+      ],
+    );
+    Protocol? savedProtocol;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => ElevatedButton(
+            onPressed: () async {
+              savedProtocol = await Navigator.push<Protocol>(
+                context,
+                MaterialPageRoute(
+                  builder: (context) =>
+                      CreateProtocolScreen(initialProtocol: initialProtocol),
+                ),
+              );
+            },
+            child: const Text('Open image editor'),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open image editor'));
+    await tester.pumpAndSettle();
+    expect(find.text('1. Microscopy overview'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Save protocol'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save Protocol'));
+    await tester.pumpAndSettle();
+
+    expect(savedProtocol, isNotNull);
+    expect(savedProtocol!.files, const [imagePath]);
+    expect(savedProtocol!.imageNames, const ['Microscopy overview']);
+    expect(savedProtocol!.steps.single.attachedFiles, const [imagePath]);
     expect(tester.takeException(), isNull);
   });
 

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/measuring_tool.dart';
+import '../../../services/data_validation_service.dart';
 import '../../../services/storage_service.dart';
 
 class MeasuringToolService {
@@ -324,6 +325,7 @@ class MeasuringToolService {
   }
 
   Future<void> saveTools(List<MeasuringTool> tools) async {
+    DataValidationService.validateMeasuringTools(tools);
     final prefs = await SharedPreferences.getInstance();
     final payload = jsonEncode(tools.map((tool) => tool.toJson()).toList());
     await prefs.setString(_storageKey, payload);
@@ -359,6 +361,7 @@ class MeasuringToolService {
         .map((item) => MeasuringTool.fromJson(Map<String, dynamic>.from(item)))
         .toList();
     if (tools.isEmpty && payload['allowEmpty'] != true) return;
+    DataValidationService.validateMeasuringTools(tools);
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(

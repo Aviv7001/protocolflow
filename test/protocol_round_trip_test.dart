@@ -27,7 +27,8 @@ void main() {
         ),
       ],
       samples: ['Sample A'],
-      files: ['protocol.pdf'],
+      files: ['protocol.pdf', 'figure.jpg'],
+      imageNames: const ['', 'Cell morphology'],
       steps: [
         ProtocolStep(
           id: 'step_1',
@@ -82,6 +83,7 @@ void main() {
       equals(protocol.steps.single.tableIds),
     );
     expect(restored.steps.single.notes, equals(protocol.steps.single.notes));
+    expect(restored.imageNames, equals(protocol.imageNames));
   });
 
   test('legacy actions key is restored as actionItems', () {
@@ -149,6 +151,51 @@ void main() {
 
     expect(restored.materialListTableId, table.id);
     expect(restored.materialListTable?.toJson(), equals(table.toJson()));
+  });
+
+  test('legacy samples are exposed as a three-column sample table', () {
+    final protocol = Protocol(
+      id: 'protocol_samples',
+      title: 'Samples',
+      objective: '',
+      description: '',
+      samples: const ['Control', 'Treatment'],
+      steps: const [],
+    );
+
+    final table = protocol.sampleListTable!;
+    expect(isSampleListTable(table), isTrue);
+    expect(table.columnHeaders, ['Sample name', 'Information']);
+    expect(table.rowHeaders, ['1', '2']);
+    expect(table.data, [
+      ['Control', ''],
+      ['Treatment', ''],
+    ]);
+  });
+
+  test('sample table information survives a protocol JSON round trip', () {
+    final table = createSampleListTable(
+      id: 'sample_list_protocol_1',
+      data: [
+        ['Control', 'Untreated cells'],
+      ],
+    );
+    final protocol = Protocol(
+      id: 'protocol_1',
+      title: 'Linked samples',
+      objective: '',
+      description: '',
+      samples: const ['Control'],
+      steps: const [],
+      tables: [table],
+    );
+
+    final restored = Protocol.fromJson(
+      jsonDecode(jsonEncode(protocol.toJson())),
+    );
+
+    expect(restored.sampleListTable?.toJson(), equals(table.toJson()));
+    expect(restored.sampleListTable!.data.single[1], 'Untreated cells');
   });
 
   test('protocol IDs include display name initials and random suffix', () {

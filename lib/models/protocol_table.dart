@@ -32,6 +32,39 @@ ProtocolTable createMaterialListTable({
   );
 }
 
+const String sampleListTableSection = 'samples';
+
+bool isSampleListTable(ProtocolTable table) =>
+    table.metadata['protocolSection'] == sampleListTableSection;
+
+ProtocolTable createSampleListTable({
+  required String id,
+  List<List<dynamic>> data = const [],
+}) {
+  const headers = ['Sample name', 'Information'];
+  final rows = data.isEmpty
+      ? <List<dynamic>>[
+          ['', ''],
+        ]
+      : data.map((row) => List<dynamic>.from(row)).toList();
+  return ProtocolTable(
+    id: id,
+    title: 'Samples',
+    type: TableType.generic,
+    columnHeaders: headers,
+    rowHeaders: List.generate(rows.length, (index) => '${index + 1}'),
+    data: rows,
+    cellColors: List.generate(
+      rows.length,
+      (_) => List.generate(headers.length, (_) => ''),
+    ),
+    metadata: const {
+      'protocolSection': sampleListTableSection,
+      'rowHeaderLabel': 'Index number',
+    },
+  );
+}
+
 class ProtocolTable {
   final String id;
   final String title;

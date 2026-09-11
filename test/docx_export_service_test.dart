@@ -17,6 +17,12 @@ void main() {
     () async {
       const pixelPng =
           'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+      final figurePngs = List.generate(
+        9,
+        (index) =>
+            'data:image/x-png;figure=$index;base64,'
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      );
       final protocol = Protocol(
         id: 'docx-test',
         title: 'DOCX Test Protocol',
@@ -35,6 +41,8 @@ void main() {
         ),
         materials: [MaterialItem(id: 'm1', name: 'PBS', quantity: '10 mL')],
         samples: const ['Sample A'],
+        files: figurePngs,
+        imageNames: List.generate(9, (index) => 'Microscopy ${index + 1}'),
         steps: [
           ProtocolStep(
             id: 's1',
@@ -46,6 +54,7 @@ void main() {
             notes: const ['Keep chilled'],
             phaseName: 'Phase 1',
             tableIds: const ['t1'],
+            attachedFiles: [figurePngs.first],
           ),
           ProtocolStep(
             id: 's2',
@@ -86,8 +95,12 @@ void main() {
             id: 't1',
             title: 'Sample table',
             columnHeaders: const ['Sample', 'Volume'],
+            rowHeaders: const ['1'],
             data: const [
               ['A', '100 uL'],
+            ],
+            cellColors: const [
+              ['EEF4F5', 'EEF4F5'],
             ],
           ),
         ],
@@ -107,6 +120,7 @@ void main() {
           stepId: 's1',
           note: 'Observed expected staining.',
           photoPaths: const [pixelPng],
+          photoNames: const ['Run observation'],
           createdAt: DateTime(2026, 6, 20),
         ),
       ];
@@ -125,6 +139,8 @@ void main() {
       expect(names, contains('word/numbering.xml'));
       expect(names, contains('word/media/image1.png'));
       expect(names, contains('word/media/image2.png'));
+      expect(names, contains('word/media/image3.png'));
+      expect(names, contains('word/media/image11.png'));
       expect(names, contains('word/footer1.xml'));
 
       final document = utf8.decode(
@@ -140,15 +156,26 @@ void main() {
         archive.findFile('word/footer1.xml')!.content as List<int>,
       );
       expect(document, contains('DOCX Test Protocol'));
+      expect(document, contains('Type: Completed'));
       expect(document, contains('Observed expected staining.'));
+      expect(document, contains('1.1. Run observation'));
       expect(document, contains('Sample table'));
       expect(document, contains('rIdImage1'));
       expect(document, contains('<w:cols w:num="1" w:space="0"/>'));
       expect(document, isNot(contains('<w:cols w:num="2"')));
       expect(document, contains('<w:br w:type="page"/>'));
       expect(document, contains('w:fill="D7F0F3"'));
+      expect(RegExp('w:fill="EEF4F5"').allMatches(document), hasLength(3));
       expect(document, contains('<w:numId w:val="100"/>'));
       expect(document, contains('Tables: Sample table'));
+      expect(document, contains('Images &#47; Figures'));
+      expect(document, contains('1. Microscopy 1'));
+      expect(document, contains('9. Microscopy 9'));
+      expect(document, contains('Images: 1. Microscopy 1'));
+      expect(
+        RegExp('<wp:extent cx="1500000" cy="2000000"/>').allMatches(document),
+        hasLength(10),
+      );
       expect(RegExp('Phase 1').allMatches(document), hasLength(1));
       expect(document, isNot(contains('Phase 1 (continued)')));
       expect(document, contains('Phase 2 (continued)'));
@@ -163,4 +190,26 @@ void main() {
       expect(relationships, contains('https://example.com/reference'));
     },
   );
+
+  test('DOCX export labels protocols and templates correctly', () async {
+    Future<String> documentXml(bool isTemplate) async {
+      final bytes = await const DocxExportService().buildDocument(
+        Protocol(
+          id: isTemplate ? 'template' : 'protocol',
+          title: 'Type test',
+          objective: '',
+          description: '',
+          steps: const [],
+          isTemplate: isTemplate,
+        ),
+      );
+      final archive = ZipDecoder().decodeBytes(bytes);
+      return utf8.decode(
+        archive.findFile('word/document.xml')!.content as List<int>,
+      );
+    }
+
+    expect(await documentXml(false), contains('Type: Protocol'));
+    expect(await documentXml(true), contains('Type: Template'));
+  });
 }

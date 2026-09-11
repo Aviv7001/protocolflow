@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../lab_math/lab_calculation.dart';
 import '../../lab_math/widgets/concentration_input_row.dart';
 import '../models/serial_dilution_input.dart';
+import '../models/serial_dilution_result.dart';
 import '../services/serial_dilution_calculator_service.dart';
 import '../widgets/serial_dilution_result_table.dart';
 import '../../../widgets/unsaved_changes_pop_scope.dart';
@@ -41,9 +42,17 @@ class _SerialDilutionManagerScreenState
     ConcentrationUnit.nM,
     ConcentrationUnit.pM,
     ConcentrationUnit.gL,
+    ConcentrationUnit.gML,
+    ConcentrationUnit.gUL,
+    ConcentrationUnit.mgL,
     ConcentrationUnit.mgML,
+    ConcentrationUnit.mgUL,
+    ConcentrationUnit.ugL,
     ConcentrationUnit.ugML,
+    ConcentrationUnit.ugUL,
+    ConcentrationUnit.ngL,
     ConcentrationUnit.ngML,
+    ConcentrationUnit.ngUL,
     ConcentrationUnit.percent,
     ConcentrationUnit.X,
     ConcentrationUnit.ratio,
@@ -56,9 +65,17 @@ class _SerialDilutionManagerScreenState
     ConcentrationUnit.nM,
     ConcentrationUnit.pM,
     ConcentrationUnit.gL,
+    ConcentrationUnit.gML,
+    ConcentrationUnit.gUL,
+    ConcentrationUnit.mgL,
     ConcentrationUnit.mgML,
+    ConcentrationUnit.mgUL,
+    ConcentrationUnit.ugL,
     ConcentrationUnit.ugML,
+    ConcentrationUnit.ugUL,
+    ConcentrationUnit.ngL,
     ConcentrationUnit.ngML,
+    ConcentrationUnit.ngUL,
     ConcentrationUnit.percent,
   ];
 
@@ -93,7 +110,7 @@ class _SerialDilutionManagerScreenState
           controls: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _buildGeneralInfo(),
+              _buildGeneralInfo(result),
               const SizedBox(height: 12),
               _buildDilutionOptions(),
             ],
@@ -111,8 +128,8 @@ class _SerialDilutionManagerScreenState
     );
   }
 
-  Widget _buildGlobalResultPreview(dynamic result) {
-    if (result.success != true) return const SizedBox.shrink();
+  Widget _buildGlobalResultPreview(SerialDilutionResult result) {
+    if (!result.success) return const SizedBox.shrink();
 
     return Card(
       color: AppColors.primaryContainer,
@@ -164,7 +181,7 @@ class _SerialDilutionManagerScreenState
     );
   }
 
-  Widget _buildGeneralInfo() {
+  Widget _buildGeneralInfo(SerialDilutionResult result) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -313,16 +330,49 @@ class _SerialDilutionManagerScreenState
             if (_input.startingSourceType == ReagentSourceType.liquidStock)
               Align(
                 alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: () => setState(
-                    () => _input = _input.copyWith(
-                      startingDilutionConcentration: _input.stockConcentration,
-                      startingDilutionConcentrationUnit:
-                          _input.stockConcentrationUnit,
+                child: Wrap(
+                  alignment: WrapAlignment.end,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    if (result.d0IntermediateSuggestion != null)
+                      Tooltip(
+                        message:
+                            'Add the suggested intermediate dilution to the table',
+                        child: FilterChip(
+                          key: const ValueKey(
+                            'toggle-d0-intermediate-dilution',
+                          ),
+                          avatar: Icon(
+                            _input.includeD0IntermediateDilution
+                                ? Icons.check_circle_outline
+                                : Icons.add_circle_outline,
+                            size: 18,
+                          ),
+                          label: const Text('Intermediate D0'),
+                          selected: _input.includeD0IntermediateDilution,
+                          onSelected: (selected) => setState(
+                            () => _input = _input.copyWith(
+                              includeD0IntermediateDilution: selected,
+                            ),
+                          ),
+                        ),
+                      ),
+                    TextButton.icon(
+                      onPressed: () => setState(
+                        () => _input = _input.copyWith(
+                          startingDilutionConcentration:
+                              _input.stockConcentration,
+                          startingDilutionConcentrationUnit:
+                              _input.stockConcentrationUnit,
+                          includeD0IntermediateDilution: false,
+                        ),
+                      ),
+                      icon: const Icon(Icons.science, size: 18),
+                      label: const Text('Use stock as D0'),
                     ),
-                  ),
-                  icon: const Icon(Icons.science, size: 18),
-                  label: const Text('Use stock as D0'),
+                  ],
                 ),
               ),
             const SizedBox(height: 12),
@@ -530,6 +580,7 @@ class _SerialDilutionManagerScreenState
         );
       }),
       fontSize: _uniformFontSize,
+      separateUnitParts: true,
     );
   }
 
@@ -590,6 +641,7 @@ class _SerialDilutionManagerScreenState
         () => _input = _input.copyWith(targetLowestConcentrationUnit: unit),
       ),
       fontSize: _uniformFontSize,
+      separateUnitParts: true,
     );
   }
 
@@ -609,6 +661,7 @@ class _SerialDilutionManagerScreenState
       onValueChanged: onVal,
       onUnitChanged: onUnit,
       fontSize: _uniformFontSize,
+      separateUnitParts: true,
     );
   }
 

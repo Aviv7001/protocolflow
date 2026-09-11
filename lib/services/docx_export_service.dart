@@ -112,6 +112,7 @@ class DocxExportService {
     final sources = <String>{
       ...notes.expand((note) => note.photoPaths),
       ...protocol.additionalData.expand((data) => data.photoPaths),
+      ...protocol.files,
     };
     final images = <_DocxImage>[];
     final imageBySource = <String, _DocxImage>{};
@@ -235,15 +236,9 @@ class DocxExportService {
         _card(_cardTitle('General Notes') + _notesXml(overviewNotes, assets)),
       );
     }
-    if (protocol.files.isNotEmpty || protocol.additionalData.isNotEmpty) {
+    if (protocol.additionalData.isNotEmpty) {
       final supplementary = StringBuffer()
         ..write(_cardTitle('Additional Data'));
-      if (protocol.files.isNotEmpty) {
-        supplementary.write(_label('Attached Files'));
-        for (final file in protocol.files) {
-          supplementary.write(_bullet(file));
-        }
-      }
       for (final data in protocol.additionalData) {
         supplementary.write(_additionalDataXml(data, assets));
       }
@@ -258,6 +253,22 @@ class DocxExportService {
       for (final table in tables) {
         body.write(_protocolTableXml(table));
       }
+    }
+    final figureSources = protocol.files
+        .where(assets.imageBySource.containsKey)
+        .toList();
+    for (var start = 0; start < figureSources.length; start += 9) {
+      final end = (start + 9).clamp(0, figureSources.length);
+      body.write(_pageBreak());
+      body.write(_heading('Images / Figures', 1));
+      body.write(_divider());
+      body.write(
+        _protocolImageGridXml(
+          protocol,
+          figureSources.sublist(start, end),
+          assets,
+        ),
+      );
     }
     body.write(_sectionProperties());
 
@@ -309,7 +320,7 @@ class DocxExportService {
       ..write(_cardTitle('Protocol Information'))
       ..write(
         _paragraph(
-          completedAt == null ? 'Type: Template' : 'Type: Completed',
+          'Type: ${_protocolTypeLabel(protocol, completedAt)}',
           compact: true,
           color: _textSecondary,
         ),
@@ -344,20 +355,17 @@ class DocxExportService {
       ..write(
         _paragraph(_valueOrFallback(protocol.description), compact: true),
       );
-    if (protocol.samples.isNotEmpty) {
-      content.write(_label('Samples'));
-      for (final sample in protocol.samples.where(
-        (item) => item.trim().isNotEmpty,
-      )) {
-        content.write(_bullet(sample));
-      }
-    }
     final materialNotes = notes.where((note) => note.stepId == 'materials');
     if (materialNotes.isNotEmpty) {
       content.write(_label('Material Notes'));
       content.write(_notesXml(materialNotes, assets));
     }
     return _card(content.toString());
+  }
+
+  String _protocolTypeLabel(Protocol protocol, DateTime? completedAt) {
+    if (completedAt != null) return 'Completed';
+    return protocol.isTemplate ? 'Template' : 'Protocol';
   }
 
   String _stepCardsXml(
@@ -488,6 +496,7 @@ class DocxExportService {
       }
     }
     if (step.tableIds.isNotEmpty) height += 20;
+    if (step.attachedFiles.isNotEmpty) height += 20;
 
     final userNotes = notes.where((note) => note.stepId == step.id);
     if (userNotes.isNotEmpty) {
@@ -586,6 +595,17 @@ class DocxExportService {
       content.write(
         _paragraph(
           'Tables: ${linkedTables.map((table) => table.title).join(', ')}',
+          bold: true,
+          compact: true,
+          color: _primary,
+        ),
+      );
+    }
+    final linkedImages = _imageLabelsForStep(protocol, step);
+    if (linkedImages.isNotEmpty) {
+      content.write(
+        _paragraph(
+          'Images: ${linkedImages.join(', ')}',
           bold: true,
           compact: true,
           color: _primary,
@@ -739,6 +759,18 @@ class DocxExportService {
     ];
   }
 
+  List<String> _imageLabelsForStep(Protocol protocol, ProtocolStep step) {
+    return step.attachedFiles.where(protocol.files.contains).map((source) {
+      final index = protocol.files.indexOf(source);
+      final name =
+          index < protocol.imageNames.length &&
+              protocol.imageNames[index].trim().isNotEmpty
+          ? protocol.imageNames[index].trim()
+          : 'Image ${index + 1}';
+      return '${index + 1}. $name';
+    }).toList();
+  }
+
   List<ProtocolTable> _orderedTables(Protocol protocol) {
     final ordered = <ProtocolTable>[];
     final added = <String>{};
@@ -748,6 +780,7 @@ class DocxExportService {
     }
 
     add(protocol.materialListTable);
+    add(protocol.sampleListTable);
     for (final step in _sortedProtocolSteps(protocol)) {
       for (final table in _tablesForIds(protocol, step.tableIds)) {
         add(table);
@@ -777,13 +810,28 @@ class DocxExportService {
 
   String _notesXml(Iterable<StepNote> notes, _DocxAssets assets) {
     final xml = StringBuffer();
-    for (final note in notes) {
+    final noteList = notes.toList();
+    for (var noteIndex = 0; noteIndex < noteList.length; noteIndex++) {
+      final note = noteList[noteIndex];
       if (note.note.trim().isNotEmpty) {
         xml.write(_paragraph('Note: ${note.note}', italic: true));
       }
-      for (final source in note.photoPaths) {
+      for (
+        var photoIndex = 0;
+        photoIndex < note.photoPaths.length;
+        photoIndex++
+      ) {
+        final source = note.photoPaths[photoIndex];
         final image = assets.imageBySource[source];
-        if (image != null) xml.write(_imageParagraph(image));
+        if (image != null) {
+          final name =
+              photoIndex < note.photoNames.length &&
+                  note.photoNames[photoIndex].trim().isNotEmpty
+              ? note.photoNames[photoIndex].trim()
+              : 'Image ${photoIndex + 1}';
+          xml.write(_imageParagraph(image, width: 1500000, height: 2000000));
+          xml.write(_paragraph('${noteIndex + 1}.${photoIndex + 1}. $name'));
+        }
       }
     }
     return xml.toString();
@@ -793,7 +841,7 @@ class DocxExportService {
     final hasRowHeaders = table.rowHeaders.isNotEmpty;
     final columnCount = _tableColumnCount(table);
     final headers = <String>[
-      if (hasRowHeaders) '',
+      if (hasRowHeaders) table.metadata['rowHeaderLabel'] ?? '',
       ..._normalizedHeaders(table),
     ];
     final rows = <List<String>>[];
@@ -811,8 +859,17 @@ class DocxExportService {
       final rowColors = rowIndex < table.cellColors.length
           ? table.cellColors[rowIndex]
           : const <String>[];
+      final rowHeaderColor =
+          rowColors.isNotEmpty &&
+              rowColors.every(
+                (color) =>
+                    color.isNotEmpty &&
+                    color.toUpperCase() == rowColors.first.toUpperCase(),
+              )
+          ? rowColors.first
+          : '';
       colors.add([
-        if (hasRowHeaders) '',
+        if (hasRowHeaders) rowHeaderColor,
         ...List<String>.generate(
           columnCount,
           (index) => index < rowColors.length ? rowColors[index] : '',
@@ -1076,6 +1133,67 @@ class DocxExportService {
         '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>'
         '</pic:pic></a:graphicData></a:graphic>'
         '</wp:inline></w:drawing></w:r></w:p>';
+  }
+
+  String _protocolImageGridXml(
+    Protocol protocol,
+    List<String> sources,
+    _DocxAssets assets,
+  ) {
+    final cellWidth = _usableWidth ~/ 3;
+    final xml = StringBuffer()
+      ..write('<w:tbl><w:tblPr>')
+      ..write('<w:tblW w:w="$_usableWidth" w:type="dxa"/>')
+      ..write('<w:tblLayout w:type="fixed"/>')
+      ..write('<w:tblBorders>${_nilBorders()}</w:tblBorders>')
+      ..write('</w:tblPr><w:tblGrid>')
+      ..write(List.filled(3, '<w:gridCol w:w="$cellWidth"/>').join())
+      ..write('</w:tblGrid>');
+
+    for (var rowStart = 0; rowStart < sources.length; rowStart += 3) {
+      xml.write('<w:tr><w:trPr><w:cantSplit/></w:trPr>');
+      for (var column = 0; column < 3; column++) {
+        final sourceIndex = rowStart + column;
+        xml.write(
+          '<w:tc><w:tcPr><w:tcW w:w="$cellWidth" w:type="dxa"/>'
+          '<w:tcMar><w:left w:w="80" w:type="dxa"/><w:right w:w="80" w:type="dxa"/>'
+          '<w:top w:w="60" w:type="dxa"/><w:bottom w:w="80" w:type="dxa"/>'
+          '</w:tcMar></w:tcPr>',
+        );
+        if (sourceIndex < sources.length) {
+          final source = sources[sourceIndex];
+          final image = assets.imageBySource[source]!;
+          final protocolIndex = protocol.files.indexOf(source);
+          final name =
+              protocolIndex < protocol.imageNames.length &&
+                  protocol.imageNames[protocolIndex].trim().isNotEmpty
+              ? protocol.imageNames[protocolIndex].trim()
+              : 'Image ${protocolIndex + 1}';
+          xml.write(
+            _imageParagraph(
+              image,
+              width: 1500000,
+              height: 2000000,
+              centered: true,
+            ),
+          );
+          xml.write(
+            _paragraph(
+              '${protocolIndex + 1}. $name',
+              compact: true,
+              fontSize: 16,
+              alignment: 'center',
+            ),
+          );
+        } else {
+          xml.write('<w:p/>');
+        }
+        xml.write('</w:tc>');
+      }
+      xml.write('</w:tr>');
+    }
+    xml.write('</w:tbl>');
+    return xml.toString();
   }
 
   bool _isRtl(String text) => RegExp(r'[\u0590-\u08FF]').hasMatch(text);

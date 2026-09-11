@@ -11,11 +11,15 @@ enum ConcentrationUnit {
   nM,
   pM,
   gL,
+  gML,
   gUL,
+  mgL,
   mgML,
   mgUL,
+  ugL,
   ugML,
   ugUL,
+  ngL,
   ngML,
   ngUL,
   percent,
@@ -68,11 +72,15 @@ class LabCalculation {
       case ConcentrationUnit.pM:
         return ConcentrationFamily.molar;
       case ConcentrationUnit.gL:
+      case ConcentrationUnit.gML:
       case ConcentrationUnit.gUL:
+      case ConcentrationUnit.mgL:
       case ConcentrationUnit.mgML:
       case ConcentrationUnit.mgUL:
+      case ConcentrationUnit.ugL:
       case ConcentrationUnit.ugML:
       case ConcentrationUnit.ugUL:
+      case ConcentrationUnit.ngL:
       case ConcentrationUnit.ngML:
       case ConcentrationUnit.ngUL:
         return ConcentrationFamily.massVolume;
@@ -124,8 +132,20 @@ class LabCalculation {
           return value / molecularWeight;
         }
         return value;
+      case ConcentrationUnit.gML:
+        final gPerL = value * 1e3;
+        if (molecularWeight != null && molecularWeight > 0) {
+          return gPerL / molecularWeight;
+        }
+        return gPerL;
       case ConcentrationUnit.gUL:
         final gPerL = value * 1e6;
+        if (molecularWeight != null && molecularWeight > 0) {
+          return gPerL / molecularWeight;
+        }
+        return gPerL;
+      case ConcentrationUnit.mgL:
+        final gPerL = value * 1e-3;
         if (molecularWeight != null && molecularWeight > 0) {
           return gPerL / molecularWeight;
         }
@@ -142,6 +162,12 @@ class LabCalculation {
           return gPerL / molecularWeight;
         }
         return gPerL;
+      case ConcentrationUnit.ugL:
+        final gPerL = value * 1e-6;
+        if (molecularWeight != null && molecularWeight > 0) {
+          return gPerL / molecularWeight;
+        }
+        return gPerL;
       case ConcentrationUnit.ugUL:
         if (molecularWeight != null && molecularWeight > 0) {
           return value / molecularWeight;
@@ -149,6 +175,12 @@ class LabCalculation {
         return value;
       case ConcentrationUnit.ngML:
         final gPerL = value * 1e-6;
+        if (molecularWeight != null && molecularWeight > 0) {
+          return gPerL / molecularWeight;
+        }
+        return gPerL;
+      case ConcentrationUnit.ngL:
+        final gPerL = value * 1e-9;
         if (molecularWeight != null && molecularWeight > 0) {
           return gPerL / molecularWeight;
         }
@@ -190,16 +222,24 @@ class LabCalculation {
       case ConcentrationUnit.gL:
       case ConcentrationUnit.mgML:
         return value;
+      case ConcentrationUnit.gML:
+        return value / 1e3;
       case ConcentrationUnit.gUL:
         return value / 1e6;
+      case ConcentrationUnit.mgL:
+        return value / 1e-3;
       case ConcentrationUnit.mgUL:
         return value / 1e3;
+      case ConcentrationUnit.ugL:
+        return value / 1e-6;
       case ConcentrationUnit.ugML:
         return value / 1e-3;
       case ConcentrationUnit.ugUL:
         return value;
       case ConcentrationUnit.ngML:
         return value / 1e-6;
+      case ConcentrationUnit.ngL:
+        return value / 1e-9;
       case ConcentrationUnit.ngUL:
         return value / 1e-3;
       case ConcentrationUnit.percent:
@@ -455,18 +495,26 @@ class LabCalculation {
         return 'pM';
       case ConcentrationUnit.gL:
         return 'g/L';
+      case ConcentrationUnit.gML:
+        return 'g/mL';
       case ConcentrationUnit.gUL:
         return 'g/${micro}L';
+      case ConcentrationUnit.mgL:
+        return 'mg/L';
       case ConcentrationUnit.mgML:
         return 'mg/mL';
       case ConcentrationUnit.mgUL:
         return 'mg/${micro}L';
+      case ConcentrationUnit.ugL:
+        return '${micro}g/L';
       case ConcentrationUnit.ugML:
         return '${micro}g/mL';
       case ConcentrationUnit.ugUL:
         return '${micro}g/${micro}L';
       case ConcentrationUnit.ngML:
         return 'ng/mL';
+      case ConcentrationUnit.ngL:
+        return 'ng/L';
       case ConcentrationUnit.ngUL:
         return 'ng/${micro}L';
       case ConcentrationUnit.percent:

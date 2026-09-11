@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../models/task.dart';
+import '../../../services/data_validation_service.dart';
 import '../../../services/storage_service.dart';
 
 class TaskService {
@@ -40,6 +41,7 @@ class TaskService {
   }
 
   Future<void> saveTodayTasks(List<Task> tasks) async {
+    DataValidationService.validateTasks(tasks);
     final prefs = await SharedPreferences.getInstance();
     final jsonString = jsonEncode(tasks.map((t) => t.toJson()).toList());
     await prefs.setString(_todayTasksKey, jsonString);
@@ -63,6 +65,7 @@ class TaskService {
   }
 
   Future<void> saveHistoryTasks(List<Task> tasks) async {
+    DataValidationService.validateTasks(tasks);
     final prefs = await SharedPreferences.getInstance();
     final jsonString = jsonEncode(tasks.map((t) => t.toJson()).toList());
     await prefs.setString(_historyTasksKey, jsonString);
@@ -116,6 +119,8 @@ class TaskService {
         .whereType<Map>()
         .map((item) => Task.fromJson(Map<String, dynamic>.from(item)))
         .toList();
+    DataValidationService.validateTasks(today);
+    DataValidationService.validateTasks(history);
     await prefs.setString(
       _todayTasksKey,
       jsonEncode(today.map((task) => task.toJson()).toList()),

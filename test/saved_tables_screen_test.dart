@@ -172,4 +172,18 @@ void main() {
     expect(find.byKey(const Key('saved-table-card-table-1')), findsOneWidget);
     expect(find.byKey(const Key('saved-table-card-table-2')), findsNothing);
   });
+
+  testWidgets('new tables inherit the active project filter', (tester) async {
+    await seedTables();
+    await tester.pumpWidget(buildScreen(initialProjectId: 'project-1'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('saved-tables-create')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('table-tool-project-context-project-1')),
+      findsOneWidget,
+    );
+  });
 }

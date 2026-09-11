@@ -16,6 +16,7 @@ import 'package:protocolflow/data/completed_protocols_data.dart';
 import 'package:protocolflow/screens/completed_protocol_detail_screen.dart';
 import 'package:protocolflow/screens/library_screen.dart';
 import 'package:protocolflow/screens/protocol_detail_screen.dart';
+import 'package:protocolflow/services/storage_service.dart';
 import 'package:protocolflow/widgets/protocolflow_app_bar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -235,6 +236,68 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('protocol detail confirms and opens an independent copy', (
+    tester,
+  ) async {
+    final original = protocol.copyWith(
+      isTemplate: false,
+      driveFileId: 'original-drive-file',
+      syncStatus: ProtocolSyncStatus.synced,
+    );
+    SharedPreferences.setMockInitialValues({
+      'protocols_library_json': jsonEncode([original.toJson()]),
+      'projects_json': jsonEncode([project.toJson()]),
+    });
+    final duplicatedAfter = DateTime.now();
+
+    await tester.pumpWidget(
+      MaterialApp(home: ProtocolDetailScreen(protocol: original)),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.byTooltip('Duplicate protocol'), findsOneWidget);
+    await tester.tap(find.byTooltip('Duplicate protocol'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Duplicate Protocol?'), findsOneWidget);
+    expect(find.text('Cancel'), findsOneWidget);
+    expect(find.text('Duplicate'), findsOneWidget);
+    expect(await StorageService().loadProtocols(), hasLength(1));
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(find.text('Duplicate Protocol?'), findsNothing);
+    expect(await StorageService().loadProtocols(), hasLength(1));
+
+    await tester.tap(find.byTooltip('Duplicate protocol'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Duplicate'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ProtocolDetailScreen), findsOneWidget);
+    expect(find.text('BCA assay (copy)'), findsOneWidget);
+    expect(find.byKey(const Key('protocol-title-field')), findsNothing);
+
+    final saved = await StorageService().loadProtocols();
+    expect(saved, hasLength(2));
+    final copy = saved.singleWhere((item) => item.id != original.id);
+    expect(copy.title, 'BCA assay (copy)');
+    expect(copy.createdAt.isBefore(duplicatedAfter), isFalse);
+    expect(copy.updatedAt, copy.createdAt);
+    expect(copy.isTemplate, isFalse);
+    expect(copy.driveFileId, isNull);
+    expect(copy.lastSyncedAt, isNull);
+    expect(copy.publication, isNull);
+    expect(copy.importSource, isNull);
+    expect(copy.objective, original.objective);
+    expect(copy.projectId, original.projectId);
+    expect(
+      saved.singleWhere((item) => item.id == original.id).title,
+      original.title,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('published protocol shows badges and attached QR section', (
     tester,
   ) async {
@@ -282,9 +345,13 @@ void main() {
     SharedPreferences.setMockInitialValues({
       'projects_json': jsonEncode([project.toJson()]),
     });
+    const detailImage =
+        'data:image/png;base64,'
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
     final materialTable = createMaterialListTable(id: 'materials');
     final detailProtocol = protocol.copyWith(
       isTemplate: false,
+      files: const [detailImage],
       samples: const ['HEK293 cells'],
       materialListTableId: materialTable.id,
       tables: [
@@ -305,6 +372,7 @@ void main() {
           instructions: 'Wash the cells.',
           actionItems: const ['Add buffer'],
           materials: const [],
+          attachedFiles: const [detailImage],
           tableIds: const ['plate-layout'],
           phaseName: 'Preparation',
         ),
@@ -331,15 +399,37 @@ void main() {
     await pumpAtSize(const Size(1400, 1800));
 
     final information = find.byKey(const Key('detail-protocol-information'));
-    final materials = find.byKey(const Key('detail-materials'));
     final steps = find.byKey(const Key('detail-steps'));
     final tables = find.byKey(const Key('detail-tables'));
     final additionalData = find.byKey(const Key('detail-additional-data'));
+    final images = find.byKey(const Key('detail-images'));
     final phaseProgress = find.byKey(
       const Key('detail-phase-progress-section'),
     );
 
     expect(phaseProgress, findsOneWidget);
+    expect(images, findsOneWidget);
+    expect(find.text('Linked images'), findsOneWidget);
+    final previewImage = find.byKey(const Key('preview-protocol-image-1'));
+    await tester.ensureVisible(previewImage.first);
+    expect(tester.getSize(previewImage.first), const Size.square(112));
+    await tester.tap(previewImage.first);
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Close preview'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(Dialog),
+        matching: find.text('1. Image 1'),
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.byTooltip('Close preview'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('detail-samples')), findsNothing);
+    expect(find.byKey(const Key('detail-materials')), findsNothing);
+    expect(find.byTooltip('Expand table'), findsWidgets);
+    expect(find.byKey(const Key('detail-left-scroll')), findsOneWidget);
+    expect(find.byKey(const Key('detail-right-scroll')), findsOneWidget);
     expect(find.byKey(const Key('detail-phase-progress-0')), findsOneWidget);
     expect(find.byKey(const Key('detail-phase-progress-1')), findsOneWidget);
     expect(find.byKey(const Key('detail-phase-progress-add')), findsOneWidget);
@@ -350,15 +440,11 @@ void main() {
 
     expect(
       tester.getRect(information).right,
-      lessThan(tester.getRect(materials).left),
+      lessThan(tester.getRect(steps).left),
     );
     expect(
       tester.getTopLeft(tables).dy,
       greaterThan(tester.getTopLeft(information).dy),
-    );
-    expect(
-      tester.getTopLeft(steps).dy,
-      greaterThan(tester.getTopLeft(materials).dy),
     );
     expect(
       tester.getTopLeft(additionalData).dy,
@@ -377,10 +463,8 @@ void main() {
     await pumpAtSize(const Size(390, 1800));
     final mobileOrder = [
       information,
-      find.byKey(const Key('detail-samples')),
-      materials,
-      steps,
       tables,
+      steps,
       additionalData,
     ].map((finder) => tester.getTopLeft(finder).dy).toList();
     expect(mobileOrder, orderedEquals([...mobileOrder]..sort()));
@@ -549,11 +633,16 @@ void main() {
     SharedPreferences.setMockInitialValues({
       'projects_json': jsonEncode([project.toJson()]),
     });
+    const completedImage =
+        'data:image/png;base64,'
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
     final materialTable = createMaterialListTable(id: 'completed-materials');
     final completedProtocol = CompletedProtocol(
       id: 'completed-layout',
       protocol: protocol.copyWith(
         isTemplate: false,
+        files: const [completedImage],
+        imageNames: const ['Final microscopy'],
         samples: const ['Primary cells'],
         materialListTableId: materialTable.id,
         tables: [
@@ -578,6 +667,7 @@ void main() {
             actionItems: const ['Add buffer'],
             materials: const [],
             tableIds: const ['completed-plate'],
+            attachedFiles: const [completedImage],
           ),
           ProtocolStep(
             id: 'completed-step-2',
@@ -593,6 +683,8 @@ void main() {
           id: 'overview-note',
           stepId: 'overview',
           note: 'Run completed successfully.',
+          photoPaths: const [completedImage],
+          photoNames: const ['Run observation'],
           createdAt: DateTime(2026, 7, 23),
         ),
       ],
@@ -618,25 +710,31 @@ void main() {
     final information = find.byKey(
       const Key('completed-detail-protocol-information'),
     );
-    final materials = find.byKey(const Key('completed-detail-materials'));
     final steps = find.byKey(const Key('completed-detail-steps'));
     final notes = find.byKey(const Key('completed-detail-general-notes'));
     final tables = find.byKey(const Key('completed-detail-tables'));
+    final images = find.byKey(const Key('completed-detail-images'));
     final additionalData = find.byKey(
       const Key('completed-detail-additional-data'),
     );
 
     expect(
       tester.getRect(information).right,
-      lessThan(tester.getRect(materials).left),
+      lessThan(tester.getRect(steps).left),
     );
+    expect(
+      find.byKey(const Key('completed-detail-left-scroll')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('completed-detail-right-scroll')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('completed-detail-samples')), findsNothing);
+    expect(find.byKey(const Key('completed-detail-materials')), findsNothing);
     expect(
       tester.getTopLeft(notes).dy,
       greaterThan(tester.getTopLeft(information).dy),
-    );
-    expect(
-      tester.getTopLeft(steps).dy,
-      greaterThan(tester.getTopLeft(materials).dy),
     );
     expect(
       tester.getTopLeft(additionalData).dy,
@@ -659,15 +757,30 @@ void main() {
     await pumpAtSize(const Size(390, 1800));
     final mobileOrder = [
       information,
-      find.byKey(const Key('completed-detail-samples')),
-      materials,
+      tables,
+      images,
       steps,
       notes,
-      tables,
       additionalData,
     ].map((finder) => tester.getTopLeft(finder).dy).toList();
     expect(mobileOrder, orderedEquals([...mobileOrder]..sort()));
     expect(find.text('Project: BCA Study'), findsOneWidget);
+    expect(find.text('1. Final microscopy'), findsWidgets);
+    expect(find.text('Run observation'), findsOneWidget);
+    expect(find.text(completedImage), findsNothing);
+    final completedImageThumbnail = find.byKey(
+      const Key('preview-completed-protocol-image-1'),
+    );
+    await tester.ensureVisible(completedImageThumbnail.first);
+    expect(
+      tester.getSize(completedImageThumbnail.first),
+      const Size.square(112),
+    );
+    await tester.tap(completedImageThumbnail.first);
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Close preview'), findsOneWidget);
+    await tester.tap(find.byTooltip('Close preview'));
+    await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });
 }

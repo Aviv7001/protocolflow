@@ -18,10 +18,11 @@ import '../widgets/protocolflow_app_bar.dart';
 import '../widgets/protocolflow_ui.dart';
 import '../services/auth_service.dart';
 import '../services/drive_sync_service.dart';
-import '../services/picked_image_store.dart';
+import '../services/protocol_image_store.dart';
 import '../services/storage_service.dart';
 import '../utils/protocol_id.dart';
 import '../widgets/local_image.dart';
+import '../widgets/protocol_image_editor_dialog.dart';
 import 'table_selection_screen.dart';
 
 class CreateProtocolScreen extends StatefulWidget {
@@ -54,13 +55,14 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
   final List<MaterialItem> _materials = [];
   final List<String> _samples = [];
   final List<String> _files = [];
+  final List<String> _imageNames = [];
   final List<ProtocolStep> _steps = [];
   final List<ProtocolTable> _tables = [];
   final List<ProtocolAdditionalData> _additionalData = [];
   List<Project> _projects = [];
   String? _selectedProjectId;
   late String _materialListTableId;
-  bool _isMaterialListCollapsed = false;
+  late String _sampleListTableId;
   bool _usePhases = false;
   late final bool _isInProgress;
   ProtocolStep? _stepClipboard;
@@ -85,6 +87,12 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
       _materials.addAll(p.materials.map((m) => m.copyWith()));
       _samples.addAll(p.samples);
       _files.addAll(p.files);
+      for (var index = 0; index < p.files.length; index++) {
+        final savedName = index < p.imageNames.length
+            ? p.imageNames[index].trim()
+            : '';
+        _imageNames.add(savedName.isEmpty ? 'Image ${index + 1}' : savedName);
+      }
       _steps.addAll(p.steps.map((s) => s.deepCopy()));
       _tables.addAll(p.tables.map((t) => t.deepCopy()));
       _additionalData.addAll(p.additionalData.map((d) => d.deepCopy()));
@@ -96,6 +104,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
     }
 
     _ensureMaterialListTable(widget.initialProtocol?.materialListTableId);
+    _ensureSampleListTable();
     _loadProjects();
 
     if (widget.isAddingPhase) {
@@ -121,11 +130,24 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
     super.dispose();
   }
 
-  List<ProtocolTable> get _regularTables =>
-      _tables.where((table) => table.type != TableType.materialList).toList();
+  List<ProtocolTable> get _regularTables => _tables
+      .where(
+        (table) =>
+            table.type != TableType.materialList && !isSampleListTable(table),
+      )
+      .toList();
+
+  List<ProtocolTable> get _protocolSectionTables => [
+    _materialListTable,
+    _sampleListTable,
+    ..._regularTables,
+  ];
 
   ProtocolTable get _materialListTable =>
       _tables.firstWhere((table) => table.id == _materialListTableId);
+
+  ProtocolTable get _sampleListTable =>
+      _tables.firstWhere((table) => table.id == _sampleListTableId);
 
   void _ensureMaterialListTable(String? linkedTableId) {
     var index = linkedTableId == null
@@ -212,10 +234,76 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
       );
   }
 
-  void _addNewSample() {
-    setState(() {
-      _samples.add('');
-    });
+  void _ensureSampleListTable() {
+    final index = _tables.indexWhere(isSampleListTable);
+    if (index >= 0) {
+      _sampleListTableId = _tables[index].id;
+      _syncLegacySamplesFromTable(_tables[index]);
+      return;
+    }
+
+    _sampleListTableId = 'sample_list_${DateTime.now().microsecondsSinceEpoch}';
+    final materialIndex = _tables.indexWhere(
+      (table) => table.id == _materialListTableId,
+    );
+    _tables.insert(
+      materialIndex < 0 ? 0 : materialIndex + 1,
+      createSampleListTable(
+        id: _sampleListTableId,
+        data: _samples.map<List<dynamic>>((sample) => [sample, '']).toList(),
+      ),
+    );
+  }
+
+  void _updateSampleListTable(ProtocolTable updated) {
+    final index = _tables.indexWhere((table) => table.id == _sampleListTableId);
+    if (index == -1) return;
+    final rows = updated.data
+        .map<List<dynamic>>(
+          (row) => List<dynamic>.generate(
+            2,
+            (column) => column < row.length ? row[column] : '',
+          ),
+        )
+        .toList();
+    final normalized = updated.copyWith(
+      id: _sampleListTableId,
+      type: TableType.generic,
+      title: 'Samples',
+      columnHeaders: const ['Sample name', 'Information'],
+      rowHeaders: List.generate(rows.length, (index) => '${index + 1}'),
+      data: rows,
+      cellColors: List.generate(
+        rows.length,
+        (rowIndex) => List.generate(
+          2,
+          (column) =>
+              rowIndex < updated.cellColors.length &&
+                  column < updated.cellColors[rowIndex].length
+              ? updated.cellColors[rowIndex][column]
+              : '',
+        ),
+      ),
+      metadata: {
+        ...updated.metadata,
+        'protocolSection': sampleListTableSection,
+        'rowHeaderLabel': 'Index number',
+      },
+    );
+    _tables[index] = normalized;
+    _syncLegacySamplesFromTable(normalized);
+  }
+
+  void _syncLegacySamplesFromTable(ProtocolTable table) {
+    _samples
+      ..clear()
+      ..addAll(
+        table.data
+            .where(
+              (row) => row.any((cell) => cell.toString().trim().isNotEmpty),
+            )
+            .map((row) => row.isEmpty ? '' : row.first.toString()),
+      );
   }
 
   void _addNewStep({String? phaseName, int? insertIndex}) {
@@ -474,172 +562,179 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
     setState(() => _additionalData[index] = result);
   }
 
-  Future<ProtocolAdditionalData?> _showAdditionalDataDialog({
-    ProtocolAdditionalData? initial,
-  }) async {
-    final titleController = TextEditingController(text: initial?.title ?? '');
-    final descriptionController = TextEditingController(
-      text: initial?.description ?? '',
+  Future<List<String>> _addProtocolImages() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined),
+              title: const Text('Camera'),
+              onTap: () => Navigator.pop(sheetContext, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Gallery'),
+              onTap: () => Navigator.pop(sheetContext, ImageSource.gallery),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
     );
-    final linkController = TextEditingController(text: initial?.link ?? '');
-    final photoPaths = List<String>.from(initial?.photoPaths ?? []);
-    final picker = ImagePicker();
+    if (source == null || !mounted) return const [];
 
     try {
-      return await showDialog<ProtocolAdditionalData>(
-        context: context,
-        builder: (context) => StatefulBuilder(
-          builder: (context, setDialogState) {
-            Future<void> addImages(Future<List<XFile>> pick) async {
-              final images = await pick;
-              if (images.isEmpty) return;
-              final stored = <String>[];
-              for (final image in images) {
-                stored.add(await PickedImageStore.persistPickedImage(image));
-              }
-              setDialogState(() => photoPaths.addAll(stored));
-            }
+      final picker = ImagePicker();
+      final picked = <XFile>[];
+      if (source == ImageSource.camera) {
+        final image = await picker.pickImage(source: ImageSource.camera);
+        if (image != null) picked.add(image);
+      } else {
+        picked.addAll(await picker.pickMultiImage());
+      }
+      if (picked.isEmpty) return const [];
 
-            return AlertDialog(
-              title: Text(
-                initial == null
-                    ? 'Add Additional Data'
-                    : 'Edit Additional Data',
-              ),
-              content: SizedBox(
-                width: double.maxFinite,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextField(
-                        controller: titleController,
-                        decoration: const InputDecoration(labelText: 'Title'),
-                        autofocus: true,
-                      ),
-                      TextField(
-                        controller: descriptionController,
-                        decoration: const InputDecoration(
-                          labelText: 'Description / notes',
-                        ),
-                        maxLines: 3,
-                      ),
-                      TextField(
-                        controller: linkController,
-                        decoration: const InputDecoration(
-                          labelText: 'Link',
-                          hintText: 'https://...',
-                        ),
-                        keyboardType: TextInputType.url,
-                      ),
-                      const SizedBox(height: 16),
-                      if (photoPaths.isNotEmpty)
-                        GridView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 3,
-                                crossAxisSpacing: 8,
-                                mainAxisSpacing: 8,
-                                childAspectRatio: 3 / 4,
-                              ),
-                          itemCount: photoPaths.length,
-                          itemBuilder: (context, index) {
-                            return Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(4),
-                                  child: buildLocalImage(photoPaths[index]),
-                                ),
-                                Positioned(
-                                  top: -10,
-                                  right: -10,
-                                  child: IconButton(
-                                    icon: const Icon(
-                                      Icons.cancel,
-                                      color: AppColors.error,
-                                      size: 20,
-                                    ),
-                                    onPressed: () => setDialogState(
-                                      () => photoPaths.removeAt(index),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            );
-                          },
-                        ),
-                      const SizedBox(height: 8),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          TextButton.icon(
-                            onPressed: () async {
-                              final photo = await picker.pickImage(
-                                source: ImageSource.camera,
-                              );
-                              if (photo == null) return;
-                              await addImages(Future.value([photo]));
-                            },
-                            icon: const Icon(Icons.camera_alt),
-                            label: const Text('Camera'),
-                          ),
-                          TextButton.icon(
-                            onPressed: () => addImages(picker.pickMultiImage()),
-                            icon: const Icon(Icons.photo_library),
-                            label: const Text('Gallery'),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel'),
-                ),
-                TextButton(
-                  onPressed: () {
-                    final title = titleController.text.trim();
-                    final description = descriptionController.text.trim();
-                    final link = linkController.text.trim();
-                    if (title.isEmpty &&
-                        description.isEmpty &&
-                        link.isEmpty &&
-                        photoPaths.isEmpty) {
-                      Navigator.pop(context);
-                      return;
-                    }
-                    Navigator.pop(
-                      context,
-                      ProtocolAdditionalData(
-                        id:
-                            initial?.id ??
-                            'data_${DateTime.now().microsecondsSinceEpoch}',
-                        title: title.isEmpty ? 'Additional Data' : title,
-                        description: description,
-                        link: link,
-                        photoPaths: List<String>.from(photoPaths),
-                      ),
-                    );
-                  },
-                  child: const Text('Save'),
-                ),
-              ],
-            );
-          },
-        ),
-      );
-    } finally {
-      titleController.dispose();
-      descriptionController.dispose();
-      linkController.dispose();
+      final stored = <String>[];
+      final names = <String>[];
+      for (final pickedImage in picked) {
+        final bytes = await pickedImage.readAsBytes();
+        if (!mounted) return stored;
+        final result = await showDialog<ProtocolImageEditResult>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => ProtocolImageEditorDialog(
+            imageBytes: bytes,
+            initialName: 'Image ${_files.length + stored.length + 1}',
+          ),
+        );
+        if (result == null) continue;
+        final path = await ProtocolImageStore.persistEditedImage(result.bytes);
+        if (!_files.contains(path) && !stored.contains(path)) {
+          stored.add(path);
+          names.add(result.name);
+        }
+      }
+      if (stored.isNotEmpty && mounted) {
+        setState(() {
+          _files.addAll(stored);
+          _imageNames.addAll(names);
+        });
+      }
+      return stored;
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not add image: $error')));
+      }
+      return const [];
     }
   }
+
+  void _removeProtocolImage(String path) {
+    setState(() {
+      final imageIndex = _files.indexOf(path);
+      if (imageIndex == -1) return;
+      _files.removeAt(imageIndex);
+      if (imageIndex < _imageNames.length) _imageNames.removeAt(imageIndex);
+      for (var index = 0; index < _steps.length; index++) {
+        _steps[index] = _steps[index].copyWith(
+          attachedFiles: _steps[index].attachedFiles
+              .where((linkedPath) => linkedPath != path)
+              .toList(),
+        );
+      }
+      for (var index = 0; index < _additionalData.length; index++) {
+        _additionalData[index] = _additionalData[index].copyWith(
+          photoPaths: _additionalData[index].photoPaths
+              .where((linkedPath) => linkedPath != path)
+              .toList(),
+        );
+      }
+    });
+  }
+
+  String _protocolImageLabel(String path) {
+    final index = _files.indexOf(path);
+    return index >= 0 &&
+            index < _imageNames.length &&
+            _imageNames[index].trim().isNotEmpty
+        ? _imageNames[index].trim()
+        : index == -1
+        ? 'Image'
+        : 'Image ${index + 1}';
+  }
+
+  Future<void> _editProtocolImage(String path) async {
+    final bytes = await ProtocolImageStore.loadBytes(path);
+    if (!mounted) return;
+    if (bytes == null || bytes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('This image could not be opened.')),
+      );
+      return;
+    }
+    final result = await showDialog<ProtocolImageEditResult>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => ProtocolImageEditorDialog(
+        imageBytes: bytes,
+        initialName: _protocolImageLabel(path),
+      ),
+    );
+    if (result == null || !mounted) return;
+
+    final replacementPath = await ProtocolImageStore.persistEditedImage(
+      result.bytes,
+    );
+    if (!mounted) return;
+    setState(() {
+      final fileIndex = _files.indexOf(path);
+      if (fileIndex == -1) return;
+      _files[fileIndex] = replacementPath;
+      while (_imageNames.length <= fileIndex) {
+        _imageNames.add('Image ${_imageNames.length + 1}');
+      }
+      _imageNames[fileIndex] = result.name;
+      for (var stepIndex = 0; stepIndex < _steps.length; stepIndex++) {
+        final step = _steps[stepIndex];
+        _steps[stepIndex] = step.copyWith(
+          attachedFiles: step.attachedFiles
+              .map(
+                (linkedPath) =>
+                    linkedPath == path ? replacementPath : linkedPath,
+              )
+              .toList(),
+        );
+      }
+      for (var index = 0; index < _additionalData.length; index++) {
+        _additionalData[index] = _additionalData[index].copyWith(
+          photoPaths: _additionalData[index].photoPaths
+              .map(
+                (linkedPath) =>
+                    linkedPath == path ? replacementPath : linkedPath,
+              )
+              .toList(),
+        );
+      }
+    });
+  }
+
+  Future<ProtocolAdditionalData?> _showAdditionalDataDialog({
+    ProtocolAdditionalData? initial,
+  }) => showDialog<ProtocolAdditionalData>(
+    context: context,
+    builder: (context) => _AdditionalDataEditorDialog(
+      initial: initial,
+      availableImages: _files,
+      imageLabel: _protocolImageLabel,
+      addImages: _addProtocolImages,
+    ),
+  );
 
   ProtocolTable _withTableColor(ProtocolTable table) {
     if (table.metadata.containsKey('typeColor')) return table;
@@ -835,6 +930,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
         newId = generateProtocolId(initials: signedInUser?.initials);
       }
       _syncLegacyMaterialsFromTable(_materialListTable);
+      _syncLegacySamplesFromTable(_sampleListTable);
 
       final newProtocol = Protocol(
         id: newId,
@@ -859,6 +955,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
         materialListTableId: _materialListTableId,
         samples: List.from(_samples),
         files: List.from(_files),
+        imageNames: List<String>.from(_imageNames),
         steps: _steps.map((s) => s.deepCopy()).toList(),
         tables: _tables.map((table) => table.deepCopy()).toList(),
         additionalData: _additionalData.map((d) => d.deepCopy()).toList(),
@@ -1013,13 +1110,11 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
           const SizedBox(height: 20),
           _buildProtocolInformationSection(),
           const SizedBox(height: 24),
-          _buildSamplesSection(),
+          _buildTablesSection(),
           const SizedBox(height: 24),
-          _buildMaterialsSection(),
+          _buildImagesSection(),
           const SizedBox(height: 24),
           _buildStepsArea(),
-          const SizedBox(height: 24),
-          _buildTablesSection(),
           const SizedBox(height: 24),
           _buildAdditionalDataSection(),
         ],
@@ -1043,6 +1138,8 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
                   const SizedBox(height: 24),
                   _buildTablesSection(),
                   const SizedBox(height: 24),
+                  _buildImagesSection(),
+                  const SizedBox(height: 24),
                   _buildAdditionalDataSection(),
                 ],
               ),
@@ -1052,13 +1149,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
               flex: 7,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildSamplesSection(),
-                  const SizedBox(height: 24),
-                  _buildMaterialsSection(),
-                  const SizedBox(height: 24),
-                  _buildStepsArea(),
-                ],
+                children: [_buildStepsArea()],
               ),
             ),
           ],
@@ -1082,81 +1173,6 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
             _descriptionController,
             maxLines: 4,
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSamplesSection() {
-    return _buildSectionSurface(
-      key: const Key('builder-samples'),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _buildSectionHeader('Samples'),
-          const SizedBox(height: 12),
-          if (_samples.isEmpty)
-            _buildEmptyState('No samples added.')
-          else
-            ..._samples.asMap().entries.map((entry) {
-              final index = entry.key;
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.biotech_outlined,
-                      size: 20,
-                      color: AppColors.primary,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: TextFormField(
-                        initialValue: entry.value,
-                        readOnly: _isInProgress,
-                        decoration: const InputDecoration(
-                          hintText: 'Sample name (e.g. THP1 cell line)',
-                        ),
-                        onChanged: (value) => _samples[index] = value,
-                      ),
-                    ),
-                    if (!_isInProgress)
-                      IconButton(
-                        tooltip: 'Remove sample',
-                        icon: const Icon(
-                          Icons.remove_circle_outline,
-                          color: AppColors.error,
-                        ),
-                        onPressed: () =>
-                            setState(() => _samples.removeAt(index)),
-                      ),
-                  ],
-                ),
-              );
-            }),
-          const SizedBox(height: 6),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: FilledButton.icon(
-              onPressed: _isInProgress ? null : _addNewSample,
-              icon: const Icon(Icons.add),
-              label: const Text('Add Sample'),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMaterialsSection() {
-    return _buildSectionSurface(
-      key: const Key('builder-materials'),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _buildSectionHeader('Material List'),
-          const SizedBox(height: 10),
-          _buildMaterialsTable(),
         ],
       ),
     );
@@ -1234,26 +1250,35 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
         children: [
           _buildSectionHeader('Tables'),
           const SizedBox(height: 10),
-          if (_regularTables.isEmpty)
-            _buildEmptyState('No tables added.')
-          else
-            LinkedProtocolTablesSection(
-              tables: _regularTables,
-              isReadOnly: _isInProgress,
-              initiallyCollapsed: true,
-              onSave: _isInProgress
-                  ? null
-                  : (updated) {
-                      setState(() {
+          LinkedProtocolTablesSection(
+            tables: _protocolSectionTables,
+            isReadOnly: _isInProgress,
+            initiallyCollapsed: true,
+            onSave: _isInProgress
+                ? null
+                : (updated) {
+                    final isRegularTable =
+                        updated.id != _materialListTableId &&
+                        updated.id != _sampleListTableId;
+                    setState(() {
+                      if (updated.id == _materialListTableId) {
+                        _updateMaterialListTable(updated);
+                      } else if (updated.id == _sampleListTableId) {
+                        _updateSampleListTable(updated);
+                      } else {
                         final index = _tables.indexWhere(
                           (candidate) => candidate.id == updated.id,
                         );
                         if (index != -1) _tables[index] = updated;
-                      });
-                      _syncMaterialsFromTable(updated);
-                    },
-              onDelete: _isInProgress ? null : _removeTable,
-            ),
+                      }
+                    });
+                    if (isRegularTable) _syncMaterialsFromTable(updated);
+                  },
+            onDelete: _isInProgress ? null : _removeTable,
+            canDelete: (table) =>
+                table.id != _materialListTableId &&
+                table.id != _sampleListTableId,
+          ),
           const SizedBox(height: 12),
           Align(
             alignment: Alignment.centerLeft,
@@ -1279,6 +1304,102 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
         );
       }
     });
+  }
+
+  Widget _buildImagesSection() {
+    return _buildSectionSurface(
+      key: const Key('builder-images'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildSectionHeader('Images / Figures'),
+          const SizedBox(height: 10),
+          if (_files.isEmpty)
+            _buildEmptyState('No images or figures added.')
+          else
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: _files.asMap().entries.map((entry) {
+                final path = entry.value;
+                return SizedBox(
+                  key: Key('protocol-image-${entry.key + 1}'),
+                  width: 112,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SizedBox.square(
+                        dimension: 112,
+                        child: Stack(
+                          children: [
+                            Positioned.fill(
+                              child: Card(
+                                clipBehavior: Clip.antiAlias,
+                                margin: EdgeInsets.zero,
+                                child: InkWell(
+                                  key: Key(
+                                    'edit-protocol-image-${entry.key + 1}',
+                                  ),
+                                  onTap: _isInProgress
+                                      ? null
+                                      : () => _editProtocolImage(path),
+                                  child: ColoredBox(
+                                    color: Colors.white,
+                                    child: buildLocalImage(
+                                      path,
+                                      fit: BoxFit.cover,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            if (!_isInProgress)
+                              Positioned(
+                                top: 2,
+                                right: 2,
+                                child: IconButton.filledTonal(
+                                  tooltip:
+                                      'Remove ${_protocolImageLabel(path)}',
+                                  icon: const Icon(
+                                    Icons.delete_outline,
+                                    color: AppColors.error,
+                                    size: 18,
+                                  ),
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: () => _removeProtocolImage(path),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '${entry.key + 1}. ${_protocolImageLabel(path)}',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FilledButton.icon(
+              onPressed: _isInProgress ? null : _addProtocolImages,
+              icon: const Icon(Icons.add_photo_alternate_outlined),
+              label: const Text('Add Image'),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildAdditionalDataSection() {
@@ -1321,7 +1442,10 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
                           style: const TextStyle(color: AppColors.info),
                         ),
                       if (data.photoPaths.isNotEmpty)
-                        Text('${data.photoPaths.length} photo(s)'),
+                        Text(
+                          '${data.photoPaths.length} linked '
+                          '${data.photoPaths.length == 1 ? 'image' : 'images'}',
+                        ),
                     ],
                   ),
                   trailing: _isInProgress
@@ -1886,19 +2010,6 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
     );
   }
 
-  Widget _buildMaterialsTable() {
-    return ProtocolTablePreview(
-      table: _materialListTable,
-      isReadOnly: _isInProgress,
-      onSave: _isInProgress
-          ? null
-          : (updated) => setState(() => _updateMaterialListTable(updated)),
-      isCollapsed: _isMaterialListCollapsed,
-      onCollapsedChanged: (collapsed) =>
-          setState(() => _isMaterialListCollapsed = collapsed),
-    );
-  }
-
   static const double _uniformFontSize = 14.0;
 
   Widget _buildStepEditor(int index, ProtocolStep step) {
@@ -2103,6 +2214,8 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
               ),
             const SizedBox(height: 8),
             _buildStepTableLinks(index, step, isLocked: isLocked),
+            const SizedBox(height: 8),
+            _buildStepImageLinks(index, step, isLocked: isLocked),
             SizedBox(
               key: Key('step-linked-tables-bottom-gap-${index + 1}'),
               height: 12,
@@ -2244,6 +2357,160 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
         tableIds.add(tableId);
       }
       _steps[stepIndex] = step.copyWith(tableIds: tableIds);
+    });
+  }
+
+  Widget _buildStepImageLinks(
+    int stepIndex,
+    ProtocolStep step, {
+    required bool isLocked,
+  }) {
+    final linkedImages = step.attachedFiles.where(_files.contains).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        PopupMenuButton<String>(
+          key: Key('step-image-menu-${stepIndex + 1}'),
+          enabled: !isLocked,
+          tooltip: 'Link images to step ${stepIndex + 1}',
+          onSelected: (value) async {
+            if (value == '__add_image__') {
+              final added = await _addProtocolImages();
+              if (!mounted || added.isEmpty || stepIndex >= _steps.length) {
+                return;
+              }
+              setState(() {
+                final current = _steps[stepIndex];
+                _steps[stepIndex] = current.copyWith(
+                  attachedFiles: <String>{
+                    ...current.attachedFiles,
+                    ...added,
+                  }.toList(),
+                );
+              });
+              return;
+            }
+            _toggleImageLink(stepIndex, value);
+          },
+          itemBuilder: (context) => [
+            if (_files.isEmpty)
+              const PopupMenuItem<String>(
+                enabled: false,
+                child: ListTile(
+                  leading: Icon(Icons.image_outlined),
+                  title: Text('No images available'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            for (final imagePath in _files)
+              PopupMenuItem<String>(
+                value: imagePath,
+                child: ListTile(
+                  leading: SizedBox(
+                    width: 40,
+                    height: 40,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: buildLocalImage(imagePath),
+                    ),
+                  ),
+                  title: Text(_protocolImageLabel(imagePath)),
+                  trailing: step.attachedFiles.contains(imagePath)
+                      ? const Icon(Icons.check, color: AppColors.primary)
+                      : null,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            const PopupMenuDivider(),
+            const PopupMenuItem<String>(
+              value: '__add_image__',
+              child: ListTile(
+                leading: Icon(Icons.add_photo_alternate_outlined),
+                title: Text('Add image'),
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+          ],
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.add_photo_alternate_outlined,
+                  size: 20,
+                  color: isLocked ? Colors.grey : AppColors.primary,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Link image',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: _uniformFontSize,
+                    color: isLocked ? Colors.grey : AppColors.primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (linkedImages.isEmpty)
+          const Text(
+            'No images linked to this step.',
+            style: TextStyle(
+              fontSize: _uniformFontSize - 2,
+              color: AppColors.textSecondary,
+            ),
+          )
+        else
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: linkedImages.map((imagePath) {
+              return InputChip(
+                key: Key(
+                  'linked-image-${step.id}-${_files.indexOf(imagePath)}',
+                ),
+                avatar: const Icon(Icons.image_outlined, size: 16),
+                label: Text(
+                  _protocolImageLabel(imagePath),
+                  style: const TextStyle(fontSize: _uniformFontSize - 2),
+                ),
+                deleteIcon: const Icon(Icons.close, size: 16),
+                onDeleted: isLocked
+                    ? null
+                    : () => _unlinkImageFromStep(stepIndex, imagePath),
+              );
+            }).toList(),
+          ),
+      ],
+    );
+  }
+
+  void _toggleImageLink(int stepIndex, String imagePath) {
+    if (stepIndex < 0 || stepIndex >= _steps.length) return;
+    if (!_files.contains(imagePath)) return;
+
+    setState(() {
+      final step = _steps[stepIndex];
+      final attachedFiles = List<String>.from(step.attachedFiles);
+      if (attachedFiles.contains(imagePath)) {
+        attachedFiles.remove(imagePath);
+      } else {
+        attachedFiles.add(imagePath);
+      }
+      _steps[stepIndex] = step.copyWith(attachedFiles: attachedFiles);
+    });
+  }
+
+  void _unlinkImageFromStep(int stepIndex, String imagePath) {
+    setState(() {
+      final attachedFiles = List<String>.from(_steps[stepIndex].attachedFiles)
+        ..remove(imagePath);
+      _steps[stepIndex] = _steps[stepIndex].copyWith(
+        attachedFiles: attachedFiles,
+      );
     });
   }
 
@@ -2969,6 +3236,251 @@ class _ActionTimerInputState extends State<_ActionTimerInput> {
       total = val.round();
     }
     widget.onChanged(total);
+  }
+}
+
+class _AdditionalDataEditorDialog extends StatefulWidget {
+  final ProtocolAdditionalData? initial;
+  final List<String> availableImages;
+  final String Function(String path) imageLabel;
+  final Future<List<String>> Function() addImages;
+
+  const _AdditionalDataEditorDialog({
+    required this.initial,
+    required this.availableImages,
+    required this.imageLabel,
+    required this.addImages,
+  });
+
+  @override
+  State<_AdditionalDataEditorDialog> createState() =>
+      _AdditionalDataEditorDialogState();
+}
+
+class _AdditionalDataEditorDialogState
+    extends State<_AdditionalDataEditorDialog> {
+  late final TextEditingController _titleController;
+  late final TextEditingController _descriptionController;
+  late final TextEditingController _linkController;
+  late final List<String> _linkedImages;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleController = TextEditingController(text: widget.initial?.title ?? '');
+    _descriptionController = TextEditingController(
+      text: widget.initial?.description ?? '',
+    );
+    _linkController = TextEditingController(text: widget.initial?.link ?? '');
+    _linkedImages = List<String>.from(widget.initial?.photoPaths ?? const []);
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _descriptionController.dispose();
+    _linkController.dispose();
+    super.dispose();
+  }
+
+  void _toggleImage(String path) {
+    setState(() {
+      if (_linkedImages.contains(path)) {
+        _linkedImages.remove(path);
+      } else {
+        _linkedImages.add(path);
+      }
+    });
+  }
+
+  void _save() {
+    final title = _titleController.text.trim();
+    final description = _descriptionController.text.trim();
+    final link = _linkController.text.trim();
+    if (title.isEmpty &&
+        description.isEmpty &&
+        link.isEmpty &&
+        _linkedImages.isEmpty) {
+      Navigator.pop(context);
+      return;
+    }
+    Navigator.pop(
+      context,
+      ProtocolAdditionalData(
+        id:
+            widget.initial?.id ??
+            'data_${DateTime.now().microsecondsSinceEpoch}',
+        title: title.isEmpty ? 'Additional Data' : title,
+        description: description,
+        link: link,
+        photoPaths: List<String>.from(_linkedImages),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(
+        widget.initial == null ? 'Add Additional Data' : 'Edit Additional Data',
+      ),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _titleController,
+                decoration: const InputDecoration(labelText: 'Title'),
+                autofocus: true,
+              ),
+              TextField(
+                controller: _descriptionController,
+                decoration: const InputDecoration(
+                  labelText: 'Description / notes',
+                ),
+                maxLines: 3,
+              ),
+              TextField(
+                controller: _linkController,
+                decoration: const InputDecoration(
+                  labelText: 'Link',
+                  hintText: 'https://...',
+                ),
+                keyboardType: TextInputType.url,
+              ),
+              const SizedBox(height: 16),
+              if (_linkedImages.isNotEmpty)
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    crossAxisSpacing: 8,
+                    mainAxisSpacing: 8,
+                    childAspectRatio: 3 / 4,
+                  ),
+                  itemCount: _linkedImages.length,
+                  itemBuilder: (context, index) => Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: buildLocalImage(_linkedImages[index]),
+                      ),
+                      Positioned(
+                        top: -10,
+                        right: -10,
+                        child: IconButton(
+                          tooltip: 'Unlink image',
+                          icon: const Icon(
+                            Icons.cancel,
+                            color: AppColors.error,
+                            size: 20,
+                          ),
+                          onPressed: () =>
+                              setState(() => _linkedImages.removeAt(index)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: PopupMenuButton<String>(
+                  key: const Key('additional-data-image-menu'),
+                  tooltip: 'Link an image from Images / Figures',
+                  onSelected: (value) async {
+                    if (value == '__add_image__') {
+                      final added = await widget.addImages();
+                      if (!mounted || added.isEmpty) return;
+                      setState(() {
+                        _linkedImages.addAll(
+                          added.where((path) => !_linkedImages.contains(path)),
+                        );
+                      });
+                      return;
+                    }
+                    _toggleImage(value);
+                  },
+                  itemBuilder: (context) => [
+                    if (widget.availableImages.isEmpty)
+                      const PopupMenuItem<String>(
+                        enabled: false,
+                        child: ListTile(
+                          leading: Icon(Icons.image_outlined),
+                          title: Text('No images available'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                    for (final imagePath in widget.availableImages)
+                      PopupMenuItem<String>(
+                        value: imagePath,
+                        child: ListTile(
+                          leading: SizedBox.square(
+                            dimension: 40,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: buildLocalImage(imagePath),
+                            ),
+                          ),
+                          title: Text(widget.imageLabel(imagePath)),
+                          trailing: _linkedImages.contains(imagePath)
+                              ? const Icon(
+                                  Icons.check,
+                                  color: AppColors.primary,
+                                )
+                              : null,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                    const PopupMenuDivider(),
+                    const PopupMenuItem<String>(
+                      value: '__add_image__',
+                      child: ListTile(
+                        leading: Icon(Icons.add_photo_alternate_outlined),
+                        title: Text('Add image'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  ],
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.add_photo_alternate_outlined,
+                          size: 20,
+                          color: AppColors.primary,
+                        ),
+                        SizedBox(width: 6),
+                        Text(
+                          'Link image',
+                          style: TextStyle(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        TextButton(onPressed: _save, child: const Text('Save')),
+      ],
+    );
   }
 }
 

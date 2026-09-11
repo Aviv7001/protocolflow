@@ -85,10 +85,7 @@ class SerialDilutionResultTable extends StatelessWidget {
                           ),
                         ),
                         DataCell(
-                          Text(
-                            row.formattedConcentration,
-                            style: const TextStyle(fontSize: 10),
-                          ),
+                          _ConcentrationCell(row.formattedConcentration),
                         ),
                         DataCell(
                           Text(
@@ -245,6 +242,36 @@ class _HeaderCell extends StatelessWidget {
     return Text(
       text,
       style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+    );
+  }
+}
+
+class _ConcentrationCell extends StatelessWidget {
+  final String concentration;
+
+  const _ConcentrationCell(this.concentration);
+
+  @override
+  Widget build(BuildContext context) {
+    final separator = concentration.lastIndexOf(' ');
+    if (separator <= 0 || separator == concentration.length - 1) {
+      return Text(concentration, style: const TextStyle(fontSize: 10));
+    }
+
+    return Text.rich(
+      TextSpan(
+        style: const TextStyle(fontSize: 10, color: AppColors.textPrimary),
+        children: [
+          TextSpan(text: concentration.substring(0, separator + 1)),
+          TextSpan(
+            text: concentration.substring(separator + 1),
+            style: const TextStyle(
+              color: AppColors.primary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

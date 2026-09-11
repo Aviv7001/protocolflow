@@ -51,6 +51,10 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
   bool get _isEditableGridType =>
       _type == TableType.generic || _type == TableType.materialList;
 
+  bool get _usesOneBasedRowHeaders =>
+      _type == TableType.materialList ||
+      isSampleListTable(_allTables[_currentTableIndex]);
+
   @override
   void initState() {
     super.initState();
@@ -266,7 +270,7 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
       _data.add(List.generate(_colHeaders.length, (_) => ''));
       _cellColors.add(List.generate(_colHeaders.length, (_) => ''));
       _rowHeaders.add(
-        _isEditableGridType
+        _isEditableGridType && !_usesOneBasedRowHeaders
             ? (_rowHeaders.length + 2).toString()
             : (_rowHeaders.length + 1).toString(),
       );
@@ -283,7 +287,7 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
         // Renumber rows if they are just numbers
         for (int i = 0; i < _rowHeaders.length; i++) {
           if (int.tryParse(_rowHeaders[i]) != null) {
-            _rowHeaders[i] = _isEditableGridType
+            _rowHeaders[i] = _isEditableGridType && !_usesOneBasedRowHeaders
                 ? (i + 2).toString()
                 : (i + 1).toString();
           }
@@ -500,10 +504,11 @@ class _TableDataEditorScreenState extends State<TableDataEditorScreen> {
               dataRowMinHeight: 60,
               dataRowMaxHeight: 100,
               columns: [
-                const DataColumn(
+                DataColumn(
                   label: Text(
-                    '#',
-                    style: TextStyle(fontWeight: FontWeight.bold),
+                    _allTables[_currentTableIndex].metadata['rowHeaderLabel'] ??
+                        '#',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                 ),
                 ..._colHeaders.map(

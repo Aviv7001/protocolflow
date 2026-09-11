@@ -10,6 +10,8 @@ import '../../lab_math/widgets/concentration_input_row.dart';
 import '../services/master_mix_calculator_service.dart';
 import '../widgets/master_mix_result_table.dart';
 
+enum _MixCardAction { moveUp, moveDown }
+
 class MasterMixManagerScreen extends StatefulWidget {
   final MasterMixWizard wizard;
   final Function(MasterMixWizard) onUpdate;
@@ -37,9 +39,17 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
     ConcentrationUnit.nM,
     ConcentrationUnit.pM,
     ConcentrationUnit.gL,
+    ConcentrationUnit.gML,
+    ConcentrationUnit.gUL,
+    ConcentrationUnit.mgL,
     ConcentrationUnit.mgML,
+    ConcentrationUnit.mgUL,
+    ConcentrationUnit.ugL,
     ConcentrationUnit.ugML,
+    ConcentrationUnit.ugUL,
+    ConcentrationUnit.ngL,
     ConcentrationUnit.ngML,
+    ConcentrationUnit.ngUL,
     ConcentrationUnit.percent,
     ConcentrationUnit.X,
     ConcentrationUnit.ratio,
@@ -52,13 +62,22 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
     ConcentrationUnit.nM,
     ConcentrationUnit.pM,
     ConcentrationUnit.gL,
+    ConcentrationUnit.gML,
+    ConcentrationUnit.gUL,
+    ConcentrationUnit.mgL,
     ConcentrationUnit.mgML,
+    ConcentrationUnit.mgUL,
+    ConcentrationUnit.ugL,
     ConcentrationUnit.ugML,
+    ConcentrationUnit.ugUL,
+    ConcentrationUnit.ngL,
     ConcentrationUnit.ngML,
+    ConcentrationUnit.ngUL,
     ConcentrationUnit.percent,
   ];
   bool _canActuallyPop = false;
   final Set<int> _collapsedMixIndexes = {};
+  final List<Key> _mixReorderKeys = [];
 
   @override
   void initState() {
@@ -75,10 +94,14 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
           )
           .toList(),
     );
+    _mixReorderKeys.addAll(
+      List<Key>.generate(_wizard.mixes.length, (_) => UniqueKey()),
+    );
   }
 
   void _addMix() {
     setState(() {
+      _mixReorderKeys.add(UniqueKey());
       _wizard = _wizard.copyWith(
         mixes: [
           ..._wizard.mixes,
@@ -92,6 +115,7 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
     if (_wizard.mixes.length <= 1) return;
     setState(() {
       final mixes = List<MasterMixItem>.from(_wizard.mixes)..removeAt(mixIndex);
+      _mixReorderKeys.removeAt(mixIndex);
       final collapsed = _collapsedMixIndexes.toList()..sort();
       _collapsedMixIndexes
         ..clear()
@@ -111,6 +135,45 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
       } else {
         _collapsedMixIndexes.add(mixIndex);
       }
+    });
+  }
+
+  void _toggleAllMixes() {
+    final allCollapsed = _collapsedMixIndexes.length == _wizard.mixes.length;
+    setState(() {
+      if (allCollapsed) {
+        _collapsedMixIndexes.clear();
+      } else {
+        _collapsedMixIndexes
+          ..clear()
+          ..addAll(List.generate(_wizard.mixes.length, (index) => index));
+      }
+    });
+  }
+
+  void _moveMix(int mixIndex, int targetIndex) {
+    if (targetIndex < 0 || targetIndex >= _wizard.mixes.length) return;
+    setState(() {
+      final mixes = List<MasterMixItem>.from(_wizard.mixes);
+      final collapsedMixes = <MasterMixItem>{
+        for (final index in _collapsedMixIndexes)
+          if (index >= 0 && index < mixes.length) mixes[index],
+      };
+      final movedMix = mixes.removeAt(mixIndex);
+      mixes.insert(targetIndex, movedMix);
+      final movedKey = _mixReorderKeys.removeAt(mixIndex);
+      _mixReorderKeys.insert(targetIndex, movedKey);
+      _collapsedMixIndexes
+        ..clear()
+        ..addAll(
+          mixes
+              .asMap()
+              .entries
+              .where((entry) => collapsedMixes.contains(entry.value))
+              .map((entry) => entry.key),
+        );
+
+      _wizard = _wizard.copyWith(mixes: mixes);
     });
   }
 
@@ -184,15 +247,39 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
           ],
         ),
         body: ResponsiveTableManagerLayout(
+          independentWideScroll: true,
           controlsKey: const ValueKey('table-manager-controls'),
           previewKey: const ValueKey('table-manager-preview'),
           controls: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _buildTableNameCard(),
-              const SizedBox(height: 12),
-              ..._wizard.mixes.asMap().entries.map(
-                (entry) => _buildMixCard(entry.key, entry.value),
+              const SizedBox(height: 4),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: _toggleAllMixes,
+                  icon: Icon(
+                    _collapsedMixIndexes.length == _wizard.mixes.length
+                        ? Icons.unfold_more
+                        : Icons.unfold_less,
+                  ),
+                  label: Text(
+                    _collapsedMixIndexes.length == _wizard.mixes.length
+                        ? 'Expand all mixes'
+                        : 'Shrink all mixes',
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              ListView.builder(
+                key: const Key('master-mix-list'),
+                primary: false,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _wizard.mixes.length,
+                itemBuilder: (context, index) =>
+                    _buildMixCard(index, _wizard.mixes[index]),
               ),
               const SizedBox(height: 8),
               Align(
@@ -237,6 +324,7 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
     final isCollapsed = _collapsedMixIndexes.contains(mixIndex);
 
     return Card(
+      key: _mixReorderKeys[mixIndex],
       margin: const EdgeInsets.only(bottom: 16),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -251,6 +339,39 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
                     style: Theme.of(context).textTheme.titleMedium,
                     overflow: TextOverflow.ellipsis,
                   ),
+                ),
+                PopupMenuButton<_MixCardAction>(
+                  tooltip: 'Mix actions',
+                  onSelected: (action) {
+                    switch (action) {
+                      case _MixCardAction.moveUp:
+                        _moveMix(mixIndex, mixIndex - 1);
+                        break;
+                      case _MixCardAction.moveDown:
+                        _moveMix(mixIndex, mixIndex + 1);
+                        break;
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    PopupMenuItem(
+                      value: _MixCardAction.moveUp,
+                      enabled: mixIndex > 0,
+                      child: const ListTile(
+                        leading: Icon(Icons.arrow_upward),
+                        title: Text('Move up'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: _MixCardAction.moveDown,
+                      enabled: mixIndex < _wizard.mixes.length - 1,
+                      child: const ListTile(
+                        leading: Icon(Icons.arrow_downward),
+                        title: Text('Move down'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  ],
                 ),
                 IconButton(
                   tooltip: isCollapsed ? 'Expand mix' : 'Shrink mix',
@@ -654,6 +775,13 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
                 item.finalUnit,
               );
               ratio = finalBase / stockBase;
+            } else if (finalFamily == ConcentrationFamily.percentage) {
+              ratio = item.finalConc / 100;
+            } else if (finalFamily == ConcentrationFamily.ratio) {
+              ratio = LabCalculation.concentrationToBase(
+                item.finalConc,
+                item.finalUnit,
+              );
             }
             if (ratio > 0) {
               final newV2 = val / ratio;
@@ -908,6 +1036,7 @@ class _MasterMixManagerScreenState extends State<MasterMixManagerScreen> {
       onValueChanged: onVal,
       onUnitChanged: onUnit,
       fontSize: _uniformFontSize,
+      separateUnitParts: true,
     );
   }
 

@@ -50,6 +50,8 @@ void main() {
       id: 'note-1',
       stepId: 'step-1',
       note: 'Keep this',
+      photoPaths: const ['data:image/jpeg;base64,AA=='],
+      photoNames: const ['Result image'],
       createdAt: DateTime.utc(2026, 8, 13),
     );
     run = await service.updateRun(
@@ -72,6 +74,7 @@ void main() {
     expect(resumed.currentStepIndex, 2);
     expect(resumed.completedStepIds, {'step-1'});
     expect(resumed.notes.single.note, 'Keep this');
+    expect(resumed.notes.single.photoNames, ['Result image']);
     expect(resumed.timerStartTimes, contains('step-2'));
     expect(resumed.pausedSeconds, {'step-1': 45});
     expect(await service.loadRuns(), hasLength(1));

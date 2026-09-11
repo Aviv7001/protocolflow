@@ -69,7 +69,13 @@ class _SavedTablesScreenState extends State<SavedTablesScreen> {
   }
 
   Future<void> _openLabTools() async {
-    await showTableToolPicker(context, standaloneMode: true);
+    await showTableToolPicker(
+      context,
+      standaloneMode: true,
+      initialProjectId: _selectedProjectId == _unassignedProject
+          ? null
+          : _selectedProjectId,
+    );
     if (mounted) _loadTables();
   }
 

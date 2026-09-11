@@ -11,8 +11,8 @@ import 'package:protocolflow/models/protocol_table.dart';
 import 'package:protocolflow/models/step_note.dart';
 import 'package:protocolflow/models/completed_protocol.dart';
 import 'package:protocolflow/data/completed_protocols_data.dart';
-import 'package:protocolflow/services/picked_image_store.dart';
 import 'package:protocolflow/services/auth_service.dart';
+import 'package:protocolflow/services/protocol_image_store.dart';
 import 'package:protocolflow/theme/app_colors.dart';
 import 'package:protocolflow/widgets/action_timer_wrapper.dart';
 import 'package:protocolflow/widgets/local_image.dart';
@@ -22,6 +22,7 @@ import 'package:protocolflow/widgets/protocol_step_notes_table.dart';
 import 'package:protocolflow/widgets/protocol_table_preview.dart';
 import 'package:protocolflow/widgets/protocolflow_app_bar.dart';
 import 'package:protocolflow/widgets/protocolflow_ui.dart';
+import 'package:protocolflow/widgets/protocol_image_editor_dialog.dart';
 import 'package:protocolflow/widgets/responsive_layout.dart';
 import 'package:protocolflow/screens/home_screen.dart';
 
@@ -59,7 +60,7 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
     );
     protocol = session.protocol;
     currentStepIndex = session.currentStepIndex;
-    _notes = session.notes;
+    _notes = session.notes.map((note) => note.deepCopy()).toList();
     _elapsedTime = DateTime.now().difference(session.startedAt);
     unawaited(savePersistentProtocols());
     _startTimer();
@@ -357,6 +358,7 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
   void _addNote() {
     final TextEditingController controller = TextEditingController();
     final List<String> pickedImagePaths = [];
+    final List<String> pickedImageNames = [];
     final ImagePicker picker = ImagePicker();
 
     showDialog(
@@ -388,34 +390,97 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
                               crossAxisCount: 3,
                               crossAxisSpacing: 8,
                               mainAxisSpacing: 8,
-                              childAspectRatio: 3 / 4,
+                              childAspectRatio: 3 / 4.5,
                             ),
                         itemCount: pickedImagePaths.length,
-                        itemBuilder: (context, index) {
-                          return Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(4),
-                                child: buildLocalImage(pickedImagePaths[index]),
-                              ),
-                              Positioned(
-                                top: -10,
-                                right: -10,
-                                child: IconButton(
-                                  icon: const Icon(
-                                    Icons.cancel,
-                                    color: AppColors.error,
-                                    size: 20,
+                        itemBuilder: (context, index) => Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  Card(
+                                    margin: EdgeInsets.zero,
+                                    clipBehavior: Clip.antiAlias,
+                                    child: InkWell(
+                                      key: Key(
+                                        'edit-pending-note-image-${index + 1}',
+                                      ),
+                                      onTap: () async {
+                                        final bytes =
+                                            await ProtocolImageStore.loadBytes(
+                                              pickedImagePaths[index],
+                                            );
+                                        if (bytes == null ||
+                                            bytes.isEmpty ||
+                                            !context.mounted) {
+                                          return;
+                                        }
+                                        final result =
+                                            await showDialog<
+                                              ProtocolImageEditResult
+                                            >(
+                                              context: context,
+                                              barrierDismissible: false,
+                                              builder: (context) =>
+                                                  ProtocolImageEditorDialog(
+                                                    imageBytes: bytes,
+                                                    initialName:
+                                                        pickedImageNames[index],
+                                                  ),
+                                            );
+                                        if (result == null ||
+                                            !context.mounted) {
+                                          return;
+                                        }
+                                        final path =
+                                            await ProtocolImageStore.persistEditedImage(
+                                              result.bytes,
+                                            );
+                                        if (!context.mounted) return;
+                                        setDialogState(() {
+                                          pickedImagePaths[index] = path;
+                                          pickedImageNames[index] = result.name;
+                                        });
+                                      },
+                                      child: buildLocalImage(
+                                        pickedImagePaths[index],
+                                      ),
+                                    ),
                                   ),
-                                  onPressed: () => setDialogState(
-                                    () => pickedImagePaths.removeAt(index),
+                                  Positioned(
+                                    top: -8,
+                                    right: -8,
+                                    child: IconButton(
+                                      tooltip: 'Remove image',
+                                      icon: const Icon(
+                                        Icons.cancel,
+                                        color: AppColors.error,
+                                        size: 20,
+                                      ),
+                                      onPressed: () => setDialogState(() {
+                                        pickedImagePaths.removeAt(index);
+                                        pickedImageNames.removeAt(index);
+                                      }),
+                                    ),
                                   ),
-                                ),
+                                ],
                               ),
-                            ],
-                          );
-                        },
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              pickedImageNames[index],
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     const SizedBox(height: 16),
                     Row(
@@ -427,12 +492,11 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
                               source: ImageSource.camera,
                             );
                             if (photo != null) {
-                              final storedPath =
-                                  await PickedImageStore.persistPickedImage(
-                                    photo,
-                                  );
-                              setDialogState(
-                                () => pickedImagePaths.add(storedPath),
+                              await _prepareNoteImages(
+                                [photo],
+                                pickedImagePaths,
+                                pickedImageNames,
+                                setDialogState,
                               );
                             }
                           },
@@ -444,16 +508,11 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
                             final List<XFile> images = await picker
                                 .pickMultiImage();
                             if (images.isNotEmpty) {
-                              final storedPaths = <String>[];
-                              for (final image in images) {
-                                storedPaths.add(
-                                  await PickedImageStore.persistPickedImage(
-                                    image,
-                                  ),
-                                );
-                              }
-                              setDialogState(
-                                () => pickedImagePaths.addAll(storedPaths),
+                              await _prepareNoteImages(
+                                images,
+                                pickedImagePaths,
+                                pickedImageNames,
+                                setDialogState,
                               );
                             }
                           },
@@ -484,6 +543,7 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
                               : 'materials',
                           note: controller.text,
                           photoPaths: List.from(pickedImagePaths),
+                          photoNames: List.from(pickedImageNames),
                           createdAt: DateTime.now(),
                         ),
                       );
@@ -499,6 +559,44 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
         },
       ),
     );
+  }
+
+  Future<void> _prepareNoteImages(
+    List<XFile> images,
+    List<String> paths,
+    List<String> names,
+    StateSetter setDialogState,
+  ) async {
+    try {
+      for (final image in images) {
+        final bytes = await image.readAsBytes();
+        if (!mounted) return;
+        final existingCount = _notes.fold<int>(
+          0,
+          (count, note) => count + note.photoPaths.length,
+        );
+        final result = await showDialog<ProtocolImageEditResult>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => ProtocolImageEditorDialog(
+            imageBytes: bytes,
+            initialName: 'Image ${existingCount + paths.length + 1}',
+          ),
+        );
+        if (result == null || !mounted) continue;
+        final path = await ProtocolImageStore.persistEditedImage(result.bytes);
+        if (!mounted) return;
+        setDialogState(() {
+          paths.add(path);
+          names.add(result.name);
+        });
+      }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not add image: $error')));
+    }
   }
 
   Widget _buildNotesList({bool showHeading = true}) {
@@ -528,7 +626,7 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
                 crossAxisCount: 3,
                 crossAxisSpacing: 8,
                 mainAxisSpacing: 8,
-                childAspectRatio: 3 / 4,
+                childAspectRatio: 3 / 4.5,
               ),
               itemCount: stepNotes.fold<int>(
                 0,
@@ -540,6 +638,7 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
                 int noteIdx = -1;
                 int photoInNoteIdx = -1;
                 String? path;
+                String? name;
 
                 for (int i = 0; i < stepNotes.length; i++) {
                   final n = stepNotes[i];
@@ -547,6 +646,11 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
                     noteIdx = i + 1;
                     photoInNoteIdx = globalIdx - count + 1;
                     path = n.photoPaths[photoInNoteIdx - 1];
+                    name =
+                        photoInNoteIdx - 1 < n.photoNames.length &&
+                            n.photoNames[photoInNoteIdx - 1].trim().isNotEmpty
+                        ? n.photoNames[photoInNoteIdx - 1].trim()
+                        : 'Image $photoInNoteIdx';
                     break;
                   }
                   count += n.photoPaths.length;
@@ -554,34 +658,52 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
 
                 if (path == null) return const SizedBox.shrink();
 
-                return Stack(
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Positioned.fill(
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: buildLocalImage(path),
+                    Expanded(
+                      child: Stack(
+                        children: [
+                          Positioned.fill(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: buildLocalImage(path),
+                            ),
+                          ),
+                          Positioned(
+                            top: 4,
+                            left: 4,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.withValues(alpha: 0.8),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                '$noteIdx.$photoInNoteIdx',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    Positioned(
-                      top: 4,
-                      left: 4,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.withValues(alpha: 0.8),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          '$noteIdx.$photoInNoteIdx',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                    const SizedBox(height: 4),
+                    Text(
+                      name ?? 'Image $photoInNoteIdx',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],
@@ -783,7 +905,7 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
   void _openFiles() {
     final unlinkedTables = _unlinkedTables();
     final additionalData = protocol.additionalData;
-    final attachedFiles = protocol.files;
+    final images = protocol.files;
 
     showModalBottomSheet<void>(
       context: context,
@@ -807,13 +929,13 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
                     ),
                     const SizedBox(height: 4),
                     const Text(
-                      'Reference tables, additional data, and attached files for this protocol.',
+                      'Reference tables, additional data, and images for this protocol.',
                       style: TextStyle(color: AppColors.textSecondary),
                     ),
                     const SizedBox(height: 12),
                     if (unlinkedTables.isEmpty &&
                         additionalData.isEmpty &&
-                        attachedFiles.isEmpty)
+                        images.isEmpty)
                       _buildEmptyState('No resources attached.')
                     else ...[
                       if (unlinkedTables.isNotEmpty) ...[
@@ -839,22 +961,13 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
                         ),
                         const SizedBox(height: 16),
                       ],
-                      if (attachedFiles.isNotEmpty)
+                      if (images.isNotEmpty)
                         _buildResourceSheetSection(
                           context,
-                          title: 'Attached Files',
-                          child: Column(
-                            children: attachedFiles
-                                .map(
-                                  (file) => ListTile(
-                                    leading: const Icon(
-                                      Icons.insert_drive_file_outlined,
-                                    ),
-                                    title: Text(file),
-                                    contentPadding: EdgeInsets.zero,
-                                  ),
-                                )
-                                .toList(),
+                          title: 'Images / Figures',
+                          child: _buildProtocolImageGrid(
+                            images,
+                            keyPrefix: 'preview-run-resource-image',
                           ),
                         ),
                     ],
@@ -1311,6 +1424,24 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
             const SizedBox(height: 18),
             ProtocolStepNotesTable(notes: step.notes),
           ],
+          if (_linkedImagesForStep(step).isNotEmpty) ...[
+            const SizedBox(height: 18),
+            const Row(
+              children: [
+                Icon(Icons.image_outlined, size: 20, color: AppColors.primary),
+                SizedBox(width: 8),
+                Text(
+                  'Linked images',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            _buildProtocolImageGrid(
+              _linkedImagesForStep(step),
+              keyPrefix: 'preview-run-step-image',
+            ),
+          ],
         ],
       ),
     );
@@ -1369,7 +1500,7 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
   Widget _buildResourcesSurface() {
     final tableCount = _unlinkedTables().length;
     final additionalCount = protocol.additionalData.length;
-    final fileCount = protocol.files.length;
+    final imageCount = protocol.files.length;
     return _buildSectionSurface(
       key: const Key('run-resources'),
       child: Column(
@@ -1378,7 +1509,7 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
           _buildSectionHeader('Resources'),
           const SizedBox(height: 8),
           Text(
-            '$tableCount tables, $additionalCount data items, $fileCount files',
+            '$tableCount tables, $additionalCount data items, $imageCount images',
             style: const TextStyle(color: AppColors.textSecondary),
           ),
           const SizedBox(height: 12),
@@ -1400,6 +1531,130 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
         ? steps[currentStepIndex].id
         : 'materials';
     return _notes.where((note) => note.stepId == currentStepId).toList();
+  }
+
+  List<String> _linkedImagesForStep(ProtocolStep step) {
+    return step.attachedFiles.where(protocol.files.contains).toList();
+  }
+
+  String _protocolImageName(String path) {
+    final index = protocol.files.indexOf(path);
+    return index >= 0 &&
+            index < protocol.imageNames.length &&
+            protocol.imageNames[index].trim().isNotEmpty
+        ? protocol.imageNames[index].trim()
+        : index == -1
+        ? 'Image'
+        : 'Image ${index + 1}';
+  }
+
+  Future<void> _showProtocolImagePreview(String path) async {
+    final index = protocol.files.indexOf(path);
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 620, maxHeight: 820),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${index + 1}. ${_protocolImageName(path)}',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Close preview',
+                      onPressed: () => Navigator.pop(dialogContext),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Flexible(
+                  child: Center(
+                    child: AspectRatio(
+                      aspectRatio: 3 / 4,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: ColoredBox(
+                          color: Colors.white,
+                          child: InteractiveViewer(
+                            minScale: 1,
+                            maxScale: 5,
+                            child: buildLocalImage(path, fit: BoxFit.contain),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProtocolImageGrid(
+    List<String> paths, {
+    required String keyPrefix,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const itemWidth = 112.0;
+        return Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: paths.map((path) {
+            final index = protocol.files.indexOf(path);
+            return SizedBox(
+              width: itemWidth,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  AspectRatio(
+                    aspectRatio: 1,
+                    child: Card(
+                      margin: EdgeInsets.zero,
+                      clipBehavior: Clip.antiAlias,
+                      child: InkWell(
+                        key: Key('$keyPrefix-${index + 1}'),
+                        onTap: () => _showProtocolImagePreview(path),
+                        child: ColoredBox(
+                          color: Colors.white,
+                          child: buildLocalImage(path, fit: BoxFit.cover),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '${index + 1}. ${_protocolImageName(path)}',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        );
+      },
+    );
   }
 
   Widget _buildSectionSurface({Key? key, required Widget child}) {

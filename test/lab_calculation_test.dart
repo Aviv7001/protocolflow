@@ -7,6 +7,27 @@ import 'package:protocolflow/models/master_mix_wizard.dart';
 
 void main() {
   group('LabCalculation concentration units', () {
+    test('supports independently selected mass and volume units', () {
+      expect(
+        LabCalculation.concentrationToBase(1, ConcentrationUnit.gML),
+        1000,
+      );
+      expect(
+        LabCalculation.concentrationToBase(1, ConcentrationUnit.mgL),
+        0.001,
+      );
+      expect(
+        LabCalculation.concentrationToBase(1, ConcentrationUnit.ugL),
+        0.000001,
+      );
+      expect(
+        LabCalculation.concentrationToBase(1, ConcentrationUnit.ngL),
+        0.000000001,
+      );
+      expect(LabCalculation.unitLabel(ConcentrationUnit.gML), 'g/mL');
+      expect(LabCalculation.unitLabel(ConcentrationUnit.mgL), 'mg/L');
+    });
+
     test('converts mass per microliter units to base g/L', () {
       expect(LabCalculation.concentrationToBase(1, ConcentrationUnit.ugUL), 1);
       expect(
@@ -147,6 +168,70 @@ void main() {
         expect(result.reagentResults.single.suggestions, isEmpty);
       },
     );
+
+    test(
+      'derives C2 when percent is used as a relative final concentration',
+      () {
+        final result = MasterMixCalculatorService().calculateMasterMix(
+          MasterMixInput(
+            mixName: 'Percent mix',
+            finalVolume: 1000,
+            finalVolumeUnit: VolumeUnit.uL,
+            extraVolumePercent: 0,
+            baseSolventName: 'Water',
+            reagents: [
+              MasterMixReagentInput(
+                reagentName: 'Protein',
+                stockConcentration: 50,
+                stockConcentrationUnit: ConcentrationUnit.mgML,
+                finalConcentration: 5,
+                finalConcentrationUnit: ConcentrationUnit.percent,
+              ),
+            ],
+          ),
+        );
+
+        expect(result.success, isTrue);
+        expect(
+          result.reagentResults.single.reagentVolumeUl,
+          closeTo(50, 0.001),
+        );
+        expect(
+          result.reagentResults.single.formattedFinalConcentration,
+          '2.5 mg/mL (5 % of C1)',
+        );
+        expect(result.baseSolventVolumeUl, closeTo(950, 0.001));
+      },
+    );
+
+    test('derives C2 when ratio is used as a relative final concentration', () {
+      final result = MasterMixCalculatorService().calculateMasterMix(
+        MasterMixInput(
+          mixName: 'Ratio mix',
+          finalVolume: 1000,
+          finalVolumeUnit: VolumeUnit.uL,
+          extraVolumePercent: 0,
+          baseSolventName: 'Water',
+          reagents: [
+            MasterMixReagentInput(
+              reagentName: 'Antibody',
+              stockConcentration: 50,
+              stockConcentrationUnit: ConcentrationUnit.mgML,
+              finalConcentration: 20,
+              finalConcentrationUnit: ConcentrationUnit.ratio,
+            ),
+          ],
+        ),
+      );
+
+      expect(result.success, isTrue);
+      expect(result.reagentResults.single.reagentVolumeUl, closeTo(50, 0.001));
+      expect(
+        result.reagentResults.single.formattedFinalConcentration,
+        '2.5 mg/mL (1:20 of C1)',
+      );
+      expect(result.baseSolventVolumeUl, closeTo(950, 0.001));
+    });
 
     test('calculates solid reagent mass and balance recommendation', () {
       final result = MasterMixCalculatorService().calculateMasterMix(
@@ -291,6 +376,101 @@ void main() {
           result.rows.where((row) => row.suggestions.isNotEmpty),
           isNotEmpty,
         );
+      },
+    );
+
+    test('adds a selected D0 intermediate dilution as a preparation row', () {
+      final baseInput = SerialDilutionInput(
+        title: 'D0 intermediate',
+        stockSolutionName: 'Stock',
+        stockConcentration: 19500,
+        stockConcentrationUnit: ConcentrationUnit.ugML,
+        startingDilutionConcentration: 1,
+        startingDilutionConcentrationUnit: ConcentrationUnit.ugML,
+        dilutionFactor: 10,
+        finalVolume: 1000,
+        finalVolumeUnit: VolumeUnit.uL,
+        extraVolumePercent: 0,
+        dilutionMode: DilutionMode.independent,
+        seriesLengthMode: SeriesLengthMode.numberOfDilutions,
+        numberOfDilutions: 1,
+      );
+      final calculator = SerialDilutionCalculatorService();
+
+      final suggested = calculator.generateDilutionTable(baseInput);
+      expect(suggested.success, isTrue);
+      expect(suggested.d0IntermediateSuggestion, isNotNull);
+      expect(suggested.includesD0IntermediateDilution, isFalse);
+      expect(
+        suggested.rows.map((row) => row.dilutionName),
+        isNot(contains('D0 intermediate')),
+      );
+
+      final selectedInput = baseInput.copyWith(
+        includeD0IntermediateDilution: true,
+      );
+      final selected = calculator.generateDilutionTable(selectedInput);
+      expect(selected.includesD0IntermediateDilution, isTrue);
+      expect(
+        selected.rows.map((row) => row.dilutionName),
+        orderedEquals(['Stock', 'D0 intermediate', 'D0', 'D1']),
+      );
+      expect(selected.rows[2].transferFrom, 'D0 intermediate');
+      expect(selected.rows[2].transferVolumeUl, closeTo(50, 0.000001));
+      expect(selected.rows[1].finalVolumeUl, closeTo(975, 0.000001));
+      expect(selected.rows[1].transferVolumeUl, closeTo(1, 0.000001));
+      expect(selected.rows[1].solventVolumeUl, closeTo(974, 0.000001));
+      expect(selected.rows[1].warnings, isEmpty);
+      expect(selected.rows[1].suggestions, isEmpty);
+      expect(selected.rows[1].transferEvaluation, isNull);
+      expect(selected.rows[1].solventTransferEvaluation, isNull);
+
+      final restored = SerialDilutionInput.fromJson(selectedInput.toJson());
+      expect(restored.includeD0IntermediateDilution, isTrue);
+      expect(
+        restored.generateTable().data.map((row) => row.first),
+        contains('D0 intermediate'),
+      );
+    });
+
+    test(
+      'scales output numerators while preserving the starting denominator',
+      () {
+        final calculator = SerialDilutionCalculatorService();
+        final small = calculator.generateDilutionTable(
+          SerialDilutionInput(
+            stockConcentration: 10,
+            stockConcentrationUnit: ConcentrationUnit.mgML,
+            startingDilutionConcentration: 1,
+            startingDilutionConcentrationUnit: ConcentrationUnit.mgML,
+            dilutionFactor: 10000,
+            finalVolume: 1000,
+            finalVolumeUnit: VolumeUnit.uL,
+            extraVolumePercent: 0,
+            dilutionMode: DilutionMode.independent,
+            numberOfDilutions: 1,
+          ),
+        );
+        final large = calculator.generateDilutionTable(
+          SerialDilutionInput(
+            stockConcentration: 2,
+            stockConcentrationUnit: ConcentrationUnit.gL,
+            startingDilutionConcentration: 1000,
+            startingDilutionConcentrationUnit: ConcentrationUnit.ugML,
+            dilutionFactor: 2,
+            finalVolume: 1000,
+            finalVolumeUnit: VolumeUnit.uL,
+            extraVolumePercent: 0,
+            dilutionMode: DilutionMode.independent,
+            numberOfDilutions: 1,
+          ),
+        );
+
+        expect(small.success, isTrue);
+        expect(small.rows.last.formattedConcentration, '0.1 ug/mL');
+        expect(large.success, isTrue);
+        expect(large.rows.first.formattedConcentration, '2 mg/mL');
+        expect(large.rows[1].formattedConcentration, '1 mg/mL');
       },
     );
 

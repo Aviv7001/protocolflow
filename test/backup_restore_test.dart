@@ -44,19 +44,21 @@ void main() {
         'format': 'protocolflow-local-backup',
         'version': 1,
         'preferences': {
-          'text': {'type': 'string', 'value': 'value'},
-          'enabled': {'type': 'bool', 'value': true},
-          'count': {'type': 'int', 'value': 3},
-          'ratio': {'type': 'double', 'value': 1.5},
-          'labels': {
-            'type': 'stringList',
-            'value': ['a', 'b'],
+          'projects_json': {
+            'type': 'string',
+            'value':
+                '[{"id":"project-1","name":"Validation","description":"","colorValue":4279598970}]',
+          },
+          'home_explore_locally_v1': {'type': 'bool', 'value': true},
+          'tasks_sync_updated_at': {
+            'type': 'string',
+            'value': '2026-08-24T00:00:00.000Z',
           },
         },
       },
       confirmRestore: (preview) async {
         expect(preview.target, BackupRestoreTarget.local);
-        expect(preview.items, hasLength(5));
+        expect(preview.items, hasLength(3));
         expect(preview.sourceFileName, 'ProtocolFlow backup');
         return true;
       },
@@ -70,11 +72,9 @@ void main() {
       preferences.getString('signed_in_google_user_json'),
       '{"email":"user@example.com"}',
     );
-    expect(preferences.getString('text'), 'value');
-    expect(preferences.getBool('enabled'), isTrue);
-    expect(preferences.getInt('count'), 3);
-    expect(preferences.getDouble('ratio'), 1.5);
-    expect(preferences.getStringList('labels'), ['a', 'b']);
+    expect(preferences.getString('projects_json'), contains('Validation'));
+    expect(preferences.getBool('home_explore_locally_v1'), isTrue);
+    expect(preferences.getString('tasks_sync_updated_at'), isNotNull);
   });
 
   test('cancelled local restore leaves current data untouched', () async {
@@ -84,14 +84,14 @@ void main() {
       'format': 'protocolflow-local-backup',
       'version': 1,
       'preferences': {
-        'replacement': {'type': 'string', 'value': 'new'},
+        'home_explore_locally_v1': {'type': 'bool', 'value': true},
       },
     }, confirmRestore: (_) async => false);
 
     final preferences = await SharedPreferences.getInstance();
     expect(result.success, isFalse);
     expect(preferences.getString('current'), 'keep me');
-    expect(preferences.getString('replacement'), isNull);
+    expect(preferences.getBool('home_explore_locally_v1'), isNull);
   });
 
   test('Drive backup envelope round-trips file names and content', () {
