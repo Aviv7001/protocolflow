@@ -7,6 +7,8 @@ import '../features/master_mix/screens/master_mix_manager_screen.dart';
 import '../features/serial_dilution/models/serial_dilution_input.dart';
 import '../features/serial_dilution/screens/serial_dilution_manager_screen.dart';
 import '../features/staining_table/screens/staining_table_manager_screen.dart';
+import '../features/timeline/models/timeline_model.dart';
+import '../features/timeline/screens/timeline_manager_screen.dart';
 import '../services/storage_service.dart';
 import '../services/generic_table_import_service.dart';
 import '../widgets/protocolflow_app_bar.dart';
@@ -35,6 +37,7 @@ enum TableTool {
   staining,
   serialDilution,
   plateLayout,
+  timeline,
   generic,
   importTable,
 }
@@ -59,6 +62,8 @@ Future<void> openTableTool(
       await launcher._openSerialDilution(context);
     case TableTool.plateLayout:
       await launcher._openPlateLayout(context);
+    case TableTool.timeline:
+      await launcher._openTimeline(context);
     case TableTool.generic:
       await launcher._openGenericTable(context);
     case TableTool.importTable:
@@ -118,6 +123,14 @@ class TableSelectionScreen extends StatelessWidget {
         Icons.grid_on,
         Colors.orange,
         onTap: () => _openPlateLayout(context),
+      ),
+      _buildTypeCard(
+        context,
+        'Timeline Builder',
+        'Experiment Schedule',
+        Icons.timeline,
+        Colors.purple,
+        onTap: () => _openTimeline(context),
       ),
       _buildTypeCard(
         context,
@@ -375,6 +388,24 @@ class TableSelectionScreen extends StatelessWidget {
     await _openPlateLayout(context, initialWizard: result);
   }
 
+  Future<void> _openTimeline(
+    BuildContext context, {
+    ExperimentTimeline? initialTimeline,
+  }) async {
+    final result = await Navigator.push<ExperimentTimeline>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => TimelineManagerScreen(
+          timeline: initialTimeline ?? const ExperimentTimeline(),
+        ),
+      ),
+    );
+    if (!context.mounted || result == null) return;
+    final saved = await _handleCreatedTable(context, result.toProtocolTable());
+    if (!context.mounted || saved) return;
+    await _openTimeline(context, initialTimeline: result);
+  }
+
   Future<void> _openSavedTables(BuildContext context) async {
     final result = await Navigator.push<ProtocolTable>(
       context,
@@ -515,6 +546,14 @@ class _TableToolPickerDialog extends StatelessWidget {
                     title: 'Plate Layout',
                     subtitle: 'Well designer',
                     onTap: () => launcher._openPlateLayout(context),
+                  ),
+                  const Divider(height: 1),
+                  _ToolMenuItem(
+                    icon: Icons.timeline,
+                    color: Colors.purple,
+                    title: 'Timeline Builder',
+                    subtitle: 'Experiment schedule',
+                    onTap: () => launcher._openTimeline(context),
                   ),
                   const Divider(height: 1),
                   _ToolMenuItem(

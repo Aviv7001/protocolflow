@@ -10,6 +10,9 @@ import 'package:protocolflow/models/protocol_table.dart';
 import 'package:protocolflow/models/protocol_step.dart';
 import 'package:protocolflow/models/protocol.dart';
 import 'package:protocolflow/models/plate_wizard.dart';
+import 'package:protocolflow/features/timeline/models/timeline_model.dart';
+import 'package:protocolflow/features/timeline/services/timeline_image_export_service.dart';
+import 'package:protocolflow/features/timeline/widgets/timeline_preview.dart';
 import 'package:protocolflow/services/protocol_export_filename.dart';
 import 'package:protocolflow/services/protocol_image_store.dart';
 import 'package:protocolflow/services/pdf_platform_stub.dart'
@@ -77,7 +80,22 @@ class PdfService {
 
     final resolvedTheme = theme ?? await pdf_platform.loadPdfTheme();
     final availableWidth = PdfPageFormat.a4.width - (26 * 2);
-    final tables = _orderedTables(protocol);
+    final orderedTables = _orderedTables(protocol);
+    final informationTableIds = protocol.informationTableIds.toSet();
+    final informationTables = orderedTables
+        .where(
+          (table) =>
+              table.type != TableType.timeline &&
+              informationTableIds.contains(table.id),
+        )
+        .toList();
+    final tables = orderedTables
+        .where(
+          (table) =>
+              table.type != TableType.timeline &&
+              !informationTableIds.contains(table.id),
+        )
+        .toList();
     final protocolImages = <String, pw.MemoryImage>{};
     for (final source in protocol.files) {
       final bytes = await ProtocolImageStore.loadBytes(source);
@@ -86,6 +104,19 @@ class PdfService {
         protocolImages[source] = pw.MemoryImage(bytes);
       } catch (_) {
         // Keep exporting even when a legacy attachment is not an image.
+      }
+    }
+    final figureImages = <String, pw.MemoryImage>{...protocolImages};
+    for (final table in orderedTables.where(
+      (table) => table.type == TableType.timeline,
+    )) {
+      try {
+        final bytes = await const TimelineImageExportService().buildDocumentPng(
+          timeline: ExperimentTimeline.fromTable(table),
+        );
+        figureImages[_timelineFigureKey(table.id)] = pw.MemoryImage(bytes);
+      } catch (_) {
+        // Keep exporting even if a legacy timeline cannot be rendered.
       }
     }
 
@@ -103,6 +134,8 @@ class PdfService {
               notes,
               completedAt,
               availableWidth,
+              informationTables,
+              figureImages,
             )) ...[item, pw.SizedBox(height: 12)],
           ];
         },
@@ -119,15 +152,26 @@ class PdfService {
           build: (context) => [
             _buildTablesHeader(),
             pw.SizedBox(height: 10),
-            ..._buildTableAppendix(tables, availableWidth),
+            ..._buildTableAppendix(protocol, tables, availableWidth),
           ],
           footer: _buildPageFooter,
         ),
       );
     }
 
-    if (protocolImages.isNotEmpty) {
-      final sources = protocol.files.where(protocolImages.containsKey).toList();
+    final informationImagePaths = protocol.informationImagePaths.toSet();
+    final informationFigureKeys = <String>{
+      ...informationImagePaths,
+      ...protocol.informationTableIds.map(_timelineFigureKey),
+    };
+    final sources = _orderedFigureSources(protocol)
+        .where(
+          (source) =>
+              figureImages.containsKey(source) &&
+              !informationFigureKeys.contains(source),
+        )
+        .toList();
+    if (sources.isNotEmpty) {
       for (var start = 0; start < sources.length; start += 9) {
         final end = (start + 9).clamp(0, sources.length);
         final pageSources = sources.sublist(start, end);
@@ -142,7 +186,7 @@ class PdfService {
               _buildProtocolImageGrid(
                 protocol,
                 pageSources,
-                protocolImages,
+                figureImages,
                 availableWidth,
               ),
             ],
@@ -234,7 +278,13 @@ class PdfService {
     List<StepNote> notes,
     DateTime? completedAt,
     double contentWidth,
+    List<ProtocolTable> informationTables,
+    Map<String, pw.MemoryImage> figureImages,
   ) {
+    final informationImageSources = <String>{
+      ...protocol.informationImagePaths,
+      ...protocol.informationTableIds.map(_timelineFigureKey),
+    }.where(figureImages.containsKey).toList();
     final items = <pw.Widget>[
       _pwSectionCard('Protocol Information', [
         _pwMetaLine('Type: ${_protocolTypeLabel(protocol, completedAt)}'),
@@ -260,6 +310,26 @@ class PdfService {
         ],
         ..._pwNotesForStep(notes, 'materials'),
       ]),
+      if (informationTables.isNotEmpty)
+        _pwSectionCard('Protocol Information · Tables', [
+          for (final table in informationTables) ...[
+            _pwTable(
+              table,
+              maxWidth: contentWidth - 20,
+              titleOverride: _tableExportLabel(protocol, table),
+            ),
+            pw.SizedBox(height: 10),
+          ],
+        ]),
+      if (informationImageSources.isNotEmpty)
+        _pwSectionCard('Protocol Information · Figures', [
+          _buildProtocolImageGrid(
+            protocol,
+            informationImageSources,
+            figureImages,
+            contentWidth - 20,
+          ),
+        ]),
       ..._buildPdfSteps(protocol, notes, contentWidth),
       if (notes.any((n) => n.stepId == 'overview'))
         _pwSectionCard('General Notes', _pwNotesForStep(notes, 'overview')),
@@ -623,6 +693,14 @@ class PdfService {
     List<StepNote> notes,
   ) {
     final stepNotes = notes.where((n) => n.stepId == step.id).toList();
+    final linkedTables = _tablesForIds(
+      protocol,
+      step.tableIds,
+    ).where((table) => table.type != TableType.timeline).toList();
+    final linkedFigures = <String>[
+      ..._imageLabelsForStep(protocol, step),
+      ..._timelineLabelsForStep(protocol, step),
+    ];
 
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -694,14 +772,14 @@ class PdfService {
                 _rtlBullet(note, fontSize: _bodyFontSize, isFullWidth: false),
           ),
         ],
-        if (step.tableIds.isNotEmpty) ...<pw.Widget>[
+        if (linkedTables.isNotEmpty) ...<pw.Widget>[
           pw.SizedBox(height: 8),
-          _pwTableMention(_tablesForIds(protocol, step.tableIds)),
+          _pwTableMention(protocol, linkedTables),
         ],
-        if (_imageLabelsForStep(protocol, step).isNotEmpty) ...<pw.Widget>[
+        if (linkedFigures.isNotEmpty) ...<pw.Widget>[
           pw.SizedBox(height: 5),
           pw.Text(
-            'Images: ${_imageLabelsForStep(protocol, step).join(', ')}',
+            'See ${linkedFigures.join(', ')}',
             style: pw.TextStyle(
               fontSize: _bodyFontSize,
               fontWeight: pw.FontWeight.bold,
@@ -995,12 +1073,15 @@ class PdfService {
     return file.existsSync() ? file.readAsBytesSync() : null;
   }
 
-  static pw.Widget _pwTableMention(List<ProtocolTable> tables) {
+  static pw.Widget _pwTableMention(
+    Protocol protocol,
+    List<ProtocolTable> tables,
+  ) {
     if (tables.isEmpty) {
       return _pwEmptyState('Referenced table not found.');
     }
     return _rtlText(
-      'Tables: ${tables.map((table) => table.title).join(', ')}',
+      'See ${tables.map((table) => _tableExportLabel(protocol, table)).join(', ')}',
       style: pw.TextStyle(
         fontSize: _bodyFontSize,
         fontWeight: pw.FontWeight.bold,
@@ -1026,14 +1107,76 @@ class PdfService {
     ProtocolStep step,
   ) {
     return step.attachedFiles.where(protocol.files.contains).map((source) {
-      final index = protocol.files.indexOf(source);
-      final name =
-          index < protocol.imageNames.length &&
-              protocol.imageNames[index].trim().isNotEmpty
-          ? protocol.imageNames[index].trim()
-          : 'Image ${index + 1}';
-      return '${index + 1}. $name';
+      return _figureExportLabel(protocol, source);
     }).toList();
+  }
+
+  static List<String> _timelineLabelsForStep(
+    Protocol protocol,
+    ProtocolStep step,
+  ) => _tablesForIds(protocol, step.tableIds)
+      .where((table) => table.type == TableType.timeline)
+      .map(
+        (table) => _figureExportLabel(protocol, _timelineFigureKey(table.id)),
+      )
+      .toList();
+
+  static String _tableExportLabel(Protocol protocol, ProtocolTable table) {
+    final index = _orderedTables(protocol)
+        .where((candidate) => candidate.type != TableType.timeline)
+        .toList()
+        .indexWhere((candidate) => candidate.id == table.id);
+    return index < 0 ? table.title : 'Table ${index + 1}: ${table.title}';
+  }
+
+  static String _timelineFigureKey(String tableId) => 'timeline:$tableId';
+
+  static List<String> _orderedFigureSources(Protocol protocol) => [
+    ...protocol.files,
+    ..._orderedTables(protocol)
+        .where((table) => table.type == TableType.timeline)
+        .map((table) => _timelineFigureKey(table.id)),
+  ];
+
+  static String _figureExportLabel(Protocol protocol, String source) {
+    final sources = _orderedFigureSources(protocol);
+    final index = sources.indexOf(source);
+    final timelineId = source.startsWith('timeline:')
+        ? source.substring('timeline:'.length)
+        : null;
+    final timeline = timelineId == null
+        ? null
+        : protocol.tables.cast<ProtocolTable?>().firstWhere(
+            (table) => table?.id == timelineId,
+            orElse: () => null,
+          );
+    final name = timeline != null
+        ? timeline.title
+        : _protocolImageName(protocol, source);
+    return index < 0 ? name : 'Figure ${index + 1}: $name';
+  }
+
+  static String _protocolImageName(Protocol protocol, String source) {
+    final index = protocol.files.indexOf(source);
+    return index >= 0 &&
+            index < protocol.imageNames.length &&
+            protocol.imageNames[index].trim().isNotEmpty
+        ? protocol.imageNames[index].trim()
+        : 'Image ${index + 1}';
+  }
+
+  static ExperimentTimeline? _timelineForFigureSource(
+    Protocol protocol,
+    String source,
+  ) {
+    if (!source.startsWith('timeline:')) return null;
+    final id = source.substring('timeline:'.length);
+    for (final table in protocol.tables) {
+      if (table.id == id && table.type == TableType.timeline) {
+        return ExperimentTimeline.fromTable(table);
+      }
+    }
+    return null;
   }
 
   static List<ProtocolTable> _orderedTables(Protocol protocol) {
@@ -1111,12 +1254,40 @@ class PdfService {
       spacing: 8,
       runSpacing: 10,
       children: sources.map((source) {
-        final index = protocol.files.indexOf(source);
-        final name =
-            index < protocol.imageNames.length &&
-                protocol.imageNames[index].trim().isNotEmpty
-            ? protocol.imageNames[index].trim()
-            : 'Image ${index + 1}';
+        final label = _figureExportLabel(
+          protocol,
+          source,
+        ).replaceFirst(':', '.');
+        final timeline = _timelineForFigureSource(protocol, source);
+        if (timeline != null) {
+          final contentSize = TimelinePainter.documentCanvasSize(timeline);
+          final imageHeight =
+              (availableWidth * contentSize.height / contentSize.width)
+                  .clamp(90, 360)
+                  .toDouble();
+          return pw.SizedBox(
+            width: availableWidth,
+            child: pw.Column(
+              children: [
+                pw.Container(
+                  width: availableWidth,
+                  height: imageHeight,
+                  decoration: pw.BoxDecoration(
+                    color: PdfColors.white,
+                    border: pw.Border.all(color: _outlineVariantColor),
+                  ),
+                  child: pw.Image(images[source]!, fit: pw.BoxFit.contain),
+                ),
+                pw.SizedBox(height: 4),
+                pw.Text(
+                  label,
+                  textAlign: pw.TextAlign.center,
+                  style: const pw.TextStyle(fontSize: 8),
+                ),
+              ],
+            ),
+          );
+        }
         return pw.SizedBox(
           width: cellWidth,
           child: pw.Column(
@@ -1132,7 +1303,7 @@ class PdfService {
               ),
               pw.SizedBox(height: 4),
               pw.Text(
-                '${index + 1}. $name',
+                label,
                 textAlign: pw.TextAlign.center,
                 style: const pw.TextStyle(fontSize: 8),
                 maxLines: 2,
@@ -1145,13 +1316,20 @@ class PdfService {
   }
 
   static List<pw.Widget> _buildTableAppendix(
+    Protocol protocol,
     List<ProtocolTable> tables,
     double availableWidth,
   ) {
     final widgets = <pw.Widget>[];
     for (final table in tables) {
       if (table.type == TableType.plateLayout || table.data.isEmpty) {
-        widgets.add(_pwTable(table, maxWidth: availableWidth));
+        widgets.add(
+          _pwTable(
+            table,
+            maxWidth: availableWidth,
+            titleOverride: _tableExportLabel(protocol, table),
+          ),
+        );
         widgets.add(pw.SizedBox(height: 14));
         continue;
       }
@@ -1170,7 +1348,9 @@ class PdfService {
             maxWidth: availableWidth,
             startRow: startRow,
             endRow: endRow,
-            titleOverride: startRow == 0 ? null : '${table.title} (continued)',
+            titleOverride: startRow == 0
+                ? _tableExportLabel(protocol, table)
+                : '${_tableExportLabel(protocol, table)} (continued)',
           ),
         );
         widgets.add(pw.SizedBox(height: 14));
@@ -1187,7 +1367,7 @@ class PdfService {
     String? titleOverride,
   }) {
     if (table.type == TableType.plateLayout) {
-      return _pwPlateLayout(table);
+      return _pwPlateLayout(table, titleOverride: titleOverride);
     }
     final hasRowHeaders = table.rowHeaders.isNotEmpty;
     final columnCount = _tableColumnCount(table);
@@ -1332,7 +1512,10 @@ class PdfService {
     );
   }
 
-  static pw.Widget _pwPlateLayout(ProtocolTable table) {
+  static pw.Widget _pwPlateLayout(
+    ProtocolTable table, {
+    String? titleOverride,
+  }) {
     final wizardState = table.metadata['wizard_state'];
     if (wizardState != null) {
       try {
@@ -1343,19 +1526,34 @@ class PdfService {
           return pw.Wrap(
             spacing: 10,
             runSpacing: 10,
-            children: tables.map((t) => _buildSinglePlatePdf(t)).toList(),
+            children: tables
+                .map(
+                  (t) => _buildSinglePlatePdf(
+                    t,
+                    titleOverride: titleOverride == null
+                        ? null
+                        : '$titleOverride · ${t.title}',
+                  ),
+                )
+                .toList(),
           );
         } else if (tables.isNotEmpty) {
-          return _buildSinglePlatePdf(tables.first);
+          return _buildSinglePlatePdf(
+            tables.first,
+            titleOverride: titleOverride,
+          );
         }
       } catch (e) {
         // Fallback to single plate if decoding fails
       }
     }
-    return _buildSinglePlatePdf(table);
+    return _buildSinglePlatePdf(table, titleOverride: titleOverride);
   }
 
-  static pw.Widget _buildSinglePlatePdf(ProtocolTable table) {
+  static pw.Widget _buildSinglePlatePdf(
+    ProtocolTable table, {
+    String? titleOverride,
+  }) {
     final int rows = int.tryParse(table.metadata['rows'] ?? '8') ?? 8;
     final int cols = int.tryParse(table.metadata['columns'] ?? '12') ?? 12;
     const double wellSize = 17.5; // Adjusted for side-by-side support
@@ -1374,7 +1572,7 @@ class PdfService {
             width: double.infinity,
             padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             child: pw.Text(
-              table.title,
+              titleOverride ?? table.title,
               style: pw.TextStyle(
                 fontWeight: pw.FontWeight.bold,
                 fontSize: _tableHeaderFontSize,

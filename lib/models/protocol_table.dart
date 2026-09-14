@@ -6,6 +6,7 @@ enum TableType {
   checklist,
   staining,
   serialDilution,
+  timeline,
 }
 
 ProtocolTable createMaterialListTable({

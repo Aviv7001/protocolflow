@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:protocolflow/models/protocol.dart';
 import 'package:protocolflow/models/protocol_step.dart';
 import 'package:protocolflow/models/protocol_table.dart';
+import 'package:protocolflow/features/timeline/models/timeline_model.dart';
+import 'package:protocolflow/features/timeline/widgets/timeline_preview.dart';
 import 'package:protocolflow/screens/create_protocol_screen.dart';
 import 'package:protocolflow/screens/generic_viewer_screen.dart';
 import 'package:protocolflow/theme/app_theme.dart';
@@ -129,6 +131,29 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(GenericViewerScreen), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('linked timeline renders its generated figure inline', (
+    tester,
+  ) async {
+    final table = const ExperimentTimeline(
+      title: 'Treatment schedule',
+      events: [
+        TimelineEvent(id: 'dose', name: 'Dose', selectedTimePoints: [0, 2, 4]),
+      ],
+    ).toProtocolTable(id: 'timeline-table');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ProtocolFlowTheme.lightTheme,
+        home: Scaffold(body: ProtocolTablePreview(table: table)),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(TimelinePreview), findsOneWidget);
+    expect(find.byKey(const ValueKey('timeline-canvas')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

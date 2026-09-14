@@ -56,6 +56,8 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
   final List<String> _samples = [];
   final List<String> _files = [];
   final List<String> _imageNames = [];
+  final List<String> _informationTableIds = [];
+  final List<String> _informationImagePaths = [];
   final List<ProtocolStep> _steps = [];
   final List<ProtocolTable> _tables = [];
   final List<ProtocolAdditionalData> _additionalData = [];
@@ -87,6 +89,8 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
       _materials.addAll(p.materials.map((m) => m.copyWith()));
       _samples.addAll(p.samples);
       _files.addAll(p.files);
+      _informationTableIds.addAll(p.informationTableIds);
+      _informationImagePaths.addAll(p.informationImagePaths);
       for (var index = 0; index < p.files.length; index++) {
         final savedName = index < p.imageNames.length
             ? p.imageNames[index].trim()
@@ -640,6 +644,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
       final imageIndex = _files.indexOf(path);
       if (imageIndex == -1) return;
       _files.removeAt(imageIndex);
+      _informationImagePaths.remove(path);
       if (imageIndex < _imageNames.length) _imageNames.removeAt(imageIndex);
       for (var index = 0; index < _steps.length; index++) {
         _steps[index] = _steps[index].copyWith(
@@ -696,6 +701,10 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
       final fileIndex = _files.indexOf(path);
       if (fileIndex == -1) return;
       _files[fileIndex] = replacementPath;
+      final informationIndex = _informationImagePaths.indexOf(path);
+      if (informationIndex != -1) {
+        _informationImagePaths[informationIndex] = replacementPath;
+      }
       while (_imageNames.length <= fileIndex) {
         _imageNames.add('Image ${_imageNames.length + 1}');
       }
@@ -771,6 +780,8 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
         return Colors.teal;
       case TableType.generic:
         return Colors.grey;
+      case TableType.timeline:
+        return Colors.purple;
     }
   }
 
@@ -956,6 +967,8 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
         samples: List.from(_samples),
         files: List.from(_files),
         imageNames: List<String>.from(_imageNames),
+        informationTableIds: List<String>.from(_informationTableIds),
+        informationImagePaths: List<String>.from(_informationImagePaths),
         steps: _steps.map((s) => s.deepCopy()).toList(),
         tables: _tables.map((table) => table.deepCopy()).toList(),
         additionalData: _additionalData.map((d) => d.deepCopy()).toList(),
@@ -1173,9 +1186,222 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
             _descriptionController,
             maxLines: 4,
           ),
+          const Divider(height: 28),
+          _buildProtocolInformationLinks(),
         ],
       ),
     );
+  }
+
+  Widget _buildProtocolInformationLinks() {
+    final linkedTables = _regularTables
+        .where((table) => _informationTableIds.contains(table.id))
+        .toList();
+    final linkedImages = _files.where(_informationImagePaths.contains).toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 18,
+          runSpacing: 4,
+          children: [
+            PopupMenuButton<String>(
+              key: const Key('information-table-menu'),
+              enabled: !_isInProgress,
+              tooltip: 'Link tables to Protocol Information',
+              onSelected: (value) {
+                if (value == '__add_table__') {
+                  _addInformationTable();
+                } else {
+                  setState(() {
+                    _informationTableIds.contains(value)
+                        ? _informationTableIds.remove(value)
+                        : _informationTableIds.add(value);
+                  });
+                }
+              },
+              itemBuilder: (context) => [
+                if (_regularTables.isEmpty)
+                  const PopupMenuItem<String>(
+                    enabled: false,
+                    child: ListTile(
+                      leading: Icon(Icons.table_chart_outlined),
+                      title: Text('No tables available'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                for (final table in _regularTables)
+                  PopupMenuItem<String>(
+                    value: table.id,
+                    child: ListTile(
+                      leading: Icon(
+                        _tableTypeIcon(table.type),
+                        color: _tableColor(table),
+                      ),
+                      title: Text(
+                        table.title.isEmpty ? 'Untitled Table' : table.title,
+                      ),
+                      trailing: _informationTableIds.contains(table.id)
+                          ? const Icon(Icons.check, color: AppColors.primary)
+                          : null,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                const PopupMenuDivider(),
+                const PopupMenuItem<String>(
+                  value: '__add_table__',
+                  child: ListTile(
+                    leading: Icon(Icons.add_chart_outlined),
+                    title: Text('Add table'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              ],
+              child: _informationLinkButton(
+                icon: Icons.link,
+                label: 'Link table',
+              ),
+            ),
+            PopupMenuButton<String>(
+              key: const Key('information-image-menu'),
+              enabled: !_isInProgress,
+              tooltip: 'Link images to Protocol Information',
+              onSelected: (value) async {
+                if (value == '__add_image__') {
+                  final added = await _addProtocolImages();
+                  if (!mounted || added.isEmpty) return;
+                  setState(() => _informationImagePaths.addAll(added));
+                } else {
+                  setState(() {
+                    _informationImagePaths.contains(value)
+                        ? _informationImagePaths.remove(value)
+                        : _informationImagePaths.add(value);
+                  });
+                }
+              },
+              itemBuilder: (context) => [
+                if (_files.isEmpty)
+                  const PopupMenuItem<String>(
+                    enabled: false,
+                    child: ListTile(
+                      leading: Icon(Icons.image_outlined),
+                      title: Text('No images available'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                for (final imagePath in _files)
+                  PopupMenuItem<String>(
+                    value: imagePath,
+                    child: ListTile(
+                      leading: SizedBox.square(
+                        dimension: 40,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: buildLocalImage(imagePath),
+                        ),
+                      ),
+                      title: Text(_protocolImageLabel(imagePath)),
+                      trailing: _informationImagePaths.contains(imagePath)
+                          ? const Icon(Icons.check, color: AppColors.primary)
+                          : null,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                const PopupMenuDivider(),
+                const PopupMenuItem<String>(
+                  value: '__add_image__',
+                  child: ListTile(
+                    leading: Icon(Icons.add_photo_alternate_outlined),
+                    title: Text('Add image'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              ],
+              child: _informationLinkButton(
+                icon: Icons.add_photo_alternate_outlined,
+                label: 'Link image',
+              ),
+            ),
+          ],
+        ),
+        if (linkedTables.isNotEmpty || linkedImages.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final table in linkedTables)
+                InputChip(
+                  key: Key('information-linked-table-${table.id}'),
+                  avatar: Icon(
+                    _tableTypeIcon(table.type),
+                    size: 16,
+                    color: _tableColor(table),
+                  ),
+                  label: Text(
+                    table.title.isEmpty ? 'Untitled Table' : table.title,
+                  ),
+                  onDeleted: _isInProgress
+                      ? null
+                      : () => setState(
+                          () => _informationTableIds.remove(table.id),
+                        ),
+                ),
+              for (final imagePath in linkedImages)
+                InputChip(
+                  key: Key(
+                    'information-linked-image-${_files.indexOf(imagePath)}',
+                  ),
+                  avatar: const Icon(Icons.image_outlined, size: 16),
+                  label: Text(_protocolImageLabel(imagePath)),
+                  onDeleted: _isInProgress
+                      ? null
+                      : () => setState(
+                          () => _informationImagePaths.remove(imagePath),
+                        ),
+                ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _informationLinkButton({
+    required IconData icon,
+    required String label,
+  }) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 8),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          icon,
+          size: 20,
+          color: _isInProgress ? Colors.grey : AppColors.primary,
+        ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: _uniformFontSize,
+            color: _isInProgress ? Colors.grey : AppColors.primary,
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Future<void> _addInformationTable() async {
+    final result = await showTableToolPicker(context);
+    if (result == null || !mounted) return;
+    setState(() {
+      final table = _withTableColor(result);
+      _tables.add(table);
+      _informationTableIds.add(table.id);
+      _syncMaterialsFromTable(table);
+    });
   }
 
   Widget _buildStepsArea() {
@@ -1296,6 +1522,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
   void _removeTable(ProtocolTable table) {
     setState(() {
       _tables.removeWhere((candidate) => candidate.id == table.id);
+      _informationTableIds.remove(table.id);
       for (var index = 0; index < _steps.length; index++) {
         _steps[index] = _steps[index].copyWith(
           tableIds: _steps[index].tableIds
@@ -2612,6 +2839,8 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
         return Icons.inventory_2_outlined;
       case TableType.generic:
         return Icons.table_chart;
+      case TableType.timeline:
+        return Icons.timeline;
     }
   }
 

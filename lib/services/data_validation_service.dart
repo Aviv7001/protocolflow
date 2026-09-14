@@ -79,6 +79,14 @@ class DataValidationService {
     _validateListSize(protocol.samples.length, 'protocol samples');
     _validateListSize(protocol.files.length, 'protocol files');
     _validateListSize(protocol.imageNames.length, 'protocol image names');
+    _validateListSize(
+      protocol.informationTableIds.length,
+      'protocol information table links',
+    );
+    _validateListSize(
+      protocol.informationImagePaths.length,
+      'protocol information image links',
+    );
     _validateListSize(protocol.steps.length, 'protocol steps');
     _validateListSize(protocol.tables.length, 'protocol tables');
     _validateListSize(protocol.additionalData.length, 'additional data');
@@ -93,6 +101,12 @@ class DataValidationService {
     }
     for (final name in protocol.imageNames) {
       _optionalString(name, 'Protocol image name', maxShortText);
+    }
+    for (final tableId in protocol.informationTableIds) {
+      _optionalString(tableId, 'Protocol information table ID', maxShortText);
+    }
+    for (final imagePath in protocol.informationImagePaths) {
+      _validateMediaSource(imagePath, 'Protocol information image path');
     }
     for (final step in protocol.steps) {
       validateProtocolStep(step);

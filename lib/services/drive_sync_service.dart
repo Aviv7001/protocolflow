@@ -2346,6 +2346,8 @@ class DriveSyncService {
       samples: List<String>.from(protocol.samples),
       files: List<String>.from(protocol.files),
       imageNames: List<String>.from(protocol.imageNames),
+      informationTableIds: List<String>.from(protocol.informationTableIds),
+      informationImagePaths: List<String>.from(protocol.informationImagePaths),
       steps: protocol.steps.map((s) => s.deepCopy()).toList(),
       tables: protocol.tables.map((t) => t.deepCopy()).toList(),
       additionalData: protocol.additionalData.map((d) => d.deepCopy()).toList(),

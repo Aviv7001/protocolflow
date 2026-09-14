@@ -561,6 +561,8 @@ class _SavedTablesScreenState extends State<SavedTablesScreen> {
         return 'Material list';
       case TableType.generic:
         return 'Generic table';
+      case TableType.timeline:
+        return 'Timeline';
     }
   }
 
@@ -573,6 +575,7 @@ class _SavedTablesScreenState extends State<SavedTablesScreen> {
       TableType.checklist => Icons.checklist_outlined,
       TableType.materialList => Icons.inventory_2_outlined,
       TableType.generic => Icons.table_chart_outlined,
+      TableType.timeline => Icons.timeline,
     };
   }
 }

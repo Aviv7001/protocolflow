@@ -43,6 +43,8 @@ class Protocol {
   final List<String> samples;
   final List<String> files;
   final List<String> imageNames;
+  final List<String> informationTableIds;
+  final List<String> informationImagePaths;
   final List<ProtocolStep> steps;
   final List<ProtocolTable> tables;
   final List<ProtocolAdditionalData> additionalData;
@@ -69,6 +71,8 @@ class Protocol {
     this.samples = const [],
     this.files = const [],
     this.imageNames = const [],
+    this.informationTableIds = const [],
+    this.informationImagePaths = const [],
     required this.steps,
     this.tables = const [],
     this.additionalData = const [],
@@ -139,6 +143,8 @@ class Protocol {
     List<String>? samples,
     List<String>? files,
     List<String>? imageNames,
+    List<String>? informationTableIds,
+    List<String>? informationImagePaths,
     List<ProtocolStep>? steps,
     List<ProtocolTable>? tables,
     List<ProtocolAdditionalData>? additionalData,
@@ -169,6 +175,12 @@ class Protocol {
       samples: List<String>.from(samples ?? this.samples),
       files: List<String>.from(files ?? this.files),
       imageNames: List<String>.from(imageNames ?? this.imageNames),
+      informationTableIds: List<String>.from(
+        informationTableIds ?? this.informationTableIds,
+      ),
+      informationImagePaths: List<String>.from(
+        informationImagePaths ?? this.informationImagePaths,
+      ),
       steps: (steps ?? this.steps).map((s) => s.deepCopy()).toList(),
       tables: (tables ?? this.tables).map((t) => t.deepCopy()).toList(),
       additionalData: (additionalData ?? this.additionalData)
@@ -209,6 +221,8 @@ class Protocol {
       'samples': samples,
       'files': files,
       'imageNames': imageNames,
+      'informationTableIds': informationTableIds,
+      'informationImagePaths': informationImagePaths,
       'steps': steps.map((s) => s.toJson()).toList(),
       'tables': tables.map((t) => t.toJson()).toList(),
       'additionalData': additionalData.map((d) => d.toJson()).toList(),
@@ -253,6 +267,12 @@ class Protocol {
       samples: List<String>.from(json['samples'] ?? []),
       files: List<String>.from(json['files'] ?? []),
       imageNames: _parseImageNames(json['imageNames'], json['files']),
+      informationTableIds: List<String>.from(
+        json['informationTableIds'] ?? const [],
+      ),
+      informationImagePaths: List<String>.from(
+        json['informationImagePaths'] ?? const [],
+      ),
       steps: (json['steps'] as List? ?? [])
           .map((s) => ProtocolStep.fromJson(s))
           .toList(),

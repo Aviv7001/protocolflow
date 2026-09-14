@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import '../features/staining_table/models/staining_wizard.dart';
 import '../features/staining_table/services/staining_table_generator_service.dart';
 import '../features/staining_table/widgets/staining_result_table.dart';
+import '../features/timeline/models/timeline_model.dart';
+import '../features/timeline/widgets/timeline_preview.dart';
 import '../models/plate_wizard.dart';
 import '../models/protocol_table.dart';
 import '../theme/app_colors.dart';
@@ -160,6 +162,14 @@ class ProtocolTablePreview extends StatelessWidget {
   }
 
   Widget _buildInlineTable(BuildContext context) {
+    if (table.type == TableType.timeline) {
+      final timeline = ExperimentTimeline.fromTable(table);
+      return TimelinePreview(
+        timeline: timeline,
+        fitToWidth: true,
+        viewportHeight: 380,
+      );
+    }
     if (table.type == TableType.plateLayout) {
       final plateTables = _platePreviewTables();
       if (plateTables.any(_hasTableData)) {
@@ -224,6 +234,7 @@ class ProtocolTablePreview extends StatelessWidget {
         case TableType.checklist:
         case TableType.generic:
         case TableType.materialList:
+        case TableType.timeline:
           return null;
       }
     } catch (_) {
@@ -248,6 +259,8 @@ class ProtocolTablePreview extends StatelessWidget {
         return Icons.table_chart;
       case TableType.materialList:
         return Icons.inventory_2_outlined;
+      case TableType.timeline:
+        return Icons.timeline;
     }
   }
 
@@ -268,6 +281,8 @@ class ProtocolTablePreview extends StatelessWidget {
         return 'Generic table';
       case TableType.materialList:
         return 'Material list';
+      case TableType.timeline:
+        return 'Timeline';
     }
   }
 }

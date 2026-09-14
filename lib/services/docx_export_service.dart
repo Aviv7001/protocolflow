@@ -5,6 +5,9 @@ import 'package:archive/archive.dart';
 import 'package:image/image.dart' as image;
 import 'package:qr/qr.dart';
 
+import '../features/timeline/models/timeline_model.dart';
+import '../features/timeline/services/timeline_image_export_service.dart';
+import '../features/timeline/widgets/timeline_preview.dart';
 import '../models/completed_protocol.dart';
 import '../models/protocol.dart';
 import '../models/protocol_additional_data.dart';
@@ -151,6 +154,28 @@ class DocxExportService {
       images.add(image);
       imageBySource[source] = image;
     }
+    for (final table in _orderedTables(
+      protocol,
+    ).where((table) => table.type == TableType.timeline)) {
+      final source = _timelineFigureKey(table.id);
+      try {
+        final bytes = await const TimelineImageExportService().buildDocumentPng(
+          timeline: ExperimentTimeline.fromTable(table),
+        );
+        final timelineImage = _DocxImage(
+          index: images.length + 1,
+          source: source,
+          bytes: bytes,
+          extension: 'png',
+          contentType: 'image/png',
+          relationshipId: 'rIdImage${images.length + 1}',
+        );
+        images.add(timelineImage);
+        imageBySource[source] = timelineImage;
+      } catch (_) {
+        // Keep exporting even if a legacy timeline cannot be rendered.
+      }
+    }
 
     final links = <String, String>{};
     var linkIndex = 1;
@@ -228,6 +253,41 @@ class DocxExportService {
     body.write(_reportHeaderXml(protocol, assets));
 
     body.write(_protocolInformationCard(protocol, notes, completedAt, assets));
+    final orderedTables = _orderedTables(protocol);
+    final informationTableIds = protocol.informationTableIds.toSet();
+    final informationTables = orderedTables
+        .where(
+          (table) =>
+              table.type != TableType.timeline &&
+              informationTableIds.contains(table.id),
+        )
+        .toList();
+    if (informationTables.isNotEmpty) {
+      body.write(_heading('Protocol Information · Tables', 2));
+      for (final table in informationTables) {
+        body.write(
+          _protocolTableXml(
+            table,
+            titleOverride: _tableExportLabel(protocol, table),
+          ),
+        );
+      }
+    }
+    final informationImagePaths = protocol.informationImagePaths.toSet();
+    final informationFigureKeys = <String>{
+      ...informationImagePaths,
+      ...protocol.informationTableIds.map(_timelineFigureKey),
+    };
+    final informationFigureSources = _orderedFigureSources(protocol)
+        .where(informationFigureKeys.contains)
+        .where(assets.imageBySource.containsKey)
+        .toList();
+    if (informationFigureSources.isNotEmpty) {
+      body.write(_heading('Protocol Information · Figures', 2));
+      body.write(
+        _protocolImageGridXml(protocol, informationFigureSources, assets),
+      );
+    }
     body.write(_stepCardsXml(protocol, notes, assets));
 
     final overviewNotes = notes.where((note) => note.stepId == 'overview');
@@ -245,17 +305,32 @@ class DocxExportService {
       body.write(_card(supplementary.toString()));
     }
 
-    final tables = _orderedTables(protocol);
+    final tables = orderedTables
+        .where(
+          (table) =>
+              table.type != TableType.timeline &&
+              !informationTableIds.contains(table.id),
+        )
+        .toList();
     if (tables.isNotEmpty) {
       body.write(_pageBreak());
       body.write(_heading('Tables', 1));
       body.write(_divider());
       for (final table in tables) {
-        body.write(_protocolTableXml(table));
+        body.write(
+          _protocolTableXml(
+            table,
+            titleOverride: _tableExportLabel(protocol, table),
+          ),
+        );
       }
     }
-    final figureSources = protocol.files
-        .where(assets.imageBySource.containsKey)
+    final figureSources = _orderedFigureSources(protocol)
+        .where(
+          (source) =>
+              !informationFigureKeys.contains(source) &&
+              assets.imageBySource.containsKey(source),
+        )
         .toList();
     for (var start = 0; start < figureSources.length; start += 9) {
       final end = (start + 9).clamp(0, figureSources.length);
@@ -590,22 +665,28 @@ class DocxExportService {
         content.write(_bullet(note));
       }
     }
-    final linkedTables = _tablesForIds(protocol, step.tableIds);
+    final linkedTables = _tablesForIds(
+      protocol,
+      step.tableIds,
+    ).where((table) => table.type != TableType.timeline).toList();
     if (linkedTables.isNotEmpty) {
       content.write(
         _paragraph(
-          'Tables: ${linkedTables.map((table) => table.title).join(', ')}',
+          'See ${linkedTables.map((table) => _tableExportLabel(protocol, table)).join(', ')}',
           bold: true,
           compact: true,
           color: _primary,
         ),
       );
     }
-    final linkedImages = _imageLabelsForStep(protocol, step);
-    if (linkedImages.isNotEmpty) {
+    final linkedFigures = <String>[
+      ..._imageLabelsForStep(protocol, step),
+      ..._timelineLabelsForStep(protocol, step),
+    ];
+    if (linkedFigures.isNotEmpty) {
       content.write(
         _paragraph(
-          'Images: ${linkedImages.join(', ')}',
+          'See ${linkedFigures.join(', ')}',
           bold: true,
           compact: true,
           color: _primary,
@@ -761,14 +842,74 @@ class DocxExportService {
 
   List<String> _imageLabelsForStep(Protocol protocol, ProtocolStep step) {
     return step.attachedFiles.where(protocol.files.contains).map((source) {
-      final index = protocol.files.indexOf(source);
-      final name =
-          index < protocol.imageNames.length &&
-              protocol.imageNames[index].trim().isNotEmpty
-          ? protocol.imageNames[index].trim()
-          : 'Image ${index + 1}';
-      return '${index + 1}. $name';
+      return _figureExportLabel(protocol, source);
     }).toList();
+  }
+
+  List<String> _timelineLabelsForStep(Protocol protocol, ProtocolStep step) =>
+      _tablesForIds(protocol, step.tableIds)
+          .where((table) => table.type == TableType.timeline)
+          .map(
+            (table) =>
+                _figureExportLabel(protocol, _timelineFigureKey(table.id)),
+          )
+          .toList();
+
+  String _tableExportLabel(Protocol protocol, ProtocolTable table) {
+    final index = _orderedTables(protocol)
+        .where((candidate) => candidate.type != TableType.timeline)
+        .toList()
+        .indexWhere((candidate) => candidate.id == table.id);
+    return index < 0 ? table.title : 'Table ${index + 1}: ${table.title}';
+  }
+
+  String _timelineFigureKey(String tableId) => 'timeline:$tableId';
+
+  List<String> _orderedFigureSources(Protocol protocol) => [
+    ...protocol.files,
+    ..._orderedTables(protocol)
+        .where((table) => table.type == TableType.timeline)
+        .map((table) => _timelineFigureKey(table.id)),
+  ];
+
+  String _figureExportLabel(Protocol protocol, String source) {
+    final sources = _orderedFigureSources(protocol);
+    final index = sources.indexOf(source);
+    ProtocolTable? timeline;
+    if (source.startsWith('timeline:')) {
+      final timelineId = source.substring('timeline:'.length);
+      for (final table in protocol.tables) {
+        if (table.id == timelineId) {
+          timeline = table;
+          break;
+        }
+      }
+    }
+    final name = timeline?.title ?? _protocolImageName(protocol, source);
+    return index < 0 ? name : 'Figure ${index + 1}: $name';
+  }
+
+  String _protocolImageName(Protocol protocol, String source) {
+    final index = protocol.files.indexOf(source);
+    return index >= 0 &&
+            index < protocol.imageNames.length &&
+            protocol.imageNames[index].trim().isNotEmpty
+        ? protocol.imageNames[index].trim()
+        : 'Image ${index + 1}';
+  }
+
+  ExperimentTimeline? _timelineForFigureSource(
+    Protocol protocol,
+    String source,
+  ) {
+    if (!source.startsWith('timeline:')) return null;
+    final id = source.substring('timeline:'.length);
+    for (final table in protocol.tables) {
+      if (table.id == id && table.type == TableType.timeline) {
+        return ExperimentTimeline.fromTable(table);
+      }
+    }
+    return null;
   }
 
   List<ProtocolTable> _orderedTables(Protocol protocol) {
@@ -837,7 +978,7 @@ class DocxExportService {
     return xml.toString();
   }
 
-  String _protocolTableXml(ProtocolTable table) {
+  String _protocolTableXml(ProtocolTable table, {String? titleOverride}) {
     final hasRowHeaders = table.rowHeaders.isNotEmpty;
     final columnCount = _tableColumnCount(table);
     final headers = <String>[
@@ -877,7 +1018,7 @@ class DocxExportService {
       ]);
     }
     final title = _paragraph(
-      table.title,
+      titleOverride ?? table.title,
       bold: true,
       fontSize: 16,
       color: _primary,
@@ -1140,6 +1281,54 @@ class DocxExportService {
     List<String> sources,
     _DocxAssets assets,
   ) {
+    final xml = StringBuffer();
+    final regularSources = <String>[];
+
+    void flushRegularSources() {
+      if (regularSources.isEmpty) return;
+      xml.write(_regularProtocolImageGridXml(protocol, regularSources, assets));
+      regularSources.clear();
+    }
+
+    for (final source in sources) {
+      final timeline = _timelineForFigureSource(protocol, source);
+      if (timeline == null) {
+        regularSources.add(source);
+        continue;
+      }
+      flushRegularSources();
+      const imageWidth = 6500000;
+      final contentSize = TimelinePainter.documentCanvasSize(timeline);
+      final imageHeight = (imageWidth * contentSize.height / contentSize.width)
+          .round()
+          .clamp(900000, 5000000);
+      xml
+        ..write(
+          _imageParagraph(
+            assets.imageBySource[source]!,
+            width: imageWidth,
+            height: imageHeight,
+            centered: true,
+          ),
+        )
+        ..write(
+          _paragraph(
+            _figureExportLabel(protocol, source).replaceFirst(':', '.'),
+            compact: true,
+            fontSize: 16,
+            alignment: 'center',
+          ),
+        );
+    }
+    flushRegularSources();
+    return xml.toString();
+  }
+
+  String _regularProtocolImageGridXml(
+    Protocol protocol,
+    List<String> sources,
+    _DocxAssets assets,
+  ) {
     final cellWidth = _usableWidth ~/ 3;
     final xml = StringBuffer()
       ..write('<w:tbl><w:tblPr>')
@@ -1163,12 +1352,10 @@ class DocxExportService {
         if (sourceIndex < sources.length) {
           final source = sources[sourceIndex];
           final image = assets.imageBySource[source]!;
-          final protocolIndex = protocol.files.indexOf(source);
-          final name =
-              protocolIndex < protocol.imageNames.length &&
-                  protocol.imageNames[protocolIndex].trim().isNotEmpty
-              ? protocol.imageNames[protocolIndex].trim()
-              : 'Image ${protocolIndex + 1}';
+          final label = _figureExportLabel(
+            protocol,
+            source,
+          ).replaceFirst(':', '.');
           xml.write(
             _imageParagraph(
               image,
@@ -1178,12 +1365,7 @@ class DocxExportService {
             ),
           );
           xml.write(
-            _paragraph(
-              '${protocolIndex + 1}. $name',
-              compact: true,
-              fontSize: 16,
-              alignment: 'center',
-            ),
+            _paragraph(label, compact: true, fontSize: 16, alignment: 'center'),
           );
         } else {
           xml.write('<w:p/>');

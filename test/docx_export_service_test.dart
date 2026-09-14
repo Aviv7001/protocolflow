@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:protocolflow/features/timeline/models/timeline_model.dart';
 import 'package:protocolflow/models/material.dart';
 import 'package:protocolflow/models/protocol.dart';
 import 'package:protocolflow/models/protocol_additional_data.dart';
@@ -23,6 +24,19 @@ void main() {
             'data:image/x-png;figure=$index;base64,'
             'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
       );
+      final timelineTable = const ExperimentTimeline(
+        title: 'Study timeline',
+        figureLayout: TimelineFigureLayout.manual,
+        pointSpacing: 70,
+        eventSpacing: 74,
+        events: [
+          TimelineEvent(
+            id: 'timeline-event',
+            name: 'TIMELINE_EVENT_ONLY',
+            selectedTimePoints: [0, 4, 8],
+          ),
+        ],
+      ).toProtocolTable(id: 'timeline-1');
       final protocol = Protocol(
         id: 'docx-test',
         title: 'DOCX Test Protocol',
@@ -43,6 +57,8 @@ void main() {
         samples: const ['Sample A'],
         files: figurePngs,
         imageNames: List.generate(9, (index) => 'Microscopy ${index + 1}'),
+        informationTableIds: const ['t1', 'timeline-1'],
+        informationImagePaths: [figurePngs.first],
         steps: [
           ProtocolStep(
             id: 's1',
@@ -53,7 +69,7 @@ void main() {
             actionTimers: const {1: 300},
             notes: const ['Keep chilled'],
             phaseName: 'Phase 1',
-            tableIds: const ['t1'],
+            tableIds: const ['t1', 'timeline-1'],
             attachedFiles: [figurePngs.first],
           ),
           ProtocolStep(
@@ -97,12 +113,13 @@ void main() {
             columnHeaders: const ['Sample', 'Volume'],
             rowHeaders: const ['1'],
             data: const [
-              ['A', '100 uL'],
+              ['ONLY-IN-TABLE-BODY', '100 uL'],
             ],
             cellColors: const [
               ['EEF4F5', 'EEF4F5'],
             ],
           ),
+          timelineTable,
         ],
         additionalData: [
           ProtocolAdditionalData(
@@ -141,6 +158,7 @@ void main() {
       expect(names, contains('word/media/image2.png'));
       expect(names, contains('word/media/image3.png'));
       expect(names, contains('word/media/image11.png'));
+      expect(names, contains('word/media/image12.png'));
       expect(names, contains('word/footer1.xml'));
 
       final document = utf8.decode(
@@ -167,11 +185,22 @@ void main() {
       expect(document, contains('w:fill="D7F0F3"'));
       expect(RegExp('w:fill="EEF4F5"').allMatches(document), hasLength(3));
       expect(document, contains('<w:numId w:val="100"/>'));
-      expect(document, contains('Tables: Sample table'));
+      expect(document, contains('Protocol Information · Tables'));
+      expect(document, contains('Protocol Information · Figures'));
+      expect(document, contains('See Table 3: Sample table'));
       expect(document, contains('Images &#47; Figures'));
-      expect(document, contains('1. Microscopy 1'));
-      expect(document, contains('9. Microscopy 9'));
-      expect(document, contains('Images: 1. Microscopy 1'));
+      expect(document, contains('Figure 1. Microscopy 1'));
+      expect(document, contains('Figure 9. Microscopy 9'));
+      expect(document, contains('See Figure 1: Microscopy 1'));
+      expect(document, contains('Figure 10: Study timeline'));
+      expect(document, contains('Figure 10. Study timeline'));
+      expect(document, isNot(contains('TIMELINE_EVENT_ONLY')));
+      expect(document, contains('<wp:extent cx="6500000"'));
+      expect(RegExp('ONLY-IN-TABLE-BODY').allMatches(document), hasLength(1));
+      expect(
+        RegExp(r'Figure 1\. Microscopy 1').allMatches(document),
+        hasLength(1),
+      );
       expect(
         RegExp('<wp:extent cx="1500000" cy="2000000"/>').allMatches(document),
         hasLength(10),

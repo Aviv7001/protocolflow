@@ -118,6 +118,8 @@ class PublishedProtocolPackage {
       materialListTableId: protocol.materialListTableId,
       samples: protocol.samples,
       files: const [],
+      informationTableIds: protocol.informationTableIds,
+      informationImagePaths: const [],
       steps: protocol.steps,
       tables: protocol.tables,
       additionalData: protocol.additionalData,
@@ -151,6 +153,8 @@ Protocol _sanitizeProtocol(
     materialListTableId: source.materialListTableId,
     samples: source.samples,
     files: const [],
+    informationTableIds: source.informationTableIds,
+    informationImagePaths: const [],
     steps: source.steps,
     tables: source.tables,
     additionalData: source.additionalData

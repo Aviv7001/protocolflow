@@ -1483,6 +1483,13 @@ class _HomeScreenState extends State<HomeScreen> {
         onTap: () => _openQuickTool(TableTool.plateLayout),
       ),
       _WorkspaceAction(
+        icon: Icons.timeline,
+        label: 'Timeline Builder',
+        subtitle: 'Experiment schedule',
+        color: Colors.purple,
+        onTap: () => _openQuickTool(TableTool.timeline),
+      ),
+      _WorkspaceAction(
         icon: Icons.color_lens,
         label: 'Staining',
         subtitle: 'Panel generator',

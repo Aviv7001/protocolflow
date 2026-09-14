@@ -171,6 +171,8 @@ class _SavedTablePickerScreenState extends State<SavedTablePickerScreen> {
         return Icons.inventory_2_outlined;
       case TableType.generic:
         return Icons.table_chart;
+      case TableType.timeline:
+        return Icons.timeline;
     }
   }
 
@@ -190,6 +192,8 @@ class _SavedTablePickerScreenState extends State<SavedTablePickerScreen> {
         return Colors.teal;
       case TableType.generic:
         return Colors.grey;
+      case TableType.timeline:
+        return Colors.purple;
     }
   }
 
@@ -209,6 +213,8 @@ class _SavedTablePickerScreenState extends State<SavedTablePickerScreen> {
         return 'Material list';
       case TableType.generic:
         return 'Generic table';
+      case TableType.timeline:
+        return 'Timeline';
     }
   }
 }

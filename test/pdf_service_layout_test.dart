@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:protocolflow/features/timeline/models/timeline_model.dart';
 import 'package:protocolflow/models/protocol.dart';
 import 'package:protocolflow/models/protocol_publication.dart';
 import 'package:protocolflow/models/protocol_step.dart';
@@ -50,6 +51,15 @@ void main() {
         ['Treatment', '2.68', 'AU'],
       ],
     );
+    final timelineTable = const ExperimentTimeline(
+      title: 'Study timeline',
+      figureLayout: TimelineFigureLayout.manual,
+      pointSpacing: 68,
+      eventSpacing: 76,
+      events: [
+        TimelineEvent(id: 'dose', name: 'Dose', selectedTimePoints: [0, 2, 4]),
+      ],
+    ).toProtocolTable(id: 'timeline');
     final protocol = Protocol(
       id: 'pdf-layout-test',
       title: 'Two-column PDF layout verification',
@@ -74,7 +84,9 @@ void main() {
       samples: const ['Control sample', 'Treatment sample', 'Blank sample'],
       files: figurePaths,
       imageNames: List.generate(9, (index) => 'Microscopy ${index + 1}'),
-      tables: [materialTable, resultsTable],
+      informationTableIds: const ['results', 'timeline'],
+      informationImagePaths: [figurePaths.first],
+      tables: [materialTable, resultsTable, timelineTable],
       steps: List.generate(
         12,
         (index) => ProtocolStep(
@@ -91,7 +103,7 @@ void main() {
           materials: const [],
           timerInSeconds: 300,
           day: index < 6 ? 1 : 2,
-          tableIds: index == 0 ? [resultsTable.id] : const [],
+          tableIds: index == 0 ? [resultsTable.id, timelineTable.id] : const [],
         ),
       ),
     );

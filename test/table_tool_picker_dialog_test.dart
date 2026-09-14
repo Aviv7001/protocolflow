@@ -43,6 +43,7 @@ void main() {
     expect(find.text('Saved Tables'), findsNothing);
     expect(find.text('Master Mix'), findsOneWidget);
     expect(find.text('Plate Layout'), findsOneWidget);
+    expect(find.text('Timeline Builder'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

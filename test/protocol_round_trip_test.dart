@@ -29,6 +29,8 @@ void main() {
       samples: ['Sample A'],
       files: ['protocol.pdf', 'figure.jpg'],
       imageNames: const ['', 'Cell morphology'],
+      informationTableIds: const ['table_1'],
+      informationImagePaths: const ['figure.jpg'],
       steps: [
         ProtocolStep(
           id: 'step_1',
@@ -84,6 +86,11 @@ void main() {
     );
     expect(restored.steps.single.notes, equals(protocol.steps.single.notes));
     expect(restored.imageNames, equals(protocol.imageNames));
+    expect(restored.informationTableIds, equals(protocol.informationTableIds));
+    expect(
+      restored.informationImagePaths,
+      equals(protocol.informationImagePaths),
+    );
   });
 
   test('legacy actions key is restored as actionItems', () {

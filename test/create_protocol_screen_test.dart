@@ -80,6 +80,68 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('Protocol Information links existing tables and images', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(700, 1400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    const imagePath =
+        'data:image/png;base64,'
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+    final protocol = Protocol(
+      id: 'protocol-information-links',
+      title: 'Information links',
+      objective: '',
+      description: '',
+      files: const [imagePath],
+      imageNames: const ['Overview'],
+      steps: const [],
+      tables: [
+        ProtocolTable(
+          id: 'timeline-reference',
+          title: 'Timeline reference',
+          type: TableType.timeline,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(home: CreateProtocolScreen(initialProtocol: protocol)),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Link table'), findsWidgets);
+    expect(find.text('Link image'), findsWidgets);
+
+    await tester.tap(find.byKey(const Key('information-table-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is PopupMenuItem<String> &&
+            widget.value == 'timeline-reference',
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const Key('information-linked-table-timeline-reference')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const Key('information-image-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is PopupMenuItem<String> && widget.value == imagePath,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('information-linked-image-0')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('steps use an external numbered timeline inside a section card', (
     tester,
   ) async {
@@ -154,7 +216,7 @@ void main() {
 
     final linkButton = find.byTooltip('Link tables to step 1');
     expect(find.text('Linked Tables'), findsNothing);
-    expect(find.text('Link table'), findsOneWidget);
+    expect(find.text('Link table'), findsWidgets);
     await tester.ensureVisible(linkButton);
     await tester.tap(linkButton);
     await tester.pumpAndSettle();
@@ -374,7 +436,7 @@ void main() {
     await tester.tap(editAdditionalData);
     await tester.pumpAndSettle();
 
-    expect(find.text('Link image'), findsOneWidget);
+    expect(find.text('Link image'), findsWidgets);
     expect(find.widgetWithText(TextButton, 'Camera'), findsNothing);
     expect(find.widgetWithText(TextButton, 'Gallery'), findsNothing);
 

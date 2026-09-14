@@ -457,6 +457,10 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
         samples: List<String>.from(protocol.samples),
         files: List<String>.from(protocol.files),
         imageNames: List<String>.from(protocol.imageNames),
+        informationTableIds: List<String>.from(protocol.informationTableIds),
+        informationImagePaths: List<String>.from(
+          protocol.informationImagePaths,
+        ),
         steps: protocol.steps.map((step) => step.deepCopy()).toList(),
         tables: protocol.tables.map((table) => table.deepCopy()).toList(),
         additionalData: protocol.additionalData
@@ -1089,10 +1093,39 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
           _buildReadOnlyField('Objective', protocol.objective),
           const SizedBox(height: 18),
           _buildReadOnlyField('Description', protocol.description),
+          if (_informationTables.isNotEmpty ||
+              _informationImages.isNotEmpty) ...[
+            const Divider(height: 32),
+            if (_informationTables.isNotEmpty) ...[
+              const Text(
+                'Linked tables',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 10),
+              LinkedProtocolTablesSection(tables: _informationTables),
+            ],
+            if (_informationImages.isNotEmpty) ...[
+              if (_informationTables.isNotEmpty) const SizedBox(height: 18),
+              const Text(
+                'Linked images',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 10),
+              _buildProtocolImageGrid(_informationImages),
+            ],
+          ],
         ],
       ),
     );
   }
+
+  List<ProtocolTable> get _informationTables => protocol.informationTableIds
+      .map((id) => protocol.tables.where((table) => table.id == id).firstOrNull)
+      .whereType<ProtocolTable>()
+      .toList();
+
+  List<String> get _informationImages =>
+      protocol.informationImagePaths.where(protocol.files.contains).toList();
 
   Widget _buildDetailBadge({required IconData icon, required String label}) {
     return Container(

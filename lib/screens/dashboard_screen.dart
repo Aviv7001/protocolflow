@@ -1075,6 +1075,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     TableType.checklist => 'Checklist',
     TableType.staining => 'Staining',
     TableType.serialDilution => 'Serial dilution',
+    TableType.timeline => 'Timeline',
   };
 }
 

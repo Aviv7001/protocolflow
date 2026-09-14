@@ -9,6 +9,7 @@ import '../features/serial_dilution/models/serial_dilution_input.dart';
 import '../features/serial_dilution/screens/serial_dilution_viewer_screen.dart';
 import '../features/staining_table/screens/staining_table_viewer_screen.dart';
 import '../features/plate_wizard/screens/plate_viewer_screen.dart';
+import '../features/timeline/screens/timeline_viewer_screen.dart';
 import '../screens/generic_viewer_screen.dart';
 
 class ProtocolTableWidget extends StatelessWidget {
@@ -173,6 +174,23 @@ class ProtocolTableWidget extends StatelessWidget {
           ),
         ),
       );
+    } else if (table.type == TableType.timeline) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => TimelineViewerScreen(
+            table: table,
+            isReadOnly: isReadOnly,
+            onUpdate: (updated) {
+              if (onSave != null) {
+                onSave(
+                  updated.copyWith(id: table.id, projectId: table.projectId),
+                );
+              }
+            },
+          ),
+        ),
+      );
     } else {
       // Fallback to generic viewer for TableType.generic and others
       Navigator.push(
@@ -208,6 +226,8 @@ class ProtocolTableWidget extends StatelessWidget {
         return Icons.water_drop;
       case TableType.materialList:
         return Icons.inventory_2_outlined;
+      case TableType.timeline:
+        return Icons.timeline;
       default:
         return Icons.table_chart;
     }
@@ -235,6 +255,8 @@ class ProtocolTableWidget extends StatelessWidget {
         return Colors.grey;
       case TableType.materialList:
         return Colors.teal;
+      case TableType.timeline:
+        return Colors.purple;
     }
   }
 }
