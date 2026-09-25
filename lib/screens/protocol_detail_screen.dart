@@ -90,6 +90,7 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
   List<Project> _projects = [];
   bool _publicationBusy = false;
   bool _duplicateBusy = false;
+  final Set<String> _collapsedStepIds = <String>{};
 
   @override
   void initState() {
@@ -605,12 +606,12 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
       appBar: ProtocolFlowAppBar(
         title: 'Protocol Detail',
         actions: [
-          if (activeState == null)
-            IconButton(
-              icon: const Icon(Icons.edit_outlined),
-              onPressed: () => _editProtocol(context),
-              tooltip: 'Edit',
-            ),
+          IconButton(
+            key: const Key('detail-edit-protocol'),
+            icon: const Icon(Icons.edit_outlined),
+            onPressed: () => _editProtocol(context),
+            tooltip: 'Edit',
+          ),
           IconButton(
             icon: const Icon(Icons.copy_outlined),
             onPressed: _duplicateBusy ? null : _editCopy,
@@ -1175,8 +1176,10 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
   }
 
   Widget _buildStepsSurface() {
-    return _buildSectionSurface(
+    final expanded = MediaQuery.sizeOf(context).width >= 1000;
+    return Container(
       key: const Key('detail-steps'),
+      padding: EdgeInsets.symmetric(horizontal: expanded ? 0 : 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1292,15 +1295,9 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
 
         widgets.add(
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            padding: const EdgeInsets.fromLTRB(4, 10, 4, 6),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: isPhaseDone
-                  ? BoxDecoration(
-                      color: AppColors.success.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(4),
-                    )
-                  : null,
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -1333,17 +1330,6 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
                   if (!isPhaseDone && !protocol.isTemplate)
                     Row(
                       children: [
-                        if (activeState != null)
-                          IconButton(
-                            icon: const Icon(
-                              Icons.edit,
-                              size: 20,
-                              color: AppColors.primary,
-                            ),
-                            onPressed: () =>
-                                _editProtocol(context, targetPhase: phase),
-                            tooltip: 'Edit Phase',
-                          ),
                         TextButton.icon(
                           onPressed: () {
                             Navigator.push(
@@ -1401,7 +1387,7 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
 
         widgets.add(
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            padding: const EdgeInsets.fromLTRB(8, 10, 4, 6),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -1428,16 +1414,6 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
                 if (!protocol.isTemplate)
                   Row(
                     children: [
-                      if (activeState != null && !isDayDone)
-                        IconButton(
-                          icon: const Icon(
-                            Icons.edit,
-                            size: 20,
-                            color: AppColors.primary,
-                          ),
-                          onPressed: () => _editProtocol(context),
-                          tooltip: 'Edit Protocol',
-                        ),
                       TextButton.icon(
                         onPressed: () {
                           Navigator.push(
@@ -1480,6 +1456,7 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
   ) {
     final bool isDone =
         activeState != null && activeState!.completedStepIds.contains(step.id);
+    final isCollapsed = _collapsedStepIds.contains(step.id);
 
     return CustomPaint(
       key: Key('detail-step-connector-${index + 1}'),
@@ -1532,12 +1509,17 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: Card(
+            child: Container(
               key: Key('detail-step-card-${index + 1}'),
               margin: const EdgeInsets.symmetric(vertical: 8),
-              color: isDone ? AppColors.success.withValues(alpha: 0.08) : null,
+              decoration: BoxDecoration(
+                color: isDone
+                    ? AppColors.success.withValues(alpha: 0.08)
+                    : AppColors.primary.withValues(alpha: 0.055),
+                borderRadius: BorderRadius.circular(14),
+              ),
               child: Padding(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.fromLTRB(14, 8, 10, 12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -1559,9 +1541,27 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
                             color: AppColors.success,
                             size: 18,
                           ),
+                        IconButton(
+                          visualDensity: VisualDensity.compact,
+                          tooltip: isCollapsed
+                              ? 'Expand step'
+                              : 'Collapse step',
+                          onPressed: () => setState(() {
+                            if (isCollapsed) {
+                              _collapsedStepIds.remove(step.id);
+                            } else {
+                              _collapsedStepIds.add(step.id);
+                            }
+                          }),
+                          icon: Icon(
+                            isCollapsed
+                                ? Icons.keyboard_arrow_down
+                                : Icons.keyboard_arrow_up,
+                          ),
+                        ),
                       ],
                     ),
-                    if (step.instructions.isNotEmpty) ...[
+                    if (!isCollapsed && step.instructions.isNotEmpty) ...[
                       const SizedBox(height: 12),
                       Text(
                         step.instructions,
@@ -1570,10 +1570,11 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
                         ),
                       ),
                     ],
-                    if (step.actionItems.isNotEmpty) ...[
+                    if (!isCollapsed && step.actionItems.isNotEmpty) ...[
                       const SizedBox(height: 12),
                       ProtocolStepActionsTable(
                         actions: step.actionItems,
+                        embedded: true,
                         trailingBuilder: (context, actionIndex) {
                           final timer = step.actionTimers[actionIndex];
                           if (timer == null) return null;
@@ -1590,11 +1591,11 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
                         },
                       ),
                     ],
-                    if (step.notes.isNotEmpty) ...[
+                    if (!isCollapsed && step.notes.isNotEmpty) ...[
                       const SizedBox(height: 12),
-                      ProtocolStepNotesTable(notes: step.notes),
+                      ProtocolStepNotesTable(notes: step.notes, embedded: true),
                     ],
-                    if (step.tableIds.isNotEmpty) ...[
+                    if (!isCollapsed && step.tableIds.isNotEmpty) ...[
                       const SizedBox(height: 16),
                       const Row(
                         children: [
@@ -1614,7 +1615,8 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
                         tables: _linkedTablesForStep(step),
                       ),
                     ],
-                    if (_linkedImagesForStep(step).isNotEmpty) ...[
+                    if (!isCollapsed &&
+                        _linkedImagesForStep(step).isNotEmpty) ...[
                       const SizedBox(height: 16),
                       const Row(
                         children: [

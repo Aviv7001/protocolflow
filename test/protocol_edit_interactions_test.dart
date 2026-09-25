@@ -106,6 +106,90 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('embedded step details use flat collapsible sections', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ProtocolFlowTheme.lightTheme,
+        home: const Scaffold(
+          body: Column(
+            children: [
+              ProtocolStepActionsTable(actions: ['Add buffer'], embedded: true),
+              ProtocolStepNotesTable(notes: ['Keep on ice'], embedded: true),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(Card), findsNothing);
+    expect(find.text('Add buffer'), findsOneWidget);
+    expect(find.text('Keep on ice'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Shrink actions'));
+    await tester.tap(find.byTooltip('Shrink notes'));
+    await tester.pump();
+
+    expect(find.text('Add buffer'), findsNothing);
+    expect(find.text('Keep on ice'), findsNothing);
+    expect(find.byTooltip('Expand actions'), findsOneWidget);
+    expect(find.byTooltip('Expand notes'), findsOneWidget);
+  });
+
+  testWidgets('protocol builder uses the flat collapsible step editor', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(800, 1800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final protocol = Protocol(
+      id: 'flat-step-editor',
+      title: 'Flat step editor',
+      objective: '',
+      description: '',
+      steps: [
+        ProtocolStep(
+          id: 'editable-step',
+          title: 'Prepare materials',
+          instructions: 'Prepare the culture reagents.',
+          actionItems: const ['Add buffer'],
+          notes: const ['Keep on ice'],
+          materials: const [],
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ProtocolFlowTheme.lightTheme,
+        home: CreateProtocolScreen(initialProtocol: protocol),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final stepCard = find.byKey(const Key('step-card-1'));
+    await tester.ensureVisible(stepCard);
+    expect(stepCard, findsOneWidget);
+    expect(
+      find.descendant(of: stepCard, matching: find.byType(Card)),
+      findsNothing,
+    );
+    expect(find.text('Add buffer'), findsOneWidget);
+    expect(find.text('Keep on ice'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Collapse step'));
+    await tester.pump();
+    expect(find.text('Add buffer'), findsNothing);
+    expect(find.text('Keep on ice'), findsNothing);
+
+    await tester.tap(find.byTooltip('Expand step'));
+    await tester.pump();
+    expect(find.text('Add buffer'), findsOneWidget);
+    expect(find.text('Keep on ice'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('linked table title area opens the full-screen viewer', (
     tester,
   ) async {

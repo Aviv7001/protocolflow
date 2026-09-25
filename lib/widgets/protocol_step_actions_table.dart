@@ -13,6 +13,7 @@ class ProtocolStepActionsTable extends StatefulWidget {
   final ActionRowTrailingBuilder? trailingBuilder;
   final ActionRowWrapperBuilder? rowWrapperBuilder;
   final void Function(int index, String action)? onEdit;
+  final bool embedded;
 
   const ProtocolStepActionsTable({
     super.key,
@@ -21,6 +22,7 @@ class ProtocolStepActionsTable extends StatefulWidget {
     this.trailingBuilder,
     this.rowWrapperBuilder,
     this.onEdit,
+    this.embedded = false,
   });
 
   @override
@@ -35,73 +37,94 @@ class _ProtocolStepActionsTableState extends State<ProtocolStepActionsTable> {
   Widget build(BuildContext context) {
     if (widget.actions.isEmpty) return const SizedBox.shrink();
 
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          ListTile(
-            dense: true,
-            leading: const Icon(
-              Icons.checklist_outlined,
-              color: AppColors.primary,
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ListTile(
+          dense: true,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+          leading: const Icon(
+            Icons.checklist_outlined,
+            color: AppColors.primary,
+          ),
+          title: Text.rich(
+            TextSpan(
+              text: 'Actions',
+              children: [
+                TextSpan(
+                  text: '  ·  ${widget.actions.length}',
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
             ),
-            title: Text(
-              'Actions',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w700,
-                color: widget.isLocked ? Colors.grey : null,
-              ),
-            ),
-            subtitle: Text(
-              '${widget.actions.length} '
-              '${widget.actions.length == 1 ? 'action' : 'actions'}',
-            ),
-            trailing: IconButton(
-              tooltip: _isShrunk ? 'Expand actions' : 'Shrink actions',
-              icon: Icon(_isShrunk ? Icons.unfold_more : Icons.unfold_less),
-              onPressed: () => setState(() => _isShrunk = !_isShrunk),
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: widget.isLocked ? Colors.grey : null,
             ),
           ),
-          if (!_isShrunk) ...[
-            const Divider(height: 1),
-            ...widget.actions.asMap().entries.map((entry) {
-              final index = entry.key;
-              final trailing = widget.trailingBuilder?.call(context, index);
-              Widget row = ListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                onTap: !widget.isLocked && widget.onEdit != null
-                    ? () => widget.onEdit!(index, entry.value)
-                    : null,
-                leading: CircleAvatar(
-                  radius: 14,
-                  child: Text(
-                    '${index + 1}',
-                    style: const TextStyle(fontSize: 12),
-                  ),
+          trailing: IconButton(
+            tooltip: _isShrunk ? 'Expand actions' : 'Shrink actions',
+            icon: Icon(
+              _isShrunk
+                  ? Icons.keyboard_arrow_right
+                  : Icons.keyboard_arrow_down,
+            ),
+            onPressed: () => setState(() => _isShrunk = !_isShrunk),
+          ),
+        ),
+        if (!_isShrunk) ...[
+          const Divider(height: 1),
+          ...widget.actions.asMap().entries.map((entry) {
+            final index = entry.key;
+            final trailing = widget.trailingBuilder?.call(context, index);
+            Widget row = ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+              onTap: !widget.isLocked && widget.onEdit != null
+                  ? () => widget.onEdit!(index, entry.value)
+                  : null,
+              leading: CircleAvatar(
+                radius: 14,
+                child: Text(
+                  '${index + 1}',
+                  style: const TextStyle(fontSize: 12),
                 ),
-                title: Text(
-                  entry.value,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: widget.isLocked ? Colors.grey : null,
-                  ),
+              ),
+              title: Text(
+                entry.value,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: widget.isLocked ? Colors.grey : null,
                 ),
-                trailing: trailing,
-              );
-              row = widget.rowWrapperBuilder?.call(context, index, row) ?? row;
+              ),
+              trailing: trailing,
+            );
+            row = widget.rowWrapperBuilder?.call(context, index, row) ?? row;
 
-              return Column(
-                children: [
-                  row,
-                  if (index < widget.actions.length - 1)
-                    const Divider(height: 1, indent: 54),
-                ],
-              );
-            }),
-          ],
+            return Column(
+              children: [
+                row,
+                if (index < widget.actions.length - 1)
+                  const Divider(height: 1, indent: 52, endIndent: 12),
+              ],
+            );
+          }),
         ],
-      ),
+      ],
     );
+
+    if (widget.embedded) {
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          color: AppColors.surface.withValues(alpha: 0.76),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: content,
+      );
+    }
+
+    return Card(clipBehavior: Clip.antiAlias, child: content);
   }
 }

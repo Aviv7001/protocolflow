@@ -520,6 +520,9 @@ void main() {
     expect(find.byKey(const Key('detail-phase-progress')), findsOneWidget);
     expect(find.byKey(const Key('detail-phase-progress-add')), findsOneWidget);
     expect(find.byKey(const Key('detail-current-run')), findsOneWidget);
+    expect(find.byKey(const Key('detail-edit-protocol')), findsOneWidget);
+    expect(find.byTooltip('Edit Phase'), findsNothing);
+    expect(find.byTooltip('Edit Protocol'), findsNothing);
     expect(find.text('Resume'), findsOneWidget);
     expect(find.text('Run Protocol'), findsNothing);
 

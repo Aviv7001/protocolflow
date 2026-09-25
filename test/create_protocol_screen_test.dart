@@ -142,9 +142,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('steps use an external numbered timeline inside a section card', (
-    tester,
-  ) async {
+  testWidgets('steps use a flat external numbered timeline', (tester) async {
     await tester.binding.setSurfaceSize(const Size(700, 1800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -152,7 +150,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     final stepsSection = find.byKey(const Key('builder-steps'));
-    expect(tester.widget(stepsSection), isA<Card>());
+    expect(tester.widget(stepsSection), isA<Container>());
+    expect(tester.widget(stepsSection), isNot(isA<Card>()));
 
     var addStep = find.widgetWithText(FilledButton, 'Add Step');
     await tester.ensureVisible(addStep);
@@ -244,7 +243,7 @@ void main() {
       tester
           .getSize(find.byKey(const Key('step-title-instructions-gap-1')))
           .height,
-      12,
+      8,
     );
     expect(
       tester

@@ -71,6 +71,7 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
   bool _stepClipboardWasCut = false;
   final Map<String, FocusNode> _instructionFocusNodes = {};
   final Map<String, int> _instructionFieldVersions = {};
+  final Set<String> _collapsedStepIds = <String>{};
 
   @override
   void initState() {
@@ -1405,8 +1406,10 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
   }
 
   Widget _buildStepsArea() {
-    return _buildSectionSurface(
+    final expanded = MediaQuery.sizeOf(context).width >= 1000;
+    return Container(
       key: const Key('builder-steps'),
+      padding: EdgeInsets.symmetric(horizontal: expanded ? 0 : 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -2148,19 +2151,8 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
         !_rangeContainsLockedStep(ranges[phaseIndex - 1]);
 
     return Container(
-      margin: const EdgeInsets.only(top: 16, bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: isPhaseLocked
-            ? Colors.grey.withValues(alpha: 0.1)
-            : AppColors.primary.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: isPhaseLocked
-              ? Colors.grey.withValues(alpha: 0.3)
-              : AppColors.primary.withValues(alpha: 0.28),
-        ),
-      ),
+      margin: const EdgeInsets.only(top: 16, bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
       child: Row(
         children: [
           Icon(
@@ -2241,12 +2233,18 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
 
   Widget _buildStepEditor(int index, ProtocolStep step) {
     final bool isLocked = widget.lockedStepIds?.contains(step.id) ?? false;
+    final isCollapsed = _collapsedStepIds.contains(step.id);
 
-    return Card(
+    return Container(
       margin: const EdgeInsets.symmetric(vertical: 8),
-      color: isLocked ? Colors.grey.shade50 : null,
+      decoration: BoxDecoration(
+        color: isLocked
+            ? Colors.grey.shade100
+            : AppColors.primary.withValues(alpha: 0.055),
+        borderRadius: BorderRadius.circular(14),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(12.0),
+        padding: const EdgeInsets.fromLTRB(14, 8, 10, 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -2260,6 +2258,9 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
                     decoration: const InputDecoration(
                       hintText: 'Step Title',
                       border: InputBorder.none,
+                      filled: false,
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(vertical: 10),
                     ),
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
@@ -2270,56 +2271,88 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
                         _steps[index] = _steps[index].copyWith(title: v),
                   ),
                 ),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  tooltip: isCollapsed ? 'Expand step' : 'Collapse step',
+                  onPressed: () => setState(() {
+                    if (isCollapsed) {
+                      _collapsedStepIds.remove(step.id);
+                    } else {
+                      _collapsedStepIds.add(step.id);
+                    }
+                  }),
+                  icon: Icon(
+                    isCollapsed
+                        ? Icons.keyboard_arrow_down
+                        : Icons.keyboard_arrow_up,
+                  ),
+                ),
                 if (!isLocked) _buildStepActions(index, step),
               ],
             ),
-            SizedBox(
-              key: Key('step-title-instructions-gap-${index + 1}'),
-              height: 12,
-            ),
-            KeyedSubtree(
-              key: Key('step-instructions-field-${index + 1}'),
-              child: TextFormField(
-                key: ValueKey(
-                  'instructions_${step.id}_${_instructionFieldVersions[step.id] ?? 0}',
-                ),
-                focusNode: _instructionFocusNode(step.id),
-                initialValue: step.instructions,
-                readOnly: isLocked,
-                decoration: const InputDecoration(
-                  hintText:
-                      'Instructions...\nStart action lines with - and protocol note lines with *.',
-                  border: InputBorder.none,
-                ),
-                maxLines: null,
-                style: TextStyle(
-                  fontSize: _uniformFontSize,
-                  color: isLocked ? Colors.grey : null,
-                ),
-                onTapOutside: (_) {
-                  if (!isLocked) _instructionFocusNode(step.id).unfocus();
-                },
-                onEditingComplete: () {
-                  if (!isLocked) _instructionFocusNode(step.id).unfocus();
-                },
-                onChanged: (value) {
-                  _steps[index] = _steps[index].copyWith(instructions: value);
-                },
+            if (!isCollapsed)
+              SizedBox(
+                key: Key('step-title-instructions-gap-${index + 1}'),
+                height: 8,
               ),
-            ),
-            if (step.actionItems.isEmpty)
-              const Text(
-                'No actions yet. Start a description line with - and a space, then leave the field.',
-                style: TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: _uniformFontSize - 2,
+            if (!isCollapsed)
+              KeyedSubtree(
+                key: Key('step-instructions-field-${index + 1}'),
+                child: TextFormField(
+                  key: ValueKey(
+                    'instructions_${step.id}_${_instructionFieldVersions[step.id] ?? 0}',
+                  ),
+                  focusNode: _instructionFocusNode(step.id),
+                  initialValue: step.instructions,
+                  readOnly: isLocked,
+                  decoration: const InputDecoration(
+                    hintText:
+                        'Instructions...\nStart action lines with - and protocol note lines with *.',
+                    filled: true,
+                    fillColor: AppColors.surface,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.all(Radius.circular(12)),
+                      borderSide: BorderSide.none,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.all(Radius.circular(12)),
+                      borderSide: BorderSide.none,
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.all(Radius.circular(12)),
+                      borderSide: BorderSide(color: AppColors.focus, width: 2),
+                    ),
+                  ),
+                  maxLines: null,
+                  style: TextStyle(
+                    fontSize: _uniformFontSize,
+                    color: isLocked ? Colors.grey : null,
+                  ),
+                  onTapOutside: (_) {
+                    if (!isLocked) _instructionFocusNode(step.id).unfocus();
+                  },
+                  onEditingComplete: () {
+                    if (!isLocked) _instructionFocusNode(step.id).unfocus();
+                  },
+                  onChanged: (value) {
+                    _steps[index] = _steps[index].copyWith(instructions: value);
+                  },
                 ),
-              )
-            else ...[
+              ),
+            if (!isCollapsed && step.actionItems.isEmpty) ...[
+              const SizedBox(height: 8),
+              _buildEmptyStepSection(
+                icon: Icons.checklist_outlined,
+                title: 'Actions  ·  0',
+                message:
+                    'Start a description line with - and a space, then leave the field.',
+              ),
+            ] else if (!isCollapsed) ...[
               const SizedBox(height: 8),
               ProtocolStepActionsTable(
                 actions: step.actionItems,
                 isLocked: isLocked,
+                embedded: true,
                 onEdit: (actionIndex, action) =>
                     _editAction(index, actionIndex, action),
                 trailingBuilder: (context, actionIndex) {
@@ -2410,28 +2443,20 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
                 },
               ),
             ],
-            const SizedBox(height: 8),
-            Text(
-              'Protocol Step Notes',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: _uniformFontSize,
-                color: isLocked ? Colors.grey : null,
+            if (!isCollapsed && step.notes.isEmpty) ...[
+              const SizedBox(height: 8),
+              _buildEmptyStepSection(
+                icon: Icons.info_outline,
+                title: 'Notes  ·  0',
+                message:
+                    'Start a description line with * and a space, then leave the field.',
               ),
-            ),
-            const SizedBox(height: 4),
-            if (step.notes.isEmpty)
-              const Text(
-                'No protocol notes yet. Start a description line with * and a space, then leave the field.',
-                style: TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: _uniformFontSize - 2,
-                ),
-              )
-            else
+            ] else if (!isCollapsed) ...[
+              const SizedBox(height: 8),
               ProtocolStepNotesTable(
                 notes: step.notes,
                 isLocked: isLocked,
+                embedded: true,
                 onEdit: (noteIndex, note) =>
                     _editProtocolStepNote(index, noteIndex, note),
                 onMove: (noteIndex, direction) =>
@@ -2439,13 +2464,58 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
                 onDelete: (noteIndex) =>
                     _deleteProtocolStepNote(index, noteIndex),
               ),
-            const SizedBox(height: 8),
-            _buildStepTableLinks(index, step, isLocked: isLocked),
-            const SizedBox(height: 8),
-            _buildStepImageLinks(index, step, isLocked: isLocked),
-            SizedBox(
-              key: Key('step-linked-tables-bottom-gap-${index + 1}'),
-              height: 12,
+            ],
+            if (!isCollapsed) ...[
+              const SizedBox(height: 8),
+              _buildStepTableLinks(index, step, isLocked: isLocked),
+              const SizedBox(height: 8),
+              _buildStepImageLinks(index, step, isLocked: isLocked),
+              SizedBox(
+                key: Key('step-linked-tables-bottom-gap-${index + 1}'),
+                height: 12,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyStepSection({
+    required IconData icon,
+    required String title,
+    required String message,
+  }) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: AppColors.surface.withValues(alpha: 0.76),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 20, color: AppColors.primary),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    message,
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: _uniformFontSize - 2,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -3776,10 +3846,11 @@ class _PhaseNameFieldState extends State<_PhaseNameField> {
         hintText: 'Phase Name (e.g. Day 1)',
         border: InputBorder.none,
         isDense: true,
+        filled: false,
       ),
       style: TextStyle(
         fontWeight: FontWeight.bold,
-        color: widget.readOnly ? Colors.grey : Colors.blue,
+        color: widget.readOnly ? Colors.grey : AppColors.primary,
       ),
       onSubmitted: (v) {
         if (v != widget.initialValue) {

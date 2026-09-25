@@ -48,6 +48,7 @@ class _CompletedProtocolDetailScreenState
     extends State<CompletedProtocolDetailScreen> {
   CompletedProtocol get completedProtocol => widget.completedProtocol;
   List<Project> _projects = [];
+  final Set<String> _collapsedStepIds = <String>{};
 
   @override
   void initState() {
@@ -541,9 +542,10 @@ class _CompletedProtocolDetailScreenState
   }
 
   Widget _buildStepsSurface(BuildContext context) {
-    return _buildSectionSurface(
-      context,
+    final expanded = MediaQuery.sizeOf(context).width >= 1000;
+    return Container(
       key: const Key('completed-detail-steps'),
+      padding: EdgeInsets.symmetric(horizontal: expanded ? 0 : 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -687,7 +689,7 @@ class _CompletedProtocolDetailScreenState
       for (var phase in phaseOrder) {
         widgets.add(
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            padding: const EdgeInsets.fromLTRB(8, 10, 4, 6),
             child: Text(
               phase,
               style: const TextStyle(
@@ -718,7 +720,7 @@ class _CompletedProtocolDetailScreenState
       for (var day in sortedDays) {
         widgets.add(
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            padding: const EdgeInsets.fromLTRB(8, 10, 4, 6),
             child: Text(
               'Day $day',
               style: const TextStyle(
@@ -747,6 +749,7 @@ class _CompletedProtocolDetailScreenState
     final stepNotes = completedProtocol.notes
         .where((n) => n.stepId == step.id)
         .toList();
+    final isCollapsed = _collapsedStepIds.contains(step.id);
     return CustomPaint(
       key: Key('completed-detail-step-connector-${index + 1}'),
       painter: _CompletedStepTimelinePainter(
@@ -786,12 +789,15 @@ class _CompletedProtocolDetailScreenState
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: Card(
+            child: Container(
               key: Key('completed-detail-step-card-${index + 1}'),
               margin: const EdgeInsets.symmetric(vertical: 8),
-              color: AppColors.success.withValues(alpha: 0.08),
+              decoration: BoxDecoration(
+                color: AppColors.success.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(14),
+              ),
               child: Padding(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.fromLTRB(14, 8, 10, 12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -812,19 +818,38 @@ class _CompletedProtocolDetailScreenState
                           color: AppColors.success,
                           size: 18,
                         ),
+                        IconButton(
+                          visualDensity: VisualDensity.compact,
+                          tooltip: isCollapsed
+                              ? 'Expand step'
+                              : 'Collapse step',
+                          onPressed: () => setState(() {
+                            if (isCollapsed) {
+                              _collapsedStepIds.remove(step.id);
+                            } else {
+                              _collapsedStepIds.add(step.id);
+                            }
+                          }),
+                          icon: Icon(
+                            isCollapsed
+                                ? Icons.keyboard_arrow_down
+                                : Icons.keyboard_arrow_up,
+                          ),
+                        ),
                       ],
                     ),
-                    if (step.instructions.isNotEmpty) ...[
+                    if (!isCollapsed && step.instructions.isNotEmpty) ...[
                       const SizedBox(height: 12),
                       Text(
                         step.instructions,
                         style: const TextStyle(color: AppColors.textSecondary),
                       ),
                     ],
-                    if (step.actionItems.isNotEmpty) ...[
+                    if (!isCollapsed && step.actionItems.isNotEmpty) ...[
                       const SizedBox(height: 12),
                       ProtocolStepActionsTable(
                         actions: step.actionItems,
+                        embedded: true,
                         trailingBuilder: (context, actionIndex) {
                           final timer = step.actionTimers[actionIndex];
                           if (timer == null) return null;
@@ -841,11 +866,11 @@ class _CompletedProtocolDetailScreenState
                         },
                       ),
                     ],
-                    if (step.notes.isNotEmpty) ...[
+                    if (!isCollapsed && step.notes.isNotEmpty) ...[
                       const SizedBox(height: 12),
-                      ProtocolStepNotesTable(notes: step.notes),
+                      ProtocolStepNotesTable(notes: step.notes, embedded: true),
                     ],
-                    if (step.tableIds.isNotEmpty) ...[
+                    if (!isCollapsed && step.tableIds.isNotEmpty) ...[
                       const SizedBox(height: 16),
                       const Row(
                         children: [
@@ -865,7 +890,8 @@ class _CompletedProtocolDetailScreenState
                         tables: _linkedTablesForStep(step),
                       ),
                     ],
-                    if (_linkedImagesForStep(step).isNotEmpty) ...[
+                    if (!isCollapsed &&
+                        _linkedImagesForStep(step).isNotEmpty) ...[
                       const SizedBox(height: 16),
                       const Row(
                         children: [
@@ -887,7 +913,7 @@ class _CompletedProtocolDetailScreenState
                       const SizedBox(height: 8),
                       _buildProtocolImageGrid(_linkedImagesForStep(step)),
                     ],
-                    if (stepNotes.isNotEmpty) ...[
+                    if (!isCollapsed && stepNotes.isNotEmpty) ...[
                       const Divider(height: 28),
                       const Text(
                         'Recorded notes',

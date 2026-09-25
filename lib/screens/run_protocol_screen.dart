@@ -1416,13 +1416,14 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
             const SizedBox(height: 18),
             ProtocolStepActionsTable(
               actions: step.actionItems,
+              embedded: true,
               rowWrapperBuilder: (context, index, child) =>
                   _buildActionTimer(step, index, child),
             ),
           ],
           if (step.notes.isNotEmpty) ...[
             const SizedBox(height: 18),
-            ProtocolStepNotesTable(notes: step.notes),
+            ProtocolStepNotesTable(notes: step.notes, embedded: true),
           ],
           if (_linkedImagesForStep(step).isNotEmpty) ...[
             const SizedBox(height: 18),
