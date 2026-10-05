@@ -970,7 +970,8 @@ class DocxExportService {
                   note.photoNames[photoIndex].trim().isNotEmpty
               ? note.photoNames[photoIndex].trim()
               : 'Image ${photoIndex + 1}';
-          xml.write(_imageParagraph(image, width: 1500000, height: 2000000));
+          final (width, height) = _regularFigureSize(image.bytes);
+          xml.write(_imageParagraph(image, width: width, height: height));
           xml.write(_paragraph('${noteIndex + 1}.${photoIndex + 1}. $name'));
         }
       }
@@ -1356,11 +1357,12 @@ class DocxExportService {
             protocol,
             source,
           ).replaceFirst(':', '.');
+          final (width, height) = _regularFigureSize(image.bytes);
           xml.write(
             _imageParagraph(
               image,
-              width: 1500000,
-              height: 2000000,
+              width: width,
+              height: height,
               centered: true,
             ),
           );
@@ -1376,6 +1378,18 @@ class DocxExportService {
     }
     xml.write('</w:tbl>');
     return xml.toString();
+  }
+
+  (int, int) _regularFigureSize(Uint8List bytes) {
+    const targetHeight = 1400000;
+    const maxWidth = 2100000;
+    final decoded = image.decodeImage(bytes);
+    final ratio = decoded == null || decoded.height == 0
+        ? 3 / 4
+        : decoded.width / decoded.height;
+    final width = (targetHeight * ratio).round();
+    if (width <= maxWidth) return (width, targetHeight);
+    return (maxWidth, (maxWidth / ratio).round());
   }
 
   bool _isRtl(String text) => RegExp(r'[\u0590-\u08FF]').hasMatch(text);

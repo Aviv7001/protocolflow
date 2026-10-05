@@ -8,6 +8,7 @@ import 'package:protocolflow/models/protocol_step.dart';
 import 'package:protocolflow/models/step_note.dart';
 import 'package:protocolflow/models/protocol_table.dart';
 import 'package:protocolflow/widgets/local_image.dart';
+import 'package:protocolflow/widgets/protocol_image_preview_frame.dart';
 import 'package:protocolflow/widgets/protocol_step_actions_table.dart';
 import 'package:protocolflow/widgets/protocol_step_notes_table.dart';
 import 'package:protocolflow/widgets/protocol_table_preview.dart';
@@ -1055,22 +1056,7 @@ class _CompletedProtocolDetailScreenState
                 ),
                 const SizedBox(height: 12),
                 Flexible(
-                  child: Center(
-                    child: AspectRatio(
-                      aspectRatio: 3 / 4,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: ColoredBox(
-                          color: Colors.white,
-                          child: InteractiveViewer(
-                            minScale: 1,
-                            maxScale: 5,
-                            child: buildLocalImage(path, fit: BoxFit.contain),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+                  child: Center(child: ProtocolImagePreviewFrame(path: path)),
                 ),
               ],
             ),

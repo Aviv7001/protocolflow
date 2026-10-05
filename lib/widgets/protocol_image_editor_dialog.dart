@@ -31,6 +31,7 @@ class ProtocolImageEditorDialog extends StatefulWidget {
 class _ProtocolImageEditorDialogState extends State<ProtocolImageEditorDialog> {
   late final TextEditingController _nameController;
   late ProtocolImageLayoutMode _mode;
+  late ProtocolImageAspectRatio _aspectRatio;
   double _focusX = 0.5;
   double _focusY = 0.5;
   double _zoom = 1;
@@ -41,8 +42,11 @@ class _ProtocolImageEditorDialogState extends State<ProtocolImageEditorDialog> {
     super.initState();
     _nameController = TextEditingController(text: widget.initialName);
     final decoded = image.decodeImage(widget.imageBytes);
-    final aspectRatio = decoded == null ? 0.75 : decoded.width / decoded.height;
-    _mode = aspectRatio > 0.75
+    final sourceRatio = decoded == null ? 0.75 : decoded.width / decoded.height;
+    _aspectRatio = sourceRatio > 1
+        ? ProtocolImageAspectRatio.wide
+        : ProtocolImageAspectRatio.portrait;
+    _mode = sourceRatio > _aspectRatio.value
         ? ProtocolImageLayoutMode.fit
         : ProtocolImageLayoutMode.crop;
   }
@@ -58,8 +62,9 @@ class _ProtocolImageEditorDialogState extends State<ProtocolImageEditorDialog> {
     if (name.isEmpty || _saving) return;
     setState(() => _saving = true);
     try {
-      final bytes = ProtocolImageProcessingService.createThreeByFourImage(
+      final bytes = ProtocolImageProcessingService.createImage(
         widget.imageBytes,
+        aspectRatio: _aspectRatio,
         mode: _mode,
         focusX: _focusX,
         focusY: _focusY,
@@ -108,7 +113,7 @@ class _ProtocolImageEditorDialogState extends State<ProtocolImageEditorDialog> {
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxHeight: 460),
                   child: AspectRatio(
-                    aspectRatio: 3 / 4,
+                    aspectRatio: _aspectRatio.value,
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         border: Border.all(color: AppColors.outline),
@@ -133,6 +138,25 @@ class _ProtocolImageEditorDialogState extends State<ProtocolImageEditorDialog> {
                 ),
               ),
               const SizedBox(height: 8),
+              SegmentedButton<ProtocolImageAspectRatio>(
+                segments: const [
+                  ButtonSegment(
+                    value: ProtocolImageAspectRatio.portrait,
+                    icon: Icon(Icons.crop_portrait),
+                    label: Text('3:4 Tall'),
+                  ),
+                  ButtonSegment(
+                    value: ProtocolImageAspectRatio.wide,
+                    icon: Icon(Icons.crop_landscape),
+                    label: Text('6:4 Wide'),
+                  ),
+                ],
+                selected: {_aspectRatio},
+                onSelectionChanged: (selection) {
+                  setState(() => _aspectRatio = selection.first);
+                },
+              ),
+              const SizedBox(height: 8),
               SegmentedButton<ProtocolImageLayoutMode>(
                 segments: const [
                   ButtonSegment(
@@ -154,7 +178,7 @@ class _ProtocolImageEditorDialogState extends State<ProtocolImageEditorDialog> {
               const SizedBox(height: 8),
               Text(
                 cropMode
-                    ? 'Adjust the crop position and zoom. The saved figure is always 3:4.'
+                    ? 'Adjust the crop position and zoom. The saved figure is ${_aspectRatio == ProtocolImageAspectRatio.wide ? '6:4' : '3:4'}.'
                     : 'The full image is centered and any gaps are filled with white.',
                 style: const TextStyle(
                   color: AppColors.textSecondary,

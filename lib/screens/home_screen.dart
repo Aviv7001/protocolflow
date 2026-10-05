@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -19,11 +20,13 @@ import '../theme/app_colors.dart';
 import '../widgets/google_sign_in_button.dart';
 import '../widgets/responsive_layout.dart';
 import '../widgets/running_protocol_summary_card.dart';
+import '../widgets/protocol_table_widget.dart';
 import '../widgets/sync_preview_dialog.dart';
 import '../widgets/backup_restore_preview_dialog.dart';
 import '../features/measuring_tools/screens/measuring_tools_manager_screen.dart';
 import 'table_selection_screen.dart';
 import 'library_screen.dart';
+import 'create_protocol_screen.dart';
 import 'projects_screen.dart';
 import 'protocol_detail_screen.dart';
 import 'saved_tables_screen.dart';
@@ -52,6 +55,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final AuthService _authService = AuthService.instance;
   final ExportService _exportService = ExportService();
   final ImportService _importService = ImportService();
+  final ScrollController _homeProjectsScrollController = ScrollController();
   List<Task> _todayTasks = [];
   List<Project> _projects = [];
   List<Protocol> _protocols = [];
@@ -67,12 +71,13 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _authReady = false;
   bool _exploreLocally = false;
   String? _taskProjectFilter;
+  String? _selectedHomeProjectId;
   bool _createProjectOnOpen = false;
   bool _syncHasErrors = false;
   bool _syncHasPendingChanges = false;
   DateTime? _lastSyncAt;
   int _selectedDesktopIndex = 0;
-  int _selectedPrimaryIndex = 0;
+  int _selectedPrimaryIndex = 2;
   int _libraryInitialTabIndex = 1;
   String? _libraryInitialProjectId;
   String? _tasksInitialProjectId;
@@ -89,7 +94,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (initialLibraryTabIndex != null) {
       _libraryInitialTabIndex = initialLibraryTabIndex;
       _selectedDesktopIndex = 2;
-      _selectedPrimaryIndex = 1;
+      _selectedPrimaryIndex = 3;
     }
     _loadHomeExperience();
     _initializeAuth();
@@ -158,7 +163,10 @@ class _HomeScreenState extends State<HomeScreen> {
     final index = _todayTasks.indexWhere((t) => t.id == task.id);
     if (index != -1) {
       setState(() {
-        _todayTasks[index] = _todayTasks[index].copyWith(status: status);
+        _todayTasks[index] = _todayTasks[index].copyWith(
+          status: status,
+          completedAt: status == TaskStatus.completed ? DateTime.now() : null,
+        );
       });
       await _taskService.saveTodayTasks(_todayTasks);
     }
@@ -256,6 +264,10 @@ class _HomeScreenState extends State<HomeScreen> {
         _projects = values[0] as List<Project>;
         _protocols = values[1] as List<Protocol>;
         _savedTables = values[2] as List<ProtocolTable>;
+        if (_selectedHomeProjectId != null &&
+            !_projects.any((project) => project.id == _selectedHomeProjectId)) {
+          _selectedHomeProjectId = null;
+        }
       });
     }
   }
@@ -312,11 +324,14 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  void _showAddTaskDialog() {
+  void _showAddTaskDialog({String? initialProjectId}) {
     final titleController = TextEditingController();
     final descController = TextEditingController();
     const unassignedProject = '__unassigned__';
-    String selectedProjectId = unassignedProject;
+    String selectedProjectId =
+        initialProjectId != null && initialProjectId != _unassignedTaskFilter
+        ? initialProjectId
+        : unassignedProject;
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -393,6 +408,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _userSubscription?.cancel();
+    _homeProjectsScrollController.dispose();
     super.dispose();
   }
 
@@ -679,6 +695,19 @@ class _HomeScreenState extends State<HomeScreen> {
               onDestinationSelected: _selectPrimaryDestination,
               destinations: const [
                 NavigationDestination(
+                  icon: Icon(Icons.menu_outlined),
+                  selectedIcon: Icon(Icons.menu, color: AppColors.primary),
+                  label: 'More',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.check_circle_outline),
+                  selectedIcon: Icon(
+                    Icons.check_circle,
+                    color: AppColors.primary,
+                  ),
+                  label: 'Tasks',
+                ),
+                NavigationDestination(
                   icon: Icon(Icons.home_outlined),
                   selectedIcon: Icon(Icons.home, color: AppColors.primary),
                   label: 'Home',
@@ -686,17 +715,15 @@ class _HomeScreenState extends State<HomeScreen> {
                 NavigationDestination(
                   icon: Icon(Icons.menu_book_outlined),
                   selectedIcon: Icon(Icons.menu_book, color: AppColors.primary),
-                  label: 'Library',
+                  label: 'Protocols',
                 ),
                 NavigationDestination(
-                  icon: Icon(Icons.folder_outlined),
-                  selectedIcon: Icon(Icons.folder, color: AppColors.primary),
-                  label: 'Projects',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.menu_outlined),
-                  selectedIcon: Icon(Icons.menu, color: AppColors.primary),
-                  label: 'More',
+                  icon: Icon(Icons.add_circle_outline),
+                  selectedIcon: Icon(
+                    Icons.add_circle,
+                    color: AppColors.primary,
+                  ),
+                  label: 'Add',
                 ),
               ],
             ),
@@ -704,8 +731,8 @@ class _HomeScreenState extends State<HomeScreen> {
               duration: const Duration(milliseconds: 180),
               curve: Curves.easeOut,
               top: 0,
-              left: constraints.maxWidth * _selectedPrimaryIndex / 4,
-              width: constraints.maxWidth / 4,
+              left: constraints.maxWidth * _selectedPrimaryIndex / 5,
+              width: constraints.maxWidth / 5,
               child: const SizedBox(
                 height: 4,
                 child: ColoredBox(color: AppColors.primary),
@@ -731,7 +758,7 @@ class _HomeScreenState extends State<HomeScreen> {
         heightFactor: 1,
         child: SizedBox(
           key: const Key('floating-primary-navigation'),
-          width: 560,
+          width: 640,
           child: Material(
             elevation: 8,
             shadowColor: Colors.black.withValues(alpha: 0.18),
@@ -748,31 +775,68 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _selectPrimaryDestination(int index) {
-    setState(() => _selectedPrimaryIndex = index);
     switch (index) {
       case 0:
-        _selectPage(0);
-        return;
-      case 1:
-        _openLibraryTab(1);
-        return;
-      case 2:
-        _selectPage(1);
-        return;
-      case 3:
         _selectPage(3);
         return;
+      case 1:
+        _openTasksWorkspace();
+        return;
+      case 2:
+        _selectPage(0);
+        return;
+      case 3:
+        _openLibraryTab(1);
+        return;
+      case 4:
+        _showAddMenu();
+        return;
     }
+  }
+
+  void _showAddMenu() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const ListTile(title: Text('Add to ProtocolFlow')),
+              ListTile(
+                leading: const Icon(Icons.add_task),
+                title: const Text('Task'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _showAddTaskDialog(initialProjectId: _selectedHomeProjectId);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.table_chart_outlined),
+                title: const Text('Table or lab tool'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _openTableCreator();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _selectPage(int index) {
     setState(() {
       _selectedDesktopIndex = index;
       _selectedPrimaryIndex = switch (index) {
-        0 => 0,
+        0 => 2,
         1 => 2,
-        2 => 1,
-        3 => 3,
+        2 => 3,
+        3 => 0,
+        9 => 1,
         _ => _selectedPrimaryIndex,
       };
     });
@@ -786,7 +850,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _libraryInitialTabIndex = tabIndex;
       _libraryInitialProjectId = projectId;
       _selectedDesktopIndex = 2;
-      _selectedPrimaryIndex = 1;
+      _selectedPrimaryIndex = 3;
     });
   }
 
@@ -795,7 +859,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _tasksInitialProjectId = projectId;
       _tasksReturnPage = returnPage;
       _selectedDesktopIndex = 9;
-      _selectedPrimaryIndex = returnPage == 1 ? 2 : 0;
+      _selectedPrimaryIndex = 1;
     });
   }
 
@@ -804,7 +868,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _tablesInitialProjectId = projectId;
       _tablesReturnPage = returnPage;
       _selectedDesktopIndex = 4;
-      _selectedPrimaryIndex = returnPage == 1 ? 2 : 0;
+      _selectedPrimaryIndex = 2;
     });
   }
 
@@ -887,146 +951,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildHomeWorkspace() {
-    final activeTasks = _todayTasks.where((task) => !task.isDone).length;
-    final inProgressTasks = _todayTasks
-        .where((task) => task.status == TaskStatus.inProgress)
-        .length;
-    final protocols = _protocols
-        .where((protocol) => !protocol.isTemplate)
-        .length;
-    final templates = _protocols
-        .where((protocol) => protocol.isTemplate)
-        .length;
-    final running = protocolRuns
-        .where((run) => run.status != ProtocolRunStatus.completed)
-        .length;
-    final completed = protocolRuns
-        .where((run) => run.status == ProtocolRunStatus.completed)
-        .length;
-    final projectNames =
-        (List<Project>.from(_projects)
-              ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt)))
-            .take(2)
-            .map((project) => project.name)
-            .join(' · ');
-
-    final cards = <Widget>[
-      _HomeSummaryCard(
-        key: const Key('home-today-tasks-section'),
-        icon: Icons.checklist_rounded,
-        title: 'Tasks',
-        onTap: () => _openTasksWorkspace(),
-        child: _todayTasks.isEmpty
-            ? _HomeEmptyAction(
-                message: 'No tasks yet',
-                label: 'Add Task',
-                icon: Icons.add_task,
-                onPressed: _showAddTaskDialog,
-              )
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '$activeTasks active ${activeTasks == 1 ? 'task' : 'tasks'}',
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '$inProgressTasks in progress',
-                    style: const TextStyle(color: AppColors.textSecondary),
-                  ),
-                ],
-              ),
-      ),
-      _HomeSummaryCard(
-        key: const Key('home-resume-work-section'),
-        icon: Icons.description_outlined,
-        title: 'Protocols',
-        onTap: () => _openLibraryTab(1),
-        child:
-            protocols == 0 && templates == 0 && running == 0 && completed == 0
-            ? _HomeEmptyAction(
-                message: 'No protocols yet',
-                label: 'Create/Import Protocol',
-                icon: Icons.add,
-                onPressed: () => _openLibraryTab(1),
-              )
-            : _ProtocolCounts(
-                protocols: protocols,
-                templates: templates,
-                running: running,
-                completed: completed,
-                onOpenTab: _openLibraryTab,
-              ),
-      ),
-      _HomeSummaryCard(
-        key: const Key('home-projects-section'),
-        icon: Icons.folder_outlined,
-        title: 'Projects',
-        onTap: () => _selectPage(1),
-        child: _projects.isEmpty
-            ? _HomeEmptyAction(
-                message: 'No projects yet',
-                label: 'Create Project',
-                icon: Icons.create_new_folder_outlined,
-                onPressed: _openProjectCreation,
-              )
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '${_projects.length} ${_projects.length == 1 ? 'project' : 'projects'}',
-                  ),
-                  if (projectNames.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      projectNames,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: AppColors.textSecondary),
-                    ),
-                  ],
-                ],
-              ),
-      ),
-    ];
-
-    final utilities = Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(
-          child: _HomeUtilityCard(
-            key: const Key('home-quick-start-section'),
-            icon: Icons.science_outlined,
-            title: 'Lab Tools',
-            subtitle: 'Calculators and layouts',
-            onTap: () => showTableToolPicker(
-              context,
-              standaloneMode: true,
-            ).then((_) => _refreshHome()),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _HomeUtilityCard(
-            key: const Key('home-saved-tables-section'),
-            icon: Icons.table_chart_outlined,
-            title: 'Saved Tables',
-            subtitle:
-                '${_savedTables.length} saved ${_savedTables.length == 1 ? 'table' : 'tables'}',
-            onTap: _openSavedTablesWorkspace,
-            actionLabel: _savedTables.isEmpty ? 'Create Table' : null,
-            onAction: _savedTables.isEmpty
-                ? () => showTableToolPicker(
-                    context,
-                    standaloneMode: true,
-                  ).then((_) => _refreshHome())
-                : null,
-          ),
-        ),
-      ],
-    );
-    final utilitiesHeight = _savedTables.isEmpty ? 146.0 : 138.0;
-
     return Column(
       key: const Key('home-stable-dashboard'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1039,36 +963,827 @@ class _HomeScreenState extends State<HomeScreen> {
           _buildSyncWarning(),
         ],
         const SizedBox(height: 18),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            if (constraints.maxWidth < 760) {
-              return Column(
-                children: [
-                  for (final card in cards) ...[
-                    card,
-                    const SizedBox(height: 14),
-                  ],
-                  SizedBox(height: utilitiesHeight, child: utilities),
-                ],
-              );
-            }
-            final cardWidth = (constraints.maxWidth - 16) / 2;
-            return Wrap(
-              spacing: 16,
-              runSpacing: 16,
+        _buildHomeProjectsWidget(),
+        const SizedBox(height: 16),
+        _buildHomeTasksWidget(),
+        const SizedBox(height: 16),
+        _buildHomeProtocolsWidget(),
+        const SizedBox(height: 16),
+        _buildHomeTablesWidget(),
+      ],
+    );
+  }
+
+  Widget _buildHomeTasksWidget() {
+    final tasks =
+        _todayTasks
+            .where((task) => _matchesHomeProject(task.projectId))
+            .toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final preview = tasks.take(4).toList();
+    return _buildHomePreviewCard(
+      key: const Key('home-today-tasks-section'),
+      icon: Icons.checklist_outlined,
+      title: 'Tasks',
+      onAdd: () => _showAddTaskDialog(initialProjectId: _selectedHomeProjectId),
+      onViewAll: () => _openTasksWorkspace(projectId: _selectedHomeProjectId),
+      child: _isLoadingTasks
+          ? const Center(child: CircularProgressIndicator())
+          : preview.isEmpty
+          ? const _HomePreviewEmpty(message: 'No tasks in this view.')
+          : Column(
               children: [
-                for (final card in cards)
-                  SizedBox(width: cardWidth, child: card),
-                SizedBox(
-                  width: cardWidth,
-                  height: utilitiesHeight,
-                  child: utilities,
+                for (var index = 0; index < preview.length; index++) ...[
+                  if (index > 0) const Divider(height: 1),
+                  _buildHomeTaskRow(preview[index]),
+                ],
+                if (tasks.length > 4)
+                  _buildHomeMoreRow(
+                    '${tasks.length - 4} more tasks',
+                    () =>
+                        _openTasksWorkspace(projectId: _selectedHomeProjectId),
+                  ),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildHomeTaskRow(Task task) {
+    final project = _projectFor(task.projectId);
+    final projectColor = _homeProjectColor(task.projectId);
+    final statusColor = _taskStatusColor(task.status);
+    final nextStatus = switch (task.status) {
+      TaskStatus.notStarted => TaskStatus.inProgress,
+      TaskStatus.inProgress => TaskStatus.completed,
+      TaskStatus.completed => TaskStatus.completed,
+    };
+    return InkWell(
+      key: Key('home-task-${task.id}'),
+      onTap: () => _openTasksWorkspace(projectId: task.projectId),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          children: [
+            Container(
+              key: Key('home-task-project-color-${task.id}'),
+              width: 4,
+              height: 40,
+              decoration: BoxDecoration(
+                color: projectColor,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              tooltip: 'Change task status',
+              visualDensity: VisualDensity.compact,
+              onPressed: task.isDone
+                  ? null
+                  : () => _updateTaskStatus(task, nextStatus),
+              icon: Icon(_taskStatusIcon(task.status), color: statusColor),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    task.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      decoration: task.isDone
+                          ? TextDecoration.lineThrough
+                          : null,
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      if (project != null) ...[
+                        Flexible(
+                          child: Text(
+                            project.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: projectColor,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        const Text(' · '),
+                      ],
+                      Text(
+                        _taskStatusLabel(task.status),
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: AppColors.outline),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHomeProjectsWidget() {
+    final projects = List<Project>.from(_projects)
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return _buildHomePreviewCard(
+      key: const Key('home-projects-section'),
+      icon: Icons.folder_outlined,
+      title: 'Projects',
+      onAdd: _openProjectCreation,
+      onViewAll: () => _selectPage(1),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final cardCount = projects.length + 1;
+          final showDesktopControls =
+              context.isDesktopLayout &&
+              cardCount * 260 + (cardCount - 1) * 10 >
+                  constraints.maxWidth - 88;
+          final projectList = ScrollConfiguration(
+            behavior: const MaterialScrollBehavior().copyWith(
+              scrollbars: false,
+              dragDevices: {
+                PointerDeviceKind.touch,
+                PointerDeviceKind.mouse,
+                PointerDeviceKind.trackpad,
+              },
+            ),
+            child: Scrollbar(
+              controller: _homeProjectsScrollController,
+              thumbVisibility: true,
+              trackVisibility: true,
+              interactive: true,
+              scrollbarOrientation: ScrollbarOrientation.bottom,
+              thickness: 7,
+              radius: const Radius.circular(4),
+              child: ListView.separated(
+                controller: _homeProjectsScrollController,
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.only(bottom: 14),
+                itemCount: cardCount,
+                separatorBuilder: (_, _) => const SizedBox(width: 10),
+                itemBuilder: (context, index) => _buildHomeCompactProjectCard(
+                  index == 0 ? null : projects[index - 1],
+                ),
+              ),
+            ),
+          );
+          return SizedBox(
+            height: 204,
+            child: showDesktopControls
+                ? Row(
+                    children: [
+                      IconButton(
+                        tooltip: 'Previous projects',
+                        onPressed: () => _scrollHomeProjects(-1),
+                        icon: const Icon(Icons.chevron_left),
+                      ),
+                      Expanded(child: projectList),
+                      IconButton(
+                        tooltip: 'Next projects',
+                        onPressed: () => _scrollHomeProjects(1),
+                        icon: const Icon(Icons.chevron_right),
+                      ),
+                    ],
+                  )
+                : projectList,
+          );
+        },
+      ),
+    );
+  }
+
+  void _scrollHomeProjects(int direction) {
+    if (!_homeProjectsScrollController.hasClients) return;
+    final position = _homeProjectsScrollController.position;
+    final target = (position.pixels + direction * 270.0).clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
+    _homeProjectsScrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeInOut,
+    );
+  }
+
+  Widget _buildHomeCompactProjectCard(Project? project) {
+    final color = project == null
+        ? AppColors.primary
+        : Color(project.colorValue);
+    final isSelected = _selectedHomeProjectId == project?.id;
+    final protocols = _protocols
+        .where((item) => project == null || item.projectId == project.id)
+        .toList();
+    final templates = protocols.where((item) => item.isTemplate).length;
+    final regular = protocols.length - templates;
+    final tasks = _todayTasks
+        .where((item) => project == null || item.projectId == project.id)
+        .length;
+    final tables = _savedTables
+        .where((item) => project == null || item.projectId == project.id)
+        .length;
+    final running = protocolRuns
+        .where(
+          (run) =>
+              (project == null || run.projectId == project.id) &&
+              run.status != ProtocolRunStatus.completed,
+        )
+        .length;
+    final completed = protocolRuns
+        .where(
+          (run) =>
+              (project == null || run.projectId == project.id) &&
+              run.status == ProtocolRunStatus.completed,
+        )
+        .length;
+    return SizedBox(
+      width: 260,
+      child: Card(
+        margin: EdgeInsets.zero,
+        color: isSelected ? color.withValues(alpha: 0.08) : AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(
+            color: isSelected ? color : color.withValues(alpha: 0.35),
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          key: Key('home-project-${project?.id ?? 'global'}'),
+          onTap: () => setState(() => _selectedHomeProjectId = project?.id),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      project == null ? Icons.public : Icons.folder_outlined,
+                      color: color,
+                      size: 22,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        project?.name ?? 'Global',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    if (isSelected)
+                      Icon(Icons.check_circle, color: color, size: 18),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  project == null
+                      ? 'All projects'
+                      : project.description.isEmpty
+                      ? 'No project description'
+                      : project.description,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
+                const Divider(height: 16),
+                _buildProjectCountLine('Tasks', tasks, 'Tables', tables),
+                const SizedBox(height: 4),
+                _buildProjectCountLine(
+                  'Templates',
+                  templates,
+                  'Protocols',
+                  regular,
+                ),
+                const SizedBox(height: 4),
+                _buildProjectCountLine(
+                  'Running',
+                  running,
+                  'Completed',
+                  completed,
                 ),
               ],
-            );
-          },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProjectCountLine(
+    String firstLabel,
+    int firstCount,
+    String secondLabel,
+    int secondCount,
+  ) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            '$firstLabel $firstCount',
+            style: const TextStyle(fontSize: 12),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            '$secondLabel $secondCount',
+            style: const TextStyle(fontSize: 12),
+          ),
         ),
       ],
+    );
+  }
+
+  Widget _buildHomeProtocolsWidget() {
+    final runningRuns =
+        protocolRuns
+            .where((run) => run.status != ProtocolRunStatus.completed)
+            .where(
+              (run) => _matchesHomeProject(
+                run.projectId ?? run.protocolSnapshot.projectId,
+              ),
+            )
+            .toList()
+          ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    final runningPreview = runningRuns.take(3).toList();
+    final runningProtocolIds = runningRuns.map((run) => run.protocolId).toSet();
+    final protocols =
+        _protocols
+            .where(
+              (protocol) =>
+                  !protocol.isTemplate &&
+                  !runningProtocolIds.contains(protocol.id) &&
+                  _matchesHomeProject(protocol.projectId),
+            )
+            .toList()
+          ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    final preview = protocols.take(3).toList();
+    return _buildHomePreviewCard(
+      key: const Key('home-protocols-section'),
+      icon: Icons.description_outlined,
+      title: 'Protocols',
+      onAdd: _openProtocolCreator,
+      onViewAll: () => _openLibraryTab(1, projectId: _selectedHomeProjectId),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            key: const Key('home-running-protocols'),
+            decoration: BoxDecoration(
+              color: AppColors.primaryContainer.withValues(alpha: 0.55),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: AppColors.primary.withValues(alpha: 0.28),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 8, 8, 0),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.play_circle_outline,
+                        color: AppColors.primary,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'Running protocols',
+                          style: TextStyle(
+                            color: AppColors.onPrimaryContainer,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => _openLibraryTab(
+                          2,
+                          projectId: _selectedHomeProjectId,
+                        ),
+                        child: const Text('View all'),
+                      ),
+                    ],
+                  ),
+                ),
+                if (runningPreview.isEmpty)
+                  const _HomePreviewEmpty(message: 'No running protocols.')
+                else
+                  for (
+                    var index = 0;
+                    index < runningPreview.length;
+                    index++
+                  ) ...[
+                    if (index > 0) const Divider(height: 1),
+                    _buildHomeRunningProtocolRow(runningPreview[index]),
+                  ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+            child: Text(
+              'Recent protocols',
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+            ),
+          ),
+          if (preview.isEmpty)
+            const _HomePreviewEmpty(message: 'No recent protocols.')
+          else
+            for (var index = 0; index < preview.length; index++) ...[
+              if (index > 0) const Divider(height: 1),
+              _buildHomeProtocolRow(preview[index]),
+            ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHomeRunningProtocolRow(ProtocolRun run) {
+    final protocol = run.protocolSnapshot;
+    final projectId = run.projectId ?? protocol.projectId;
+    final project = _projectFor(projectId);
+    final color = _homeProjectColor(projectId);
+    final updatedDate = MaterialLocalizations.of(
+      context,
+    ).formatShortDate(run.updatedAt);
+    final status = run.status == ProtocolRunStatus.paused
+        ? 'Paused'
+        : 'Running';
+    return InkWell(
+      key: Key('home-running-protocol-${run.id}'),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ProtocolDetailScreen(
+            protocol: protocol,
+            activeState: run.toActiveProtocol(),
+          ),
+        ),
+      ).then((_) => _refreshHome()),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            Icon(
+              run.status == ProtocolRunStatus.paused
+                  ? Icons.pause_circle_outline
+                  : Icons.play_circle_outline,
+              color: color,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    protocol.title.isEmpty
+                        ? 'Untitled Protocol'
+                        : protocol.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  Row(
+                    children: [
+                      if (project != null) ...[
+                        Flexible(
+                          child: Text(
+                            project.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: color,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        const Text(' · '),
+                      ],
+                      Expanded(
+                        child: Text(
+                          '$status · ${run.completedStepIds.length}/${protocol.steps.length} steps · Updated $updatedDate',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: AppColors.outline),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHomeProtocolRow(Protocol protocol) {
+    final project = _projectFor(protocol.projectId);
+    final color = _homeProjectColor(protocol.projectId);
+    final editedDate = MaterialLocalizations.of(
+      context,
+    ).formatShortDate(protocol.updatedAt);
+    return InkWell(
+      key: Key('home-protocol-${protocol.id}'),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ProtocolDetailScreen(protocol: protocol),
+        ),
+      ).then((_) => _refreshHome()),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            Icon(Icons.description_outlined, color: color),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    protocol.title.isEmpty
+                        ? 'Untitled Protocol'
+                        : protocol.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  Row(
+                    children: [
+                      if (project != null) ...[
+                        Flexible(
+                          child: Text(
+                            project.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: color,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        const Text(' · '),
+                      ],
+                      Text(
+                        'Edited $editedDate',
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: AppColors.outline),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openProtocolCreator() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            CreateProtocolScreen(initialProjectId: _selectedHomeProjectId),
+      ),
+    );
+    if (mounted) await _refreshHome();
+  }
+
+  bool _matchesHomeProject(String? projectId) =>
+      _selectedHomeProjectId == null || _selectedHomeProjectId == projectId;
+
+  Color _homeProjectColor(String? projectId) {
+    final project = _projectFor(projectId);
+    return project == null
+        ? AppColors.textSecondary
+        : Color(project.colorValue);
+  }
+
+  Widget _buildHomeTablesWidget() {
+    final tables =
+        _savedTables
+            .where((table) => _matchesHomeProject(table.projectId))
+            .toList()
+          ..sort((a, b) {
+            final aDate = a.createdAt;
+            final bDate = b.createdAt;
+            if (aDate == null) return bDate == null ? 0 : 1;
+            if (bDate == null) return -1;
+            return bDate.compareTo(aDate);
+          });
+    final preview = tables.take(4).toList();
+    return _buildHomePreviewCard(
+      key: const Key('home-saved-tables-section'),
+      icon: Icons.table_chart_outlined,
+      title: 'Saved Tables',
+      onAdd: _openTableCreator,
+      onViewAll: () =>
+          _openSavedTablesWorkspace(projectId: _selectedHomeProjectId),
+      child: preview.isEmpty
+          ? const _HomePreviewEmpty(message: 'No saved tables in this view.')
+          : Column(
+              children: [
+                for (var index = 0; index < preview.length; index++) ...[
+                  if (index > 0) const Divider(height: 1),
+                  _buildHomeTableRow(preview[index]),
+                ],
+                if (tables.length > 4)
+                  _buildHomeMoreRow(
+                    '${tables.length - 4} more tables',
+                    () => _openSavedTablesWorkspace(
+                      projectId: _selectedHomeProjectId,
+                    ),
+                  ),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildHomeTableRow(ProtocolTable table) {
+    final project = _projectFor(table.projectId);
+    final color = _homeProjectColor(table.projectId);
+    final (icon, type) = switch (table.type) {
+      TableType.masterMix => (Icons.biotech_outlined, 'Master mix'),
+      TableType.staining => (Icons.color_lens_outlined, 'Staining table'),
+      TableType.serialDilution => (
+        Icons.water_drop_outlined,
+        'Serial dilution',
+      ),
+      TableType.plateLayout => (Icons.grid_on_outlined, 'Plate layout'),
+      TableType.checklist => (Icons.checklist_outlined, 'Checklist'),
+      TableType.materialList => (Icons.inventory_2_outlined, 'Material list'),
+      TableType.generic => (Icons.table_chart_outlined, 'Generic table'),
+      TableType.timeline => (Icons.timeline, 'Timeline'),
+    };
+    return InkWell(
+      key: Key('home-table-${table.id}'),
+      onTap: () => ProtocolTableWidget.openTableViewer(
+        context,
+        table: table,
+        isReadOnly: false,
+        onSave: (updated) async {
+          await _storageService.upsertSavedTable(updated);
+          await _loadProjects();
+        },
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            Icon(icon, color: color),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    table.title.isEmpty ? 'Untitled Table' : table.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  Row(
+                    children: [
+                      if (project != null) ...[
+                        Flexible(
+                          child: Text(
+                            project.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: color,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        const Text(' · '),
+                      ],
+                      Text(
+                        type,
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: AppColors.outline),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openTableCreator() async {
+    await showTableToolPicker(
+      context,
+      standaloneMode: true,
+      initialProjectId: _selectedHomeProjectId,
+    );
+    if (mounted) await _refreshHome();
+  }
+
+  Widget _buildHomePreviewCard({
+    required Key key,
+    required IconData icon,
+    required String title,
+    required VoidCallback onAdd,
+    required VoidCallback onViewAll,
+    required Widget child,
+  }) {
+    return Container(
+      key: key,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: AppColors.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: title == 'Projects'
+                    ? 'Add project'
+                    : title == 'Tasks'
+                    ? 'Add task'
+                    : title == 'Protocols'
+                    ? 'Add protocol'
+                    : 'Add table',
+                onPressed: onAdd,
+                icon: const Icon(Icons.add_circle, color: AppColors.primary),
+              ),
+              TextButton(
+                onPressed: onViewAll,
+                child: Text(title == 'Projects' ? 'Manage ›' : 'View all ›'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          child,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHomeMoreRow(String label, VoidCallback onTap) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: TextButton(onPressed: onTap, child: Text(label)),
     );
   }
 
@@ -2810,340 +3525,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-class _HomeSummaryCard extends StatelessWidget {
-  const _HomeSummaryCard({
-    super.key,
-    required this.icon,
-    required this.title,
-    required this.child,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String title;
-  final Widget child;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: AppColors.outlineVariant),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 56,
-                height: 56,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFE3F4F6),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(icon, color: AppColors.primary, size: 30),
-              ),
-              const SizedBox(width: 18),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      title,
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontSize: 24,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    DefaultTextStyle.merge(
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 18,
-                        height: 1.35,
-                      ),
-                      child: child,
-                    ),
-                  ],
-                ),
-              ),
-              const Padding(
-                padding: EdgeInsets.only(top: 24),
-                child: Icon(
-                  Icons.chevron_right,
-                  color: AppColors.outline,
-                  size: 28,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _HomeUtilityCard extends StatelessWidget {
-  const _HomeUtilityCard({
-    super.key,
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-    this.actionLabel,
-    this.onAction,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-  final String? actionLabel;
-  final VoidCallback? onAction;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: AppColors.outlineVariant),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 42,
-                    height: 42,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFE3F4F6),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(icon, color: AppColors.primary, size: 24),
-                  ),
-                  const Spacer(),
-                  const Icon(
-                    Icons.chevron_right,
-                    color: AppColors.outline,
-                    size: 24,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              if (actionLabel == null) ...[
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 13,
-                  ),
-                ),
-              ] else
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton(
-                    onPressed: onAction,
-                    style: TextButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                    ),
-                    child: Text(actionLabel!),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _HomeEmptyAction extends StatelessWidget {
-  const _HomeEmptyAction({
-    required this.message,
-    required this.label,
-    required this.icon,
-    required this.onPressed,
-  });
-
-  final String message;
-  final String label;
-  final IconData icon;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(message, style: const TextStyle(color: AppColors.textSecondary)),
-        const SizedBox(height: 6),
-        FilledButton.icon(
-          onPressed: onPressed,
-          icon: Icon(icon, size: 18),
-          label: Text(label),
-        ),
-      ],
-    );
-  }
-}
-
-class _ProtocolCounts extends StatelessWidget {
-  const _ProtocolCounts({
-    required this.protocols,
-    required this.templates,
-    required this.running,
-    required this.completed,
-    required this.onOpenTab,
-  });
-
-  final int protocols;
-  final int templates;
-  final int running;
-  final int completed;
-  final void Function(int tabIndex) onOpenTab;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: _ProtocolCount(
-                value: protocols,
-                label: 'Protocols',
-                onTap: () => onOpenTab(1),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _ProtocolCount(
-                value: templates,
-                label: 'Templates',
-                onTap: () => onOpenTab(0),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: _ProtocolCount(
-                value: running,
-                label: 'Running',
-                highlighted: true,
-                onTap: () => onOpenTab(2),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _ProtocolCount(
-                value: completed,
-                label: 'Completed',
-                onTap: () => onOpenTab(3),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-class _ProtocolCount extends StatelessWidget {
-  const _ProtocolCount({
-    required this.value,
-    required this.label,
-    required this.onTap,
-    this.highlighted = false,
-  });
-
-  final int value;
-  final String label;
-  final VoidCallback onTap;
-  final bool highlighted;
-
-  @override
-  Widget build(BuildContext context) {
-    final content = Material(
-      key: Key('home-protocol-count-${label.toLowerCase()}'),
-      color: highlighted ? AppColors.primaryContainer : Colors.transparent,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: highlighted
-            ? BorderSide(color: AppColors.primary.withValues(alpha: 0.25))
-            : BorderSide.none,
-      ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: EdgeInsets.all(highlighted ? 10 : 0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '$value',
-                style: TextStyle(
-                  color: highlighted
-                      ? AppColors.primary
-                      : AppColors.textPrimary,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              Text(
-                label,
-                style: TextStyle(
-                  color: highlighted
-                      ? AppColors.primary
-                      : AppColors.textSecondary,
-                  fontSize: 16,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-    if (!highlighted) return content;
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 130),
-        child: content,
-      ),
-    );
-  }
-}
-
 class _WorkspaceAction {
   const _WorkspaceAction({
     required this.icon,
@@ -3158,4 +3539,21 @@ class _WorkspaceAction {
   final String subtitle;
   final Color color;
   final VoidCallback onTap;
+}
+
+class _HomePreviewEmpty extends StatelessWidget {
+  const _HomePreviewEmpty({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 20),
+      child: Text(
+        message,
+        style: const TextStyle(color: AppColors.textSecondary),
+      ),
+    );
+  }
 }

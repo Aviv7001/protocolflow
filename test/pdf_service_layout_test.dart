@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as image;
 import 'package:pdf/widgets.dart' as pw;
 import 'package:protocolflow/features/timeline/models/timeline_model.dart';
 import 'package:protocolflow/models/protocol.dart';
@@ -8,6 +11,29 @@ import 'package:protocolflow/models/protocol_table.dart';
 import 'package:protocolflow/services/pdf_service.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('PDF export accepts mixed 3:4 and 6:4 protocol figures', () async {
+    final wide = image.Image(width: 600, height: 400);
+    final tall = image.Image(width: 300, height: 400);
+    final wideSource =
+        'data:image/png;base64,${base64Encode(image.encodePng(wide))}';
+    final tallSource =
+        'data:image/png;base64,${base64Encode(image.encodePng(tall))}';
+    final protocol = Protocol(
+      id: 'wide-pdf-figure',
+      title: 'Wide figure',
+      objective: '',
+      description: '',
+      files: [wideSource, tallSource],
+      steps: const [],
+    );
+
+    final bytes = await PdfService.buildProtocolPdf(protocol);
+    expect(bytes, isNotEmpty);
+    expect(ascii.decode(bytes.take(4).toList()), '%PDF');
+  });
+
   test('builds one-column content with a full-width table appendix', () async {
     const pixelPng =
         'data:image/png;base64,'

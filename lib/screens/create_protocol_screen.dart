@@ -23,6 +23,7 @@ import '../services/storage_service.dart';
 import '../utils/protocol_id.dart';
 import '../widgets/local_image.dart';
 import '../widgets/protocol_image_editor_dialog.dart';
+import 'protocol_detail_screen.dart';
 import 'table_selection_screen.dart';
 
 class CreateProtocolScreen extends StatefulWidget {
@@ -925,6 +926,22 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
   }
 
   Future<void> _saveProtocol({bool isTemplate = false}) async {
+    try {
+      await _persistProtocolAndExit(isTemplate: isTemplate);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not save ${isTemplate ? 'template' : 'protocol'}: $error',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<void> _persistProtocolAndExit({required bool isTemplate}) async {
     FocusManager.instance.primaryFocus?.unfocus();
     _syncAllActionsFromInstructions();
 
@@ -1000,10 +1017,22 @@ class _CreateProtocolScreenState extends State<CreateProtocolScreen> {
               newProtocol,
             );
 
-      if (mounted) {
-        setState(() => _canActuallyPop = true);
-        Navigator.pop(context, savedProtocol);
-      }
+      if (!mounted) return;
+      final navigator = Navigator.of(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(isTemplate ? 'Template saved' : 'Protocol saved'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      // Replace the editor rather than popping it through the discard guard.
+      // The saved result still reaches the screen that opened the editor.
+      navigator.pushReplacement<void, Protocol>(
+        MaterialPageRoute<void>(
+          builder: (_) => ProtocolDetailScreen(protocol: savedProtocol),
+        ),
+        result: savedProtocol,
+      );
     }
   }
 

@@ -4,6 +4,18 @@ import 'package:image/image.dart' as image;
 
 enum ProtocolImageLayoutMode { fit, crop }
 
+enum ProtocolImageAspectRatio {
+  portrait(900, 1200),
+  wide(1200, 800);
+
+  const ProtocolImageAspectRatio(this.width, this.height);
+
+  final int width;
+  final int height;
+
+  double get value => width / height;
+}
+
 class ProtocolImageProcessingService {
   const ProtocolImageProcessingService._();
 
@@ -12,6 +24,22 @@ class ProtocolImageProcessingService {
 
   static Uint8List createThreeByFourImage(
     Uint8List bytes, {
+    required ProtocolImageLayoutMode mode,
+    double focusX = 0.5,
+    double focusY = 0.5,
+    double zoom = 1,
+  }) => createImage(
+    bytes,
+    aspectRatio: ProtocolImageAspectRatio.portrait,
+    mode: mode,
+    focusX: focusX,
+    focusY: focusY,
+    zoom: zoom,
+  );
+
+  static Uint8List createImage(
+    Uint8List bytes, {
+    required ProtocolImageAspectRatio aspectRatio,
     required ProtocolImageLayoutMode mode,
     double focusX = 0.5,
     double focusY = 0.5,
@@ -25,6 +53,8 @@ class ProtocolImageProcessingService {
     final safeFocusX = focusX.clamp(0.0, 1.0);
     final safeFocusY = focusY.clamp(0.0, 1.0);
     final safeZoom = zoom.clamp(1.0, 3.0);
+    final outputWidth = aspectRatio.width;
+    final outputHeight = aspectRatio.height;
 
     late image.Image output;
     if (mode == ProtocolImageLayoutMode.fit) {

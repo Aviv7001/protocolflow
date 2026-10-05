@@ -5,11 +5,199 @@ import 'package:protocolflow/models/protocol_additional_data.dart';
 import 'package:protocolflow/models/protocol_step.dart';
 import 'package:protocolflow/models/protocol_table.dart';
 import 'package:protocolflow/screens/create_protocol_screen.dart';
+import 'package:protocolflow/screens/protocol_detail_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
+  });
+
+  testWidgets('saving a protocol opens its saved detail screen', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final protocol = Protocol(
+      id: 'save-and-return',
+      title: 'Return after save',
+      objective: '',
+      description: '',
+      steps: const [],
+    );
+    Protocol? saved;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () async {
+                saved = await Navigator.of(context).push<Protocol>(
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        CreateProtocolScreen(initialProtocol: protocol),
+                  ),
+                );
+              },
+              child: const Text('Previous screen'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Previous screen'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Save protocol'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save Protocol'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CreateProtocolScreen), findsNothing);
+    expect(find.byType(ProtocolDetailScreen), findsOneWidget);
+    expect(find.text('PROTOCOL'), findsOneWidget);
+    expect(find.text('Protocol saved'), findsOneWidget);
+    expect(find.text('Discard Changes?'), findsNothing);
+    expect(saved?.id, protocol.id);
+    expect(
+      tester
+          .widget<ProtocolDetailScreen>(find.byType(ProtocolDetailScreen))
+          .protocol
+          .id,
+      protocol.id,
+    );
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.text('Previous screen'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('creating a protocol opens its saved detail screen', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    Protocol? saved;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () async {
+                saved = await Navigator.of(context).push<Protocol>(
+                  MaterialPageRoute(
+                    builder: (_) => const CreateProtocolScreen(),
+                  ),
+                );
+              },
+              child: const Text('Previous screen'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Previous screen'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('protocol-title-field')),
+      'New saved protocol',
+    );
+    await tester.tap(find.byTooltip('Save protocol'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save Protocol'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CreateProtocolScreen), findsNothing);
+    expect(find.byType(ProtocolDetailScreen), findsOneWidget);
+    expect(find.text('PROTOCOL'), findsOneWidget);
+    expect(find.text('Protocol saved'), findsOneWidget);
+    expect(find.text('Discard Changes?'), findsNothing);
+    expect(saved?.title, 'New saved protocol');
+    expect(
+      tester
+          .widget<ProtocolDetailScreen>(find.byType(ProtocolDetailScreen))
+          .protocol
+          .title,
+      'New saved protocol',
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('saving as template opens the saved template detail', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    Protocol? saved;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () async {
+                saved = await Navigator.of(context).push<Protocol>(
+                  MaterialPageRoute(
+                    builder: (_) => const CreateProtocolScreen(),
+                  ),
+                );
+              },
+              child: const Text('Previous screen'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Previous screen'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('protocol-title-field')),
+      'Saved template',
+    );
+    await tester.tap(find.byTooltip('Save protocol'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save as Template'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CreateProtocolScreen), findsNothing);
+    expect(find.byType(ProtocolDetailScreen), findsOneWidget);
+    expect(find.text('TEMPLATE'), findsOneWidget);
+    expect(find.text('Use template'), findsOneWidget);
+    expect(find.text('Template saved'), findsOneWidget);
+    expect(find.text('Discard Changes?'), findsNothing);
+    expect(saved?.isTemplate, isTrue);
+    expect(
+      tester
+          .widget<ProtocolDetailScreen>(find.byType(ProtocolDetailScreen))
+          .protocol
+          .isTemplate,
+      isTrue,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('failed protocol save explains why the editor stays open', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(const MaterialApp(home: CreateProtocolScreen()));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('protocol-title-field')),
+      'A' * 201,
+    );
+
+    await tester.tap(find.byTooltip('Save protocol'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save Protocol'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CreateProtocolScreen), findsOneWidget);
+    expect(find.textContaining('Could not save protocol:'), findsOneWidget);
+    expect(find.text('Protocol saved'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('protocol builder keeps the mobile workflow order', (

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as image;
 import 'package:protocolflow/features/timeline/models/timeline_model.dart';
 import 'package:protocolflow/models/material.dart';
 import 'package:protocolflow/models/protocol.dart';
@@ -13,6 +14,33 @@ import 'package:protocolflow/models/step_note.dart';
 import 'package:protocolflow/services/docx_export_service.dart';
 
 void main() {
+  test('DOCX figure grid gives tall and wide images equal height', () async {
+    final wide = image.Image(width: 600, height: 400);
+    final tall = image.Image(width: 300, height: 400);
+    final wideSource =
+        'data:image/png;base64,${base64Encode(image.encodePng(wide))}';
+    final tallSource =
+        'data:image/png;base64,${base64Encode(image.encodePng(tall))}';
+    final protocol = Protocol(
+      id: 'wide-figure',
+      title: 'Wide figure',
+      objective: '',
+      description: '',
+      files: [wideSource, tallSource],
+      imageNames: const ['Landscape view', 'Portrait view'],
+      steps: const [],
+    );
+
+    final bytes = await const DocxExportService().buildDocument(protocol);
+    final archive = ZipDecoder().decodeBytes(bytes);
+    final document = utf8.decode(
+      archive.findFile('word/document.xml')!.content as List<int>,
+    );
+
+    expect(document, contains('<wp:extent cx="2100000" cy="1400000"/>'));
+    expect(document, contains('<wp:extent cx="1050000" cy="1400000"/>'));
+  });
+
   test(
     'DOCX export contains protocol content, links, tables, and photos',
     () async {
@@ -202,7 +230,7 @@ void main() {
         hasLength(1),
       );
       expect(
-        RegExp('<wp:extent cx="1500000" cy="2000000"/>').allMatches(document),
+        RegExp('<wp:extent cx="1400000" cy="1400000"/>').allMatches(document),
         hasLength(10),
       );
       expect(RegExp('Phase 1').allMatches(document), hasLength(1));

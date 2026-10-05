@@ -1,6 +1,7 @@
 import 'dart:io' show File;
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:image/image.dart' as image_lib;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:protocolflow/models/completed_protocol.dart';
@@ -943,6 +944,14 @@ class PdfService {
         if (bytes != null && bytes.isNotEmpty) {
           try {
             final image = pw.MemoryImage(bytes);
+            final dimensions = image_lib.decodeImage(bytes);
+            final aspectRatio = dimensions == null || dimensions.height == 0
+                ? 3 / 4
+                : dimensions.width / dimensions.height;
+            const photoHeight = 80.0;
+            final photoWidth = (photoHeight * aspectRatio)
+                .clamp(40.0, 120.0)
+                .toDouble();
             final name =
                 j < note.photoNames.length &&
                     note.photoNames[j].trim().isNotEmpty
@@ -954,9 +963,9 @@ class PdfService {
                   pw.Stack(
                     children: <pw.Widget>[
                       pw.Container(
-                        width: 90,
-                        height: 120,
-                        child: pw.Image(image, fit: pw.BoxFit.cover),
+                        width: photoWidth,
+                        height: photoHeight,
+                        child: pw.Image(image, fit: pw.BoxFit.contain),
                       ),
                       pw.Positioned(
                         top: 4,
@@ -985,7 +994,7 @@ class PdfService {
                   ),
                   pw.SizedBox(height: 3),
                   pw.SizedBox(
-                    width: 90,
+                    width: photoWidth,
                     child: pw.Text(
                       name,
                       textAlign: pw.TextAlign.center,
@@ -1294,7 +1303,7 @@ class PdfService {
             children: [
               pw.Container(
                 width: imageWidth,
-                height: imageWidth * 4 / 3,
+                height: imageWidth * 2 / 3,
                 decoration: pw.BoxDecoration(
                   color: PdfColors.white,
                   border: pw.Border.all(color: _outlineVariantColor),

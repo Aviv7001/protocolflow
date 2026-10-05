@@ -23,6 +23,7 @@ import 'package:protocolflow/widgets/protocol_table_preview.dart';
 import 'package:protocolflow/widgets/protocolflow_app_bar.dart';
 import 'package:protocolflow/widgets/protocolflow_ui.dart';
 import 'package:protocolflow/widgets/protocol_image_editor_dialog.dart';
+import 'package:protocolflow/widgets/protocol_image_preview_frame.dart';
 import 'package:protocolflow/widgets/responsive_layout.dart';
 import 'package:protocolflow/screens/home_screen.dart';
 
@@ -1581,22 +1582,7 @@ class _RunProtocolScreenState extends State<RunProtocolScreen> {
                 ),
                 const SizedBox(height: 12),
                 Flexible(
-                  child: Center(
-                    child: AspectRatio(
-                      aspectRatio: 3 / 4,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: ColoredBox(
-                          color: Colors.white,
-                          child: InteractiveViewer(
-                            minScale: 1,
-                            maxScale: 5,
-                            child: buildLocalImage(path, fit: BoxFit.contain),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+                  child: Center(child: ProtocolImagePreviewFrame(path: path)),
                 ),
               ],
             ),

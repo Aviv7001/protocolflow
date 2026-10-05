@@ -15,6 +15,7 @@ import '../services/drive_sync_service.dart';
 import '../services/protocol_publication_service.dart';
 import '../services/protocol_run_service.dart';
 import '../widgets/local_image.dart';
+import '../widgets/protocol_image_preview_frame.dart';
 import '../widgets/sync_status_chip.dart';
 import '../services/docx_export_service.dart';
 import '../services/pdf_service.dart';
@@ -1708,22 +1709,7 @@ class _ProtocolDetailScreenState extends State<ProtocolDetailScreen> {
                 ),
                 const SizedBox(height: 12),
                 Flexible(
-                  child: Center(
-                    child: AspectRatio(
-                      aspectRatio: 3 / 4,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: ColoredBox(
-                          color: Colors.white,
-                          child: InteractiveViewer(
-                            minScale: 1,
-                            maxScale: 5,
-                            child: buildLocalImage(path, fit: BoxFit.contain),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+                  child: Center(child: ProtocolImagePreviewFrame(path: path)),
                 ),
               ],
             ),
